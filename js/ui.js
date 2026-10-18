@@ -1,7 +1,5 @@
 /* Small shared UI helpers. */
 (function () {
-  var toastTimer = 0;
-
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
   }
@@ -33,37 +31,6 @@
     }).join('') + '</ul>';
   }
 
-  /* ---------- Toasts (with Undo, so nothing feels permanent) ---------- */
-  function toast(msg, o) {
-    o = o || {};
-    var box = document.getElementById('toasts');
-    if (!box) return;
-    box.innerHTML = '';
-    var t = document.createElement('div');
-    t.className = 'toast';
-    var span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
-    if (o.undo) {
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'toast-btn'; b.textContent = 'Undo';
-      b.addEventListener('click', function () { box.innerHTML = ''; o.undo(); });
-      t.appendChild(b);
-    }
-    if (o.action) {
-      var a = document.createElement('button'); a.type = 'button'; a.className = 'toast-btn'; a.textContent = o.action.label;
-      a.addEventListener('click', function () { box.innerHTML = ''; o.action.run(); });
-      t.appendChild(a);
-    }
-    box.appendChild(t);
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { if (t.parentNode === box) box.innerHTML = ''; }, o.ms || 7000);
-  }
-
-  /* Run a change, keep a snapshot, and offer Undo. */
-  function undoable(message, change, afterUndo) {
-    var snap = Store.snapshot();
-    change();
-    toast(message, { undo: function () { Store.restore(snap); if (afterUndo) afterUndo(); } });
-  }
-
   /* Modal dialog built on <dialog> (focus trap and Escape come for free). */
   function dialog(html, o) {
     o = o || {};
@@ -77,5 +44,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, toast: toast, undoable: undoable, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
 })();

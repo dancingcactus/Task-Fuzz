@@ -1,4 +1,4 @@
-/* One in-memory store shared by Triage, All tasks, New task and the chat.
+/* One in-memory store shared by Triage, All tasks and New task.
    Principles it enforces:
    - assigned work runs in the background, five at a time (6, 1)
    - a handback is a normal state and goes to the end of the queue (2)

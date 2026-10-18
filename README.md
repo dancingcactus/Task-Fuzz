@@ -18,11 +18,11 @@ appearance and calm-mode choices are saved (in `localStorage`). **Settings > Res
 | **Triage** | Triage Queue Mockup (layout, card information architecture) + Fuzz Triage (reactions, motion) | Assign, Work in Claude, Schedule, Done (and its menu: Park it, Waiting on someone), drop, park a stray thought, undo |
 | **All tasks** | Triage Queue Mockup | Current, Parked, Waiting on others, Done and Let go. Open any row for the full "done so far" log, sources, drafts and actions |
 | **New task** | Triage Queue Mockup | Type or dictate (simulated), attach files (names only), Ctrl/Cmd+Enter. Press **N** anywhere to jump here |
-| **Chat with Fuzz** | Fuzz Triage (the character and his logo) | Floating button, bottom right. A scripted demo, not a model |
+| **Fuzz speaks** | Fuzz Triage | Everything the app tells you comes from Fuzz, never a toast: from the perch on Triage, from a small Fuzz bottom right on other pages |
 | **Theme** | Warm Palette Explorations | All eight palettes, each in light and dark, plus Match system |
 
 Fuzz appears three ways: the full animated robot on the Triage perch, a small themed face used as the logo,
-chat avatar and "how are you" icons, and static SVG files in `assets/` (`fuzz-mark.svg`, `fuzz-logo.svg`,
+"how are you" icons and notices, and static SVG files in `assets/` (`fuzz-mark.svg`, `fuzz-logo.svg`,
 `fuzz-favicon.svg`). The robot re-tints with every palette: the cabinet takes the accent, the screen glow stays warm.
 
 The **Fuzz mood lab** (collapsed, under the Triage card) plays every mood, deadline level and reaction on demand,
@@ -52,15 +52,15 @@ Fuzz also works in the background: tasks you assign move through research and dr
 | 3 | Show the work | Every task has a "Done so far" log (research, action, guidance, status, sent, blocked), and every click in the app writes to it |
 | 4 | Thin records | Tasks hold a reference list (Sources) and the extracted ask, never the full message |
 | 5 | Shared entity service | Entity checks (person, term) and merge/keep-separate matching cards |
-| 6 | Humans approve what can't be undone | Drafts wait for **Approve and send**, concurrency starts at five (the sixth task shows "Next up"), and every triage action has **Undo** |
-| 8 | Capture costs nothing | New task is one field, one key (N), no categories. Chat captures anything that isn't a question |
+| 6 | Humans approve what can't be undone | Drafts wait for **Approve and send**, concurrency starts at five (the sixth task shows "Next up"), and every change has **Undo** (a link under the Triage card, and a button in Fuzz's bubble) |
+| 8 | Capture costs nothing | New task is one field, one key (N), no categories. |
 | 9 | Lower the cost of starting | "Smallest first step, two minutes" on each task card |
 | 10 | Time is human | Schedule uses "when I'm back at my desk", "before the planning review" and so on, with exact time as the fallback. Age is a three-segment cue, not a date |
 | 11 | No shame spirals | No red overdue counts (past-due says "past its time"), stale cards ask rather than pile up, Parked never nags |
 | 12 | Easy re-entry | "Where you left off" recap on returning cards, and **Park a stray thought** without leaving the card |
 | 13 | One thing at a time | One card, with instructions and actions pinned at the top and Fuzz's suggestion pre-filled |
 | 14 | Work alongside | Fuzz works visibly in the background, with a light status line now and then (never nagging) |
-| 15 | Ambient beats initiated | Toasts tell you when a draft is ready or something is handed back. Fuzz also asks how you are after the urgent cards |
+| 15 | Ambient beats initiated | Fuzz tells you when a draft is ready or something is handed back, from the perch or a small Fuzz on other pages. Fuzz also asks how you are after the urgent cards |
 | 16 | Match the task to the moment | **Right now**: Anything / 5 minutes / Low energy reorders the queue |
 | 17, 18 | Emotional connection, warm and quirky | Fuzz, the palettes, and a Calm mode that keeps the fades and drops the flashes |
 
@@ -71,7 +71,6 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 - The AI work: a timer walks assigned tasks through scripted steps (`js/store.js`, `tick`). Step length is `STEP_MS`.
 - Dictation inserts a fixed sentence. Attached files record only their names.
 - "Work in Claude" moves the task to Current instead of opening anything.
-- Chat is keyword rules in `js/chat.js`.
 - Source linking and matching (the Task matching doc) is represented by the duplicate and entity cards only.
 
 ## Layout of the code
@@ -86,7 +85,7 @@ js/store.js         shared state, undo snapshots, the background work loop
 js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, All tasks, New task
-js/chat.js          Chat with Fuzz
+js/notify.js        Fuzz speaks: notices and Undo (no toasts)
 js/app.js           router, header, theme popover
 assets/             Fuzz logo files
 ```

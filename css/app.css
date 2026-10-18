@@ -301,8 +301,6 @@ html.calm .fzmini .fz-a1, html.calm .fzmini .fz-a2, html.calm .fzmini .fz-dot { 
 .tablist [aria-selected="true"] .count { background: var(--accent); color: var(--on-accent); }
 .tab-blurb { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .tab-blurb p { margin: 0; color: var(--muted); font-size: 14px; max-width: 70ch; }
-.tab-blurb .msg { background: color-mix(in srgb, var(--ok) 22%, var(--surface)); border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; }
-.tab-blurb .msg[hidden] { display: none; }
 .tablewrap { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
 .tasktable { width: 100%; border-collapse: collapse; font-size: 14px; }
 .tasktable thead { background: var(--field); }
@@ -380,38 +378,17 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 .cap-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .fine { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
 
-/* ---------- Chat ---------- */
-.chat-fab { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 18px 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-weight: 700; }
-.chat-fab:hover { border-color: var(--accent); }
-.chat-fab.is-open { background: var(--chip); }
-.fab-av { width: 38px; }
-.chat { position: fixed; right: 16px; bottom: 80px; z-index: 41; width: 390px; max-width: calc(100vw - 24px); height: min(580px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 24px 60px -16px color-mix(in srgb, var(--ink) 55%, transparent); overflow: hidden; }
-.chat[hidden] { display: none; }
-.chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; background: var(--chip); border-bottom: 1px solid var(--line); }
-.chat-head > div { flex: 1; display: flex; flex-direction: column; line-height: 1.25; }
-.chat-head b { font-family: var(--font-display); font-size: 17px; }
-.chat-head span { font-size: 12.5px; color: var(--muted); }
-.head-av { width: 44px; flex: none; }
-.chat-list { list-style: none; margin: 0; padding: 14px; flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
-.msg { display: flex; gap: 8px; align-items: flex-end; }
-.msg--you { justify-content: flex-end; }
-.chat-av { width: 30px; flex: none; margin-bottom: 18px; }
-.chat-av-wrap { display: contents; }
-.msg-body { display: flex; flex-direction: column; gap: 4px; max-width: 82%; min-width: 0; }
-.msg--you .msg-body { align-items: flex-end; }
-.msg-who { font-size: 12px; color: var(--muted); font-weight: 600; }
-.msg .bub { padding: 10px 14px; line-height: 1.5; background: var(--field); border: 1px solid var(--line); border-radius: 18px 18px 18px 4px; overflow-wrap: anywhere; }
-.msg--you .bub { background: var(--accent); color: var(--on-accent); border-color: var(--accent); border-radius: 18px 18px 4px 18px; }
-.bub.typing { letter-spacing: 3px; font-weight: 800; animation: twk 1s ease-in-out infinite alternate; }
-.chat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-.chat-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--surface); }
-.chat-form input { flex: 1; width: auto; min-height: 46px; border-radius: 999px; padding: 0 16px; }
-.btn.send { min-height: 46px; width: 46px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
-
-/* ---------- Toasts ---------- */
-.toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60; width: max-content; max-width: min(560px, calc(100vw - 32px)); pointer-events: none; }
-.toast { pointer-events: auto; display: flex; align-items: center; gap: 14px; background: var(--ink); color: var(--bg); border-radius: 16px; padding: 10px 10px 10px 18px; font-weight: 600; font-size: 14.5px; box-shadow: 0 14px 34px -10px rgba(0,0,0,.45); animation: bpop .35s cubic-bezier(.3,1.6,.5,1); }
-.toast-btn { flex: none; min-height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--bg); color: var(--ink); font-weight: 700; }
+/* ---------- Fuzz speaks (replaces toasts) ---------- */
+.fuzz-dock { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: flex-end; gap: 8px; max-width: min(500px, calc(100vw - 32px)); pointer-events: none; }
+.fuzz-dock[hidden] { display: none; }
+.fuzz-dock > * { pointer-events: auto; }
+.dock-av { width: 66px; flex: none; }
+.fuzz-dock .bubble { margin-bottom: 24px; max-width: 420px; border-radius: 16px 16px 4px 16px; box-shadow: var(--shadow); padding-right: 8px; }
+.bubble button { min-height: 32px; }
+.bubble button.dock-x { border: 0; min-width: 32px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); }
+.undo-pill { align-self: flex-start; min-height: 40px; max-width: 100%; padding: 0 16px; border: 2px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--link); font-weight: 700; font-size: 14px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-pill:hover { background: var(--chip); }
+.undo-pill[hidden] { display: none; }
 
 /* ---------- Small screens ---------- */
 @media (max-width: 760px) {
@@ -421,10 +398,7 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
   .cap-card { padding: 20px; border-radius: 22px; }
   .cap-head h1 { font-size: 26px; }
   .cap-fuzz { width: 60px; }
-  .chat-fab span { display: none; }
-  .chat-fab { padding: 0 8px; }
-  .chat { right: 8px; left: 8px; width: auto; max-width: none; bottom: 76px; height: min(560px, calc(100vh - 100px)); }
-  .toasts { bottom: 84px; }
+  .fuzz-dock { right: 8px; bottom: 8px; }
   .tasktable, .tasktable tbody, .tasktable tr, .tasktable td { display: block; width: 100%; }
   .tasktable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .tasktable tr { padding: 10px 6px; border-top: 1px solid var(--line); }
@@ -446,5 +420,4 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 }
 @media (prefers-reduced-motion: reduce) {
   body, .progress-bar { transition: none; }
-  .toast { animation: none; }
 }

@@ -10,7 +10,7 @@
   var ciOpen = false, ciBusy = false, checkedIn = false, ciTimer = 0, ciSecs = 300;
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, tab = null, keptStale = {}, edits = {}, greeted = false;
-  var docClick = null;
+  var docClick = null, unsubUndo = null;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -55,6 +55,8 @@
     Fuzz.mount(root, { isBusy: function () { return busy; } });
     wire();
     unsub = Store.on(onStore);
+    Say.setBusyCheck(function () { return busy || ciOpen; });
+    unsubUndo = Say.onUndoChange(paintUndo); paintUndo();
     ambientTimer = setInterval(ambient, 45000);
     V.tickTimer = setInterval(function () { var t = cur(); if (t && t.dueAt && card.style.display !== 'none' && !ciOpen) paintDue(t); }, 1000);
     if (!greeted) { greeted = true; greet(); } else { Fuzz.say('Back to the queue.', { type: false }); }
@@ -65,6 +67,7 @@
     alive = false; epoch++;
     clearTimeout(rushTimer); clearInterval(ciTimer); clearInterval(ambientTimer); clearInterval(V.tickTimer);
     if (unsub) unsub(); unsub = null;
+    if (unsubUndo) unsubUndo(); unsubUndo = null; Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
     Fuzz.unmount(); root = null;
   };
@@ -130,6 +133,7 @@
         '<div class="stats" aria-label="Queue status">' +
           '<span class="stat" id="st-wait"><b>0</b> waiting</span><span class="stat" id="st-peb"><b>0</b> with Fuzz</span>' +
           '<span class="stat" id="st-claude"><b>0</b> in Claude</span><span class="stat" id="st-later"><b>0</b> later</span><span class="stat" id="st-done"><b>0</b> done</span></div>' +
+        '<button type="button" class="undo-pill" id="undobtn" hidden></button>' +
       '</div>' +
       '<section class="stage" id="stage">' +
         '<div class="fx" id="fx"></div>' +
@@ -155,6 +159,11 @@
         '<p class="note">Tap Fuzz for a boop, tug an antenna, or twist a knob. Calm mode (in Settings) removes flashes and gags.</p>' +
       '</div></details>' +
     '</section>';
+  }
+
+  function paintUndo() {
+    var b = root && $('#undobtn'); if (!b) return;
+    var u = Say.lastUndo(); b.hidden = !u; if (u) b.textContent = 'Undo: ' + u.label;
   }
 
   /* ---------- Stats, stack ---------- */
@@ -481,7 +490,7 @@
         Store.queue().forEach(function (it) { Store.schedule(it.id, '', 'tomorrow morning'); });
         stats(); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Done. They’ll be waiting for you tomorrow morning.', { type: false });
         Fuzz.schedGlyph('sun', 'TOMORROW 8AM');
-        UI.toast('Held the rest until tomorrow.', { undo: function () { Store.restore(snap); V.refresh(); } });
+        Say.offerUndo('Held the rest until tomorrow.', function () { Store.restore(snap); V.refresh(); });
         await sleep(1500);
         Fuzz.clearSched();
         $('#checkin').hidden = true; ciOpen = false; ciBusy = false; lock(busy);
@@ -557,7 +566,7 @@
     await sleep(rush ? 800 : 1300);
     Fuzz.setMood('happy');
     Fuzz.say(waited ? 'That’s my fifth. This one is next up the moment I’ve got a free hand.' : V_.outL[r]); Fuzz.pAnim('hop');
-    UI.toast(waited ? '“' + title + '” is next up. Five are running.' : 'Assigned “' + title + '” to Fuzz.', { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo(waited ? '“' + title + '” is next up. Five are running.' : 'Assigned “' + title + '” to Fuzz.', function () { Store.restore(snap); V.refresh(); });
     await sleep(1000);
     Fuzz.setMood('idle');
     await showNext();
@@ -591,7 +600,7 @@
     else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(8px) scale(.97)', offset: 0.2 }, { transform: 'translateY(320px) scale(.55) rotate(6deg)', opacity: 0 }], { duration: 560, easing: 'cubic-bezier(.5,0,.9,.6)' });
     st.className = 'stamp'; st.textContent = 'DONE';
     Fuzz.setMood('idle');
-    UI.toast('Marked “' + it.title + '” done.', { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo('Marked “' + it.title + '” done.', function () { Store.restore(snap); V.refresh(); });
     if (streak >= 3) Fuzz.say('Three in a row. Sunglasses are earned.');
     await showNext();
   }
@@ -606,7 +615,7 @@
     if (Fuzz.isCalm()) await fadeOut();
     else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 620, easing: 'cubic-bezier(.5,0,.8,.4)' });
     stats();
-    UI.toast('Opened “' + it.title + '” in Claude. In this demo it just moves to Current.', { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo('Opened “' + it.title + '” in Claude. In this demo it just moves to Current.', function () { Store.restore(snap); V.refresh(); });
     Fuzz.say('It’s fine. I’m not jealous. I’ll watch the queue.', { type: false });
     await sleep(2300);
     Fuzz.setMood('idle');
@@ -639,7 +648,7 @@
     await sleep(500);
     await fly(card, $('#st-later'), { scale: 0.06, rot: 8, dur: 680 });
     stats(); Fuzz.pAnim('hop');
-    UI.toast('Scheduled “' + it.title + '” for ' + w.text + '.', { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo('Scheduled “' + it.title + '” for ' + w.text + '.', function () { Store.restore(snap); V.refresh(); });
     await sleep(700);
     Fuzz.setMood('idle');
     await showNext();
@@ -656,7 +665,7 @@
     if (Fuzz.isCalm()) await fadeOut();
     else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateX(-110%) rotate(-8deg)', opacity: 0 }], { duration: 320, easing: 'ease-in' });
     stats();
-    UI.toast(message, { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo(message, function () { Store.restore(snap); V.refresh(); });
     await sleep(500);
     Fuzz.setMood('idle');
     await showNext();
@@ -676,7 +685,7 @@
     if (Fuzz.isCalm()) await fadeOut();
     else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px) scale(.96)', opacity: 0 }], { duration: 300, easing: 'ease-in' });
     stats();
-    UI.toast(msg, { undo: function () { Store.restore(snap); V.refresh(); } });
+    Say.offerUndo(msg, function () { Store.restore(snap); V.refresh(); });
     await sleep(600);
     Fuzz.setMood('idle');
     await showNext();
@@ -748,6 +757,7 @@
       if (e.key === 'Escape') { var mm = $('#moremenu'); if (mm && !mm.hidden) { mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } } }
     });
 
+    $('#undobtn').addEventListener('click', function () { var u = Say.lastUndo(); if (u) u.run(); });
     $('#dropbtn').addEventListener('click', function () {
       moment(function () { return quickClear('Dropped. Undo if that was a slip.', function (i) { if (i.kind === 'task') Store.drop(i.id); else Store.resolve(i.id, 'dismissed'); }, 'Dropped. One less thing.', 'idle'); });
     });
@@ -759,7 +769,6 @@
       e.preventDefault();
       var inp = $('#parktext'), v = inp.value.trim(); if (!v) return;
       Store.parkThought(v); inp.value = ''; $('#parkform').hidden = true; $('#parkbtn').setAttribute('aria-expanded', 'false');
-      UI.toast('Parked. Your card is right where you left it.');
       if (!busy) { Fuzz.pAnim('hop'); Fuzz.say('Parked. Back to what you were doing.', { type: false }); }
       $('#parkbtn').focus();
     });

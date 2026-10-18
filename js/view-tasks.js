@@ -3,7 +3,7 @@
 (function () {
   var V = {};
   var esc = UI.esc;
-  var root, tab = 'current', openId = null, dlg = null, unsub = null, timer = 0, toastMsg = '';
+  var root, tab = 'current', openId = null, dlg = null, unsub = null, timer = 0;
 
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, open with you in Claude, or coming back later. Fuzz runs up to five at once.' },
@@ -48,16 +48,16 @@
       '<div class="tasks-head"><h1 id="tasks-h">All tasks</h1>' +
         '<div class="fuzz-strip" id="strip"></div></div>' +
       '<div role="tablist" aria-label="Task lists" class="tablist" id="tablist"></div>' +
-      '<div class="tab-blurb"><p id="blurb"></p><span class="msg" id="msg" role="status"></span></div>' +
+      '<div class="tab-blurb"><p id="blurb"></p></div>' +
       '<div class="tablewrap" id="panel" role="tabpanel" tabindex="-1"></div></section>';
     root.querySelector('#tablist').addEventListener('click', function (e) {
       var b = e.target.closest('[role="tab"]'); if (!b) return;
-      tab = b.dataset.tab; toastMsg = ''; render();
+      tab = b.dataset.tab; render();
     });
     root.querySelector('#tablist').addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
       var i = ORDER.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1);
-      tab = ORDER[(i + ORDER.length) % ORDER.length]; toastMsg = ''; render();
+      tab = ORDER[(i + ORDER.length) % ORDER.length]; render();
       root.querySelector('[data-tab="' + tab + '"]').focus();
     });
     root.querySelector('#panel').addEventListener('click', function (e) {
@@ -82,8 +82,6 @@
     }).join('');
     var T = TABS[tab], rows = rowsFor(tab);
     root.querySelector('#blurb').textContent = T.blurb;
-    root.querySelector('#msg').textContent = toastMsg;
-    root.querySelector('#msg').hidden = !toastMsg;
     root.querySelector('#panel').setAttribute('aria-labelledby', 'tab-' + tab);
     var html = '<table class="tasktable"><thead><tr><th scope="col">Task</th><th scope="col">' + T.cols[0] + '</th><th scope="col">' + T.cols[1] + '</th><th scope="col">' + T.cols[2] + '</th><th scope="col" class="sr">Open</th></tr></thead><tbody>';
     rows.forEach(function (it) {
@@ -154,9 +152,9 @@
       var b = e.target.closest('[data-do]'); if (!b) return;
       var cur = Store.item(openId); var a = actionsFor(cur)[parseInt(b.dataset.do, 10)];
       if (!a) return;
-      var snap = Store.snapshot(); a.fn(); toastMsg = a.msg;
+      var snap = Store.snapshot(); a.fn();
       d.close();
-      UI.toast(a.msg, { undo: function () { Store.restore(snap); if (root) render(); } });
+      Say.tell(a.msg, { undo: function () { Store.restore(snap); if (root) render(); } });
       render();
     });
     renderDialog();

@@ -1,10 +1,10 @@
 /* Fuzz: the character engine (ported from the Fuzz Triage motion prototype) and the small
-   static Fuzz faces used as the logo and in chat. */
+   static Fuzz faces used as the logo and in the check-in and notices. */
 (function () {
   var F = {};
   var el = null, calm = false, sayTok = 0, workTok = 0, knobAng = 0, blinkTok = 0, ptrFn = null, opts = {};
 
-  /* ---------- Small Fuzz (logo, chat avatar, buttons) ---------- */
+  /* ---------- Small Fuzz (logo, notices, check-in buttons) ---------- */
   var FACES = {
     good: '<path d="M20 34Q23.5 27.5 27 34M31 34Q34.5 27.5 38 34" stroke="var(--glow)" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M24 40Q28.5 45.5 33 40" stroke="var(--glow)" stroke-width="2.4" stroke-linecap="round" fill="none"/><circle cx="17" cy="40" r="2.6" fill="#FF8A5C" opacity=".35"/><circle cx="40" cy="40" r="2.6" fill="#FF8A5C" opacity=".35"/>',
     okay: '<rect x="21" y="27" width="5.2" height="9" rx="2.6" fill="var(--glow)"/><rect x="32" y="27" width="5.2" height="9" rx="2.6" fill="var(--glow)"/><path d="M24.5 42.5H33.5" stroke="var(--glow)" stroke-width="2.4" stroke-linecap="round"/>',

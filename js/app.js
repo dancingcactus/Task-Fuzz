@@ -24,7 +24,7 @@
     },
     navigate: function (hash) { location.hash = hash; },
     refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
-    resetDemo: function () { Store.reset(); TriageView.hardReset(); route(true); UI.toast('Demo data is back to the start.'); }
+    resetDemo: function () { Store.reset(); TriageView.hardReset(); route(true); Say.tell('Demo data is back to the start.'); }
   };
   window.App = App;
 
@@ -88,6 +88,7 @@
     var main = document.getElementById('view');
     main.innerHTML = '';
     main.className = 'view view--' + name;
+    if (name === 'triage') Say.hideDock(); /* Fuzz speaks from the perch there */
     currentName = name; current = ROUTES[name].view;
     current.mount(main);
     document.title = ROUTES[name].title + ' · Fuzz';
@@ -103,9 +104,9 @@
   /* ---------- Notifications from Fuzz's background work ---------- */
   Store.on(function (e) {
     if (e.type === 'review') {
-      UI.toast('Draft ready: “' + e.item.title + '”. Nothing sends until you approve it.', { action: { label: 'Review', run: function () { App.navigate('#/tasks'); } }, ms: 9000 });
+      Say.tell('Draft ready: “' + e.item.title + '”. Nothing sends until you approve it.', { action: { label: 'Review', run: function () { App.navigate('#/tasks'); } }, ms: 9000 });
     } else if (e.type === 'handback' && currentName !== 'triage') {
-      UI.toast('Fuzz handed back “' + e.item.title + '”. It’s at the end of your queue.', { action: { label: 'Go to triage', run: function () { App.navigate('#/triage'); } }, ms: 9000 });
+      Say.tell('Fuzz handed back “' + e.item.title + '”. It’s at the end of your queue.', { action: { label: 'Go to triage', run: function () { App.navigate('#/triage'); } }, ms: 9000 });
     }
     updateCount();
   });
@@ -128,7 +129,6 @@
   Store.reset();
   Store.startWork();
   buildHeader();
-  Chat.mount(document.getElementById('chat-root'));
   window.addEventListener('hashchange', function () { route(false); });
   setInterval(updateCount, 1000);
   updateCount();
