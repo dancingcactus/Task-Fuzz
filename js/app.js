@@ -1,0 +1,136 @@
+/* App shell: hash router, header, theme and settings popover, global notifications. */
+(function () {
+  var esc = UI.esc;
+  var ROUTES = {
+    triage: { view: window.TriageView, title: 'Triage' },
+    tasks: { view: window.TasksView, title: 'All tasks' },
+    capture: { view: window.CaptureView, title: 'New task' }
+  };
+  var PREF_KEY = 'fuzz.prefs.v1';
+  var prefs = { theme: 'terracotta', mode: 'auto', calm: false };
+  var current = null, currentName = null;
+
+  function load() {
+    try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) prefs = Object.assign(prefs, p); } catch (e) { /* storage can be blocked */ }
+    if (!Themes.list.some(function (t) { return t.id === prefs.theme; })) prefs.theme = 'terracotta';
+  }
+  function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
+
+  var App = {
+    setTheme: function (id) { prefs.theme = id; Themes.apply(prefs.theme, prefs.mode); save(); paintPopover(); },
+    setMode: function (m) { prefs.mode = m; Themes.apply(prefs.theme, prefs.mode); save(); paintPopover(); },
+    setCalm: function (v) {
+      prefs.calm = !!v; Fuzz.setCalm(prefs.calm); save(); paintPopover();
+    },
+    navigate: function (hash) { location.hash = hash; },
+    refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
+    resetDemo: function () { Store.reset(); TriageView.hardReset(); route(true); UI.toast('Demo data is back to the start.'); }
+  };
+  window.App = App;
+
+  /* ---------- Header ---------- */
+  function buildHeader() {
+    var h = document.getElementById('appbar');
+    h.innerHTML =
+      '<a class="brand" href="#/triage" aria-label="Fuzz, go to triage">' + Fuzz.mini('good', { cls: 'brand-av' }) + '<span class="brand-name">Fuzz</span></a>' +
+      '<nav class="mainnav" aria-label="Main">' +
+        '<a href="#/triage" data-nav="triage">Triage<span class="navcount" id="navcount" aria-label="waiting"></span></a>' +
+        '<a href="#/tasks" data-nav="tasks">All tasks</a>' +
+        '<a href="#/capture" data-nav="capture" class="nav-cta" title="New task (N)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>' +
+      '</nav>' +
+      '<div class="appbar-right"><button type="button" class="themebtn" id="themebtn" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><span class="swatches" id="swatches" aria-hidden="true"></span>Theme</button>' +
+        '<div class="themepop" id="themepop" role="dialog" aria-label="Theme and settings" hidden></div></div>';
+    document.getElementById('themebtn').addEventListener('click', function () { togglePopover(); });
+    document.addEventListener('click', function (e) {
+      var pop = document.getElementById('themepop');
+      if (!pop.hidden && !e.target.closest('#themepop') && !e.target.closest('#themebtn')) togglePopover(false);
+    });
+    document.getElementById('themepop').addEventListener('keydown', function (e) { if (e.key === 'Escape') { togglePopover(false); document.getElementById('themebtn').focus(); } });
+    document.getElementById('themepop').addEventListener('click', function (e) {
+      e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
+      var t = e.target.closest('[data-theme-id],[data-mode],[data-reset],[data-calm]'); if (!t) return;
+      if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
+      else if (t.dataset.mode) App.setMode(t.dataset.mode);
+      else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
+    });
+    document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); });
+    paintPopover();
+  }
+  function togglePopover(force) {
+    var pop = document.getElementById('themepop'), btn = document.getElementById('themebtn');
+    var show = force === undefined ? pop.hidden : force;
+    pop.hidden = !show; btn.setAttribute('aria-expanded', String(show));
+    if (show) { var first = pop.querySelector('[aria-pressed="true"]'); if (first) first.focus(); }
+  }
+  function paintPopover() {
+    var pop = document.getElementById('themepop'); if (!pop) return;
+    var mode = Themes.resolveMode(prefs.mode);
+    var focused = document.activeElement && pop.contains(document.activeElement) ? document.activeElement.getAttribute('data-theme-id') || document.activeElement.getAttribute('data-mode') : null;
+    pop.innerHTML =
+      '<h2>Palette</h2><div class="palettes" role="group" aria-label="Palette">' + Themes.list.map(function (t) {
+        var p = t[mode], on = t.id === prefs.theme;
+        return '<button type="button" class="pal" data-theme-id="' + t.id + '" aria-pressed="' + on + '" title="' + esc(t.full) + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.sec + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.full) + '</span></button>';
+      }).join('') + '</div>' +
+      '<h2>Appearance</h2><div class="segrow" role="group" aria-label="Appearance">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']].map(function (m) { return '<button type="button" class="seg" data-mode="' + m[0] + '" aria-pressed="' + (prefs.mode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
+      '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
+      '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>';
+    var sw = document.getElementById('swatches'); var cur = Themes.byId(prefs.theme)[mode];
+    if (sw) sw.innerHTML = '<i style="background:' + cur.accent + '"></i><i style="background:' + cur.sec + '"></i>';
+    if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"]'); if (el) el.focus(); }
+  }
+
+  /* ---------- Router ---------- */
+  function route(force) {
+    var name = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'triage';
+    if (!ROUTES[name]) name = 'triage';
+    if (!force && name === currentName) return;
+    if (current) current.unmount();
+    var main = document.getElementById('view');
+    main.innerHTML = '';
+    main.className = 'view view--' + name;
+    currentName = name; current = ROUTES[name].view;
+    current.mount(main);
+    document.title = ROUTES[name].title + ' · Fuzz';
+    document.querySelectorAll('[data-nav]').forEach(function (a) { if (a.dataset.nav === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    if (!force) { var h1 = main.querySelector('h1'); if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); } window.scrollTo(0, 0); }
+  }
+
+  function updateCount() {
+    var n = Store.get().queue.length, el = document.getElementById('navcount');
+    if (el && el.textContent !== (n ? String(n) : '')) el.textContent = n ? String(n) : '';
+  }
+
+  /* ---------- Notifications from Fuzz's background work ---------- */
+  Store.on(function (e) {
+    if (e.type === 'review') {
+      UI.toast('Draft ready: “' + e.item.title + '”. Nothing sends until you approve it.', { action: { label: 'Review', run: function () { App.navigate('#/tasks'); } }, ms: 9000 });
+    } else if (e.type === 'handback' && currentName !== 'triage') {
+      UI.toast('Fuzz handed back “' + e.item.title + '”. It’s at the end of your queue.', { action: { label: 'Go to triage', run: function () { App.navigate('#/triage'); } }, ms: 9000 });
+    }
+    updateCount();
+  });
+
+  /* Capture costs nothing: one key, from anywhere that isn't a text field. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.tagName === 'SELECT')) return;
+    if (document.querySelector('dialog[open]')) return;
+    e.preventDefault(); App.navigate('#/capture');
+  });
+
+  /* ---------- Boot ---------- */
+  load();
+  Themes.apply(prefs.theme, prefs.mode);
+  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode); paintPopover(); } });
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  Fuzz.setCalm(prefs.calm || reduce);
+  if (reduce && !prefs.calm) prefs.calm = true;
+  Store.reset();
+  Store.startWork();
+  buildHeader();
+  Chat.mount(document.getElementById('chat-root'));
+  window.addEventListener('hashchange', function () { route(false); });
+  setInterval(updateCount, 1000);
+  updateCount();
+  route(true);
+})();

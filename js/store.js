@@ -1,0 +1,233 @@
+/* One in-memory store shared by Triage, All tasks, New task and the chat.
+   Principles it enforces:
+   - assigned work runs in the background, five at a time (6, 1)
+   - a handback is a normal state and goes to the end of the queue (2)
+   - every change writes a line to the task's "done so far" log (3)
+   - nothing is sent until the human approves the draft (6)
+   - every triage change can be undone (6, 11) */
+(function () {
+  var MAX_RUNNING = 5;
+  var STEP_MS = 6500;
+  var state, subs = [], timer = 0, captureN = 0;
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function clock() { return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function emit(evt) { subs.slice().forEach(function (fn) { fn(evt || { type: 'change' }); }); }
+
+  var S = {
+    MAX_RUNNING: MAX_RUNNING,
+    clock: clock,
+
+    reset: function () {
+      state = Demo.build();
+      state.moment = 'any';
+      state.maxOrder = state.items.length;
+      state.minOrder = 0;
+      captureN = 0;
+      S.sortQueue();
+      emit({ type: 'reset' });
+    },
+    get: function () { return state; },
+    on: function (fn) { subs.push(fn); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; },
+    emit: emit,
+
+    item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0]; },
+    inState: function () {
+      var want = Array.prototype.slice.call(arguments);
+      return state.items.filter(function (i) { return want.indexOf(i.state) > -1; });
+    },
+    queue: function () { return state.queue.map(S.item).filter(Boolean); },
+    front: function () { return S.item(state.queue[0]); },
+    running: function () { return S.inState('ai').length; },
+
+    stats: function () {
+      return {
+        waiting: state.queue.length,
+        withFuzz: S.inState('ai', 'ai-queued').length,
+        inClaude: S.inState('session').length,
+        later: S.inState('scheduled').length,
+        done: S.inState('done').length
+      };
+    },
+
+    snapshot: function () { return clone({ items: state.items, queue: state.queue, totalEver: state.totalEver, captured: state.captured, moment: state.moment, maxOrder: state.maxOrder, minOrder: state.minOrder }); },
+    restore: function (snap) {
+      var s = clone(snap);
+      Object.keys(s).forEach(function (k) { state[k] = s[k]; });
+      emit({ type: 'restore' });
+    },
+
+    log: function (item, kind, text) { item.log.unshift({ kind: kind, time: clock(), text: text }); },
+
+    /* ---- queue ---- */
+    sortQueue: function () {
+      var m = state.moment;
+      function fits(it) {
+        if (m === 'quick') return it.mins <= 5;
+        if (m === 'low') return it.energy === 'low';
+        return true;
+      }
+      state.queue.sort(function (a, b) {
+        var x = S.item(a), y = S.item(b);
+        var kx = [x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
+        return 0;
+      });
+    },
+    setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
+    toBack: function (id) { var it = S.item(id); it.order = ++state.maxOrder; S.sortQueue(); },
+    enqueue: function (it, where) {
+      it.state = 'triage';
+      it.order = where === 'front' ? --state.minOrder : ++state.maxOrder;
+      if (state.queue.indexOf(it.id) < 0) { state.queue.push(it.id); state.totalEver++; }
+      S.sortQueue();
+    },
+    leave: function (id) { state.queue = state.queue.filter(function (q) { return q !== id; }); },
+
+    /* ---- decisions from triage ---- */
+    assign: function (id, instructions) {
+      var it = S.item(id);
+      S.leave(id);
+      if (instructions && instructions.trim() && instructions.trim() !== (it.hint || '').trim()) {
+        S.log(it, 'guidance', 'You said: ' + instructions.trim());
+      }
+      it.instr = instructions;
+      it.handedBack = false; it.askBack = null;
+      it.workStep = 0; it.nextAt = Date.now() + 4500;
+      it.stage = 'fresh';
+      var wait = S.running() >= MAX_RUNNING;
+      it.state = wait ? 'ai-queued' : 'ai';
+      it.queuedAt = Date.now();
+      S.log(it, 'status', wait ? 'You assigned this to Fuzz. Five tasks are already running, so it is next up.' : 'You assigned this to Fuzz.');
+      return wait;
+    },
+    done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
+    session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
+    schedule: function (id, label, when) { var it = S.item(id); S.leave(id); it.state = 'scheduled'; it.scheduledFor = when; it.now = 'Back ' + when; S.log(it, 'status', 'You scheduled this for ' + when + '.'); },
+    park: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You parked this from triage.'); },
+    wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
+    letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); },
+    drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); },
+    resolve: function (id, which) {
+      var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
+      if (it.kind === 'dup' && which === 'primary') {
+        var t = S.item(it.dupOf);
+        if (t) { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
+      }
+    },
+
+    /* ---- movement between lists ---- */
+    bringBack: function (id, where) { var it = S.item(id); S.log(it, 'status', where === 'front' ? 'Pulled back into triage.' : 'Moved back into triage, at the end of the queue.'); it.handedBack = false; S.enqueue(it, where); },
+    handToFuzz: function (id) {
+      var it = S.item(id);
+      it.workStep = 0; it.nextAt = Date.now() + 4500; it.instr = it.instr || it.hint || '';
+      it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
+      S.log(it, 'status', 'You handed this to Fuzz.');
+    },
+    approve: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK'; S.log(it, 'sent', 'Sent after you approved the draft.'); },
+    markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
+    replied: function (id) { var it = S.item(id); S.log(it, 'status', 'A reply came in. Back in triage with the reply attached.'); it.updated = true; S.enqueue(it, 'front'); },
+    nudgeSent: function (id) { var it = S.item(id); it.nextCheck = 'Nudge sent, checking tomorrow'; it.nudge = false; S.log(it, 'sent', 'Sent the follow-up nudge after you approved it.'); },
+    reopen: function (id) { var it = S.item(id); S.log(it, 'status', 'You brought this back.'); S.enqueue(it, 'front'); },
+
+    /* ---- capture ---- */
+    capture: function (text, docs) {
+      docs = docs || [];
+      var t = (text || '').trim();
+      var title = t || docs[0];
+      var id = 'cap' + (++captureN);
+      var it = {
+        id: id, kind: 'task', state: 'triage', title: title, source: 'Captured by you', who: 'You',
+        age: 'Just now', stage: 'fresh', mins: 5, energy: 'normal', capturedAt: Date.now(), isNew: true,
+        incoming: docs.length ? 'You captured this with ' + docs.length + (docs.length === 1 ? ' document' : ' documents') + ' attached. Fuzz is reading ' + (docs.length === 1 ? 'it' : 'them') + ' with your note.' : 'You captured this a moment ago. Nothing else is known yet.',
+        ask: 'Want Fuzz to start on this?',
+        hint: 'Look into: ' + title + '. Gather what you need and show me what you found before doing anything.',
+        aiHeading: 'What Fuzz did', aiNote: 'I tidied your note and suggested instructions. Edit anything.',
+        firstStep: 'Write one sentence about what “done” looks like.',
+        log: [], sources: docs.map(function (d) { return { type: 'Doc', title: d }; }), context: [], conversation: []
+      };
+      state.items.push(it);
+      S.log(it, 'status', 'You captured this task.');
+      S.enqueue(it, 'back');
+      state.captured.unshift({ text: title, ref: id, doc: !t && docs.length > 0, time: 'Just now' });
+      emit({ type: 'capture', item: it });
+      return it;
+    },
+    parkThought: function (text) {
+      var id = 'thought' + (++captureN);
+      var it = {
+        id: id, kind: 'task', state: 'parked', title: text.trim(), source: 'Parked thought', who: 'You', age: 'Just now', stage: 'fresh', parkedAgo: 'Just now', now: '', mins: 5, energy: 'normal', order: ++state.maxOrder,
+        incoming: 'A stray thought you parked without leaving what you were doing.', aiNote: 'Parked with no date. Fuzz will only speak up if something new comes in about it.',
+        log: [], sources: [], context: [], conversation: []
+      };
+      S.log(it, 'status', 'You parked this thought.');
+      state.items.push(it);
+      emit({ type: 'park', item: it });
+      return it;
+    },
+
+    /* ---- Fuzz working in the background ---- */
+    startWork: function () { if (!timer) timer = setInterval(tick, 1000); },
+    nowText: function (it) {
+      if (it.state === 'ai-queued') return 'Next up, waiting for a free slot';
+      if (it.state === 'ai') { var l = it.log[0]; return l && l.kind !== 'status' ? l.text : (it.now || 'Getting started'); }
+      return it.now || '';
+    }
+  };
+
+  function generic(it) {
+    return {
+      steps: [
+        ['research', ['Email', 'Slack', 'Meeting'].indexOf(it.source) > -1 ? 'Read the original ' + (it.source === 'Meeting' ? 'meeting notes' : it.source === 'Email' ? 'email' : 'Slack thread') + ' and your instructions.' : 'Read your note and your instructions.'],
+        ['research', 'Looked for related tasks, people and documents.' + (it.sources[0] ? ' Opened “' + it.sources[0].title + '”.' : '')],
+        ['action', 'Drafted the next step from your instructions.']
+      ],
+      ending: { type: 'review' }
+    };
+  }
+
+  function finish(it, end) {
+    end = end || { type: 'review' };
+    if (end.type === 'handback') {
+      it.askBack = end.ask; it.quick = end.quick || null; it.handedBack = true;
+      it.meta = (it.source || 'Task') + ' · handed back just now';
+      S.log(it, 'blocked', end.log || 'Could not go further without you.');
+      S.log(it, 'status', 'Handed back to you. It joined the end of your queue.');
+      S.enqueue(it, 'back');
+      emit({ type: 'handback', item: it });
+    } else {
+      it.state = 'review'; it.now = 'Draft ready to review';
+      if (!it.draft) it.draft = 'Draft for “' + it.title + '”, based on your instructions: ' + (it.instr || it.hint || '') ;
+      S.log(it, 'action', 'The draft is ready. Nothing is sent until you approve it.');
+      emit({ type: 'review', item: it });
+    }
+  }
+
+  function tick() {
+    if (!state) return;
+    var t = Date.now(), moved = false;
+    state.items.forEach(function (it) {
+      if (it.state !== 'ai' || t < (it.nextAt || 0)) return;
+      var sc = it.script || generic(it);
+      var step = sc.steps[it.workStep || 0];
+      if (step) {
+        S.log(it, step[0], step[1]);
+        it.workStep = (it.workStep || 0) + 1;
+        it.nextAt = t + STEP_MS + Math.random() * 2500;
+        moved = true;
+      } else {
+        finish(it, sc.ending);
+        moved = true;
+      }
+    });
+    state.items.filter(function (i) { return i.state === 'ai-queued'; })
+      .sort(function (a, b) { return a.queuedAt - b.queuedAt; })
+      .forEach(function (it) {
+        if (S.running() < MAX_RUNNING) { it.state = 'ai'; it.nextAt = t + 4000; S.log(it, 'status', 'A slot opened up, so Fuzz started on this.'); moved = true; }
+      });
+    if (moved) emit({ type: 'work' });
+  }
+
+  window.Store = S;
+})();
