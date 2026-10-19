@@ -1,0 +1,3 @@
+# Optional: vector similarity in SQL. Without it, cosine runs in Python with the same results.
+# Pinned because sqlite-vec is pre-1.0. Keep in step with vectors.SQLITE_VEC_PIN.
+sqlite-vec==0.1.6
