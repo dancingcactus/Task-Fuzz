@@ -69,7 +69,7 @@ Fuzz also works in the background: tasks you assign move through research and dr
 | 8 | Capture costs nothing | New task is one field, one key (N), no categories. |
 | 9 | Lower the cost of starting | "Smallest first step, two minutes" on each task card |
 | 10 | Time is human | Schedule uses "when I'm back at my desk", "before the planning review" and so on, with exact time as the fallback. Age is a three-segment cue, not a date |
-| 11 | No shame spirals | No red overdue counts (past-due says "past its time"), stale cards ask rather than pile up, Parked never nags |
+| 11 | No shame spirals | No red overdue counts (past-due says "past its time"), a progress bar that only grows (cleared cards become ticks that fold into a counted block, new cards only add segments, and it counts what's cleared, not what's left), stale cards ask rather than pile up, Parked never nags |
 | 12 | Easy re-entry | "Where you left off" recap on returning cards, and **Park a stray thought** without leaving the card |
 | 13 | One thing at a time | One card, with instructions and actions pinned at the top and Fuzz's suggestion pre-filled |
 | 14 | Work alongside | Fuzz works visibly in the background, with a light status line now and then (never nagging) |
@@ -100,6 +100,7 @@ js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, All tasks, New task
 js/notify.js        Fuzz speaks: notices and Undo (no toasts)
+js/progress.js      the segmented triage progress bar
 js/app.js           router, header, theme popover
 assets/             Fuzz logo files
 ```

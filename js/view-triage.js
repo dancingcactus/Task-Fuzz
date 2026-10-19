@@ -157,10 +157,10 @@
   /* ---------- Stats, stack ---------- */
   function stats() {
     if (!root) return;
-    var st = Store.get(), total = Math.max(st.totalEver, 1), left = st.queue.length, pct = Math.round(((total - left) / total) * 100);
-    document.getElementById('pbar').style.width = pct + '%';
-    document.getElementById('prog').setAttribute('aria-valuenow', String(pct));
-    document.getElementById('left').textContent = left === 0 ? 'All done' : left + ' left';
+    var st = Store.get(), left = st.queue.length, cleared = Math.max(st.totalEver - left, 0);
+    Progress.render(cleared, cleared + left);
+    /* count what's cleared, never what's left */
+    document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
     root.querySelectorAll('[data-moment]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.moment === st.moment)); });
   }
   function updateStack(arriveLast) {
@@ -630,7 +630,7 @@
     await sleep(1500);
     Fuzz.clearSched();
     await sleep(500);
-    await fly(card, document.getElementById('prog'), { scale: 0.06, rot: 8, dur: 680 });
+    await fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 680 });
     stats(); Fuzz.pAnim('hop');
     Say.offerUndo('Scheduled “' + it.title + '” for ' + w.text + '.', function () { Store.restore(snap); V.refresh(); });
     await sleep(700);
