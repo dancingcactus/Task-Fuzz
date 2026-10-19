@@ -173,9 +173,21 @@ html.calm .fzmini .fz-a1, html.calm .fzmini .fz-a2, html.calm .fzmini .fz-dot { 
 .triage-top { display: flex; flex-direction: column; gap: 10px; }
 .hprog { grid-column: 2; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .hprog[hidden] { display: none; }
-.progress { flex: 1; height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.progress-bar { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .5s cubic-bezier(.3,1.2,.5,1); }
-.left { flex: none; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Segmented progress (js/progress.js): open segments, ticks for cleared cards, a bank block for folded ticks, ghosts for "more". */
+.pgbar { --pg-bank: color-mix(in srgb, var(--accent) 50%, var(--ink)); flex: 1; min-width: 0; position: relative; }
+.pg-row { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px; margin: 0 -4px; overflow: hidden; }
+.pg-seg { flex: none; box-sizing: border-box; width: 26px; height: 14px; border-radius: 4px; border: var(--bw2) solid var(--muted); background: var(--chip);
+  transition: width .35s cubic-bezier(.2,.8,.2,1), background-color .25s, border-color .25s; }
+.pg-row.notrans .pg-seg { transition: none; }
+.pg-seg.is-tick { width: 8px; background: var(--accent); border-color: var(--accent); }
+.pg-seg.is-ghost { border-style: dashed; background: transparent; }
+.pg-seg.is-bank { background: var(--pg-bank); border-color: var(--pg-bank); color: var(--bg); display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.pg-fx { position: absolute; inset: 0; pointer-events: none; }
+.pg-fly { position: absolute; border-radius: 3px; background: var(--accent); }
+.pg-plus { position: absolute; top: -13px; text-align: center; font-size: 12px; font-weight: 600; color: var(--pg-bank); white-space: nowrap; }
+html.calm .pg-seg { transition: none; }
+.left { flex: none; width: 4.6em; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .moment { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .moment-l { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
 .moment .seg { min-height: 36px; padding: 0 12px; font-size: 13px; }
@@ -445,7 +457,7 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
   .task-title { font-size: 21px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  body, .progress-bar { transition: none; }
+  body, .pg-seg { transition: none; }
 }
 
 /* ---------- Buttons, per the Warm Theme System ---------- */
@@ -455,7 +467,7 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 .linkbtn, .droplink { text-decoration: underline; text-underline-offset: 3px; }
 html[data-contrast="high"] a:not([class]) { text-decoration: underline; text-underline-offset: 3px; }
 html[data-contrast="high"] .rt { text-decoration-color: var(--ink); }
-html[data-contrast="high"] .progress, html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
+html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
 
 /* ---------- Code preview ---------- */
 .code { margin: 0; border-radius: 14px; overflow: hidden; border: var(--bw) solid var(--code-line); background: var(--code-bg); font-family: var(--font-code); }
