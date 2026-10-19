@@ -19,7 +19,8 @@ appearance and calm-mode choices are saved (in `localStorage`). **Settings > Res
 | **All tasks** | Triage Queue Mockup | Current, Parked, Waiting on others, Done and Let go. Open any row for the full "done so far" log, sources, drafts and actions |
 | **New task** | Triage Queue Mockup | Type or dictate (simulated), attach files (names only), Ctrl/Cmd+Enter. Press **N** anywhere to jump here |
 | **Fuzz speaks** | Fuzz Triage | Everything the app tells you comes from Fuzz, never a toast: from the perch on Triage, from a small Fuzz bottom right on other pages |
-| **Theme** | Warm Palette Explorations | All eight palettes, each in light and dark, plus Match system |
+| **Theme** | Warm Theme System | Eight themes (Terracotta, Honey, Moss, Lagoon, Indigo, Plum, Espresso, Warm gray), Light / Dark / Match system, Standard or High contrast, and a code font |
+| **Code preview** | Warm Theme System (code style) | When Fuzz shows his work, code appears on the card's **Code** tab and in the task detail on All tasks. Try the dashboard filter bug (TypeScript, highlighted line), the dashboard spike (diff) and the feedback summary (JSON) |
 
 Fuzz appears three ways: the full animated robot on the Triage perch, a small themed face used as the logo,
 "how are you" icons and notices, and static SVG files in `assets/` (`fuzz-mark.svg`, `fuzz-logo.svg`,
@@ -27,6 +28,18 @@ Fuzz appears three ways: the full animated robot on the Triage perch, a small th
 
 The **Fuzz mood lab** (collapsed, under the Triage card) plays every mood, deadline level and reaction on demand,
 which is the quickest way to review the motion.
+
+## Theme system
+
+Colours and fonts come from the **Warm Theme System** artifact (`js/themes.js`):
+
+- **Foundation:** warm surfaces, text and status colours (done, waiting, blocked, always with an icon) shared by every theme.
+- **Themes:** each supplies only an accent, an on-accent and a link colour, for light, dark and both high-contrast variants.
+- **High contrast:** works with every theme. 2px borders, underlined links, an ink edge on primary buttons, and deeper or lighter colours.
+- **Type:** Nunito ExtraBold (800) for titles and headings, Nunito Sans (400 and 600) for everything else.
+- **Code preview** (`js/code.js`): 13px / 20px with line numbers, an accent-marked highlighted line, diffs with + and − signs as well as a tint, sideways scrolling for long lines, and a 44px Copy button that says Copied. Syntax colours are the same in every theme. The code font (JetBrains Mono by default, or DM Mono, Source Code Pro, Fira Code, IBM Plex Mono) is chosen in Theme settings and only that font is loaded. For diffs, Copy gives the new version (context and added lines).
+
+To give a task code, add `code: [{ lang: 'ts' | 'js' | 'json' | 'diff', base, file, code, highlight, note }]` in `js/data.js`. Backticks in notes and log lines become inline code.
 
 ## Cards in the queue
 
@@ -79,7 +92,8 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 index.html          shell
 css/fuzz.css        Fuzz, card stack, stamps, check-in (ported from the Fuzz Triage prototype)
 css/app.css         everything else, driven by theme tokens
-js/themes.js        the eight palettes, light and dark
+js/themes.js        the Warm Theme System: foundation, eight themes, high contrast, code colours and fonts
+js/code.js          code preview
 js/data.js          demo tasks (all invented)
 js/store.js         shared state, undo snapshots, the background work loop
 js/fuzz-svg.js      the full robot (generated from the prototype)
@@ -90,5 +104,5 @@ js/app.js           router, header, theme popover
 assets/             Fuzz logo files
 ```
 
-To change a palette, edit `js/themes.js`. To change what Fuzz says or does on a moment, edit the lists near
+To change a theme, edit `js/themes.js`. To change what Fuzz says or does on a moment, edit the lists near
 `ASSIGNS`, `DONES` and `CI_REPLY` in `js/view-triage.js`. To change the demo data, edit `js/data.js`.

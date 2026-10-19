@@ -3,6 +3,36 @@
 (function () {
   function L(kind, time, text) { return { kind: kind, time: time, text: text }; }
 
+  /* Code Fuzz found or wrote while working, shown in the code preview. */
+  var CODE = {
+ "owner": [
+  {
+   "lang": "ts",
+   "file": "src/dashboard/filters.ts",
+   "highlight": 9,
+   "note": "`onRefresh()` replaces the saved filters with the defaults, which is why they reset. Ines wrote `loadFilters()`; Tomas last changed `onRefresh()`.",
+   "code": "// Restore saved filters after a refresh\nexport function loadFilters(userId: string): Filters {\n  const saved = storage.get(\"filters:\" + userId);\n  if (!saved) return defaultFilters();\n  return { ...defaultFilters(), ...JSON.parse(saved) };\n}\n\nexport function onRefresh(state: DashboardState) {\n  state.filters = defaultFilters(); // resets saved filters\n  render(state);\n}"
+  }
+ ],
+ "spike": [
+  {
+   "lang": "diff",
+   "base": "ts",
+   "file": "track.ts",
+   "note": "The tracking deploy at 8:02 AM sends `page_view` twice. Skipping events already sent would stop the double count.",
+   "code": " export function track(event: TrackEvent) {\n-  analytics.send(event.name, event.props);\n+  if (seen.has(event.id)) return;\n+  seen.add(event.id);\n+  analytics.send(event.name, event.props);\n }"
+  }
+ ],
+ "feedback": [
+  {
+   "lang": "json",
+   "file": "themes.json",
+   "note": "Each theme keeps a link to every quote so you can check them.",
+   "code": "{\n  \"themes\": [\n    { \"name\": \"Large tables load slowly\", \"quotes\": 14 },\n    { \"name\": \"Scheduled exports are confusing\", \"quotes\": 9 },\n    { \"name\": \"Customers want shareable views\", \"quotes\": 7 }\n  ],\n  \"unsorted\": 17\n}"
+  }
+ ]
+};
+
   function build() {
     var now = Date.now();
     var items = [
@@ -91,7 +121,7 @@
         incoming: 'Two people reported that saved filters reset after a refresh, and nobody has said who is picking it up.',
         ask: 'Should this go to the team lead or to the last contributor?',
         hint: 'Ask the last contributor if they can take it, and tag me if nobody answers by tomorrow.',
-        aiHeading: 'What Fuzz did', aiNote: 'I found the open ticket and the last three people who touched that component.',
+        aiHeading: 'What Fuzz did', aiNote: 'I found the open ticket and the code that resets the filters. `onRefresh()` replaces `state.filters` with the defaults. I also found the last three people who touched that component.',
         firstStep: 'Open the ticket and read who commented last.',
         log: [L('research', '11:05 AM', 'Found the open ticket and the last three people who touched the filter component.')],
         sources: [{ type: 'Ticket', title: 'Saved filters reset after refresh' }, { type: 'Slack', title: 'Thread in #dashboards' }],
@@ -191,7 +221,7 @@
       { id: 'spike', kind: 'task', state: 'ai', title: 'Look into the experiment dashboard spike', source: 'Parked thought', who: 'You', age: '10 minutes', stage: 'fresh', mins: 10,
         now: 'Checking this morning’s event logs',
         incoming: 'You parked a thought about a weird spike on the experiment dashboard this morning, and handed it to Fuzz.',
-        aiNote: 'Checking this morning’s event logs for a tracking change. It will only bother you if the spike is real.',
+        aiNote: 'Checking this morning’s event logs for a tracking change. I found one: `track()` sends `page_view` twice since the 8:02 AM deploy. It will only bother you if the spike is real.',
         log: [L('research', '3:15 PM', 'Found a deploy to the tracking library at 8:02 AM.'), L('research', '3:08 PM', 'Compared today’s traffic with the last four Saturdays.'), L('status', '3:05 PM', 'Assigned to Fuzz from your parked thoughts.')],
         sources: [{ type: 'Doc', title: 'Experiment dashboard' }, { type: 'Doc', title: 'Deploy log' }],
         script: { steps: [['research', 'Confirmed the spike lines up with the tracking deploy.']], ending: { type: 'review' } },
@@ -278,6 +308,7 @@
       it.log = it.log || [];
       it.sources = it.sources || [];
       it.context = it.context || [];
+      it.code = CODE[it.id] || [];
       it.conversation = it.conversation || [];
     });
 

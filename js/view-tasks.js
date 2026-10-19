@@ -23,11 +23,11 @@
   }
   function cells(it, key) {
     if (key === 'current') {
-      var m = { review: ['Needs your OK', 'accent'], ai: ['Fuzz working', 'sec'], 'ai-queued': ['Next up', 'muted'], session: ['In Claude', 'info'], scheduled: ['Scheduled', 'muted'] }[it.state];
+      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
       return { tone: m[1], c2: m[0], c3: it.age, c4: Store.nowText(it) || '—' };
     }
-    if (key === 'parked') return { tone: it.woke ? 'ok' : 'muted', c2: it.woke ? 'Woke up' : 'Parked', c3: it.parkedAgo || it.age, c4: it.now || '—' };
-    if (key === 'waiting') return { tone: 'info', c2: it.waitingOn || 'Someone', c3: it.waitedFor || it.age, c4: it.nextCheck || '—' };
+    if (key === 'parked') return { tone: it.woke ? 'accent' : 'muted', c2: it.woke ? 'Woke up' : 'Parked', c3: it.parkedAgo || it.age, c4: it.now || '—' };
+    if (key === 'waiting') return { tone: 'warn', c2: it.waitingOn || 'Someone', c3: it.waitedFor || it.age, c4: it.nextCheck || '—' };
     if (key === 'done') return { tone: 'ok', c2: 'Done', c3: it.doneAgo || '—', c4: it.now || '—' };
     return { tone: 'muted', c2: 'Let go', c3: it.doneAgo || '—', c4: it.now || '—' };
   }
@@ -132,8 +132,9 @@
     var h = '<div class="dlg-top"><div class="dlg-titles"><div class="dlg-chips">' + UI.pill(c.c2, c.tone) + '<span class="meta">' + esc(it.source) + ' · ' + esc(TABS[tab].cols[1]) + ': ' + esc(c.c3) + '</span></div>' +
       '<h2 id="dlg-title">' + esc(it.title) + '</h2></div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
       '<p class="dlg-what">' + esc(it.incoming) + '</p>';
-    if (it.aiNote) h += '<section class="ainote"><h3>' + HEAD[tab] + '</h3><p>' + esc(Store.nowText(it) && tab === 'current' && it.state === 'ai' ? Store.nowText(it) + '. ' + it.aiNote : it.aiNote) + '</p></section>';
+    if (it.aiNote) h += '<section class="ainote"><h3>' + HEAD[tab] + '</h3><p>' + UI.text(Store.nowText(it) && tab === 'current' && it.state === 'ai' ? Store.nowText(it).replace(/[.!]+$/, '') + '. ' + it.aiNote : it.aiNote) + '</p></section>';
     if (draft) h += '<section class="draftbox"><h3>' + (it.state === 'review' ? 'Draft, ready for your OK' : 'Nudge, ready for your OK') + '</h3><blockquote>' + esc(it.draft) + '</blockquote><p class="meta">Nothing is sent until you approve it.</p></section>';
+    if (it.code && it.code.length) h += '<section><h3>Code</h3>' + CodeView.section(it.code, 'dlg:' + it.id) + '</section>';
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
     h += '<div class="dlg-actions">' + acts.map(function (a, i) { return '<button type="button" class="btn ' + (a.kind === 'primary' ? 'primary-d' : '') + '" data-do="' + i + '">' + esc(a.label) + '</button>'; }).join('') + '</div>';

@@ -9,9 +9,9 @@
     var it = c.ref ? Store.item(c.ref) : null;
     if (!it) return { text: c.status || 'Waiting in triage', tone: c.tone || 'muted' };
     var map = {
-      triage: it.capturedAt && Date.now() - it.capturedAt < 6000 ? ['Fuzz is gathering context', 'sec'] : ['Waiting in triage', 'muted'],
-      ai: ['Fuzz is working on it', 'sec'], 'ai-queued': ['Next up with Fuzz', 'muted'], review: ['Draft ready for your OK', 'accent'], session: ['Open in Claude', 'info'],
-      scheduled: ['Scheduled', 'muted'], parked: ['Parked', 'muted'], waiting: ['Waiting on others', 'info'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'], dropped: ['Dropped', 'muted'], resolved: ['Done', 'ok']
+      triage: it.capturedAt && Date.now() - it.capturedAt < 6000 ? ['Fuzz is gathering context', 'accent'] : ['Waiting in triage', 'muted'],
+      ai: ['Fuzz is working on it', 'accent'], 'ai-queued': ['Next up with Fuzz', 'muted'], review: ['Draft ready for your OK', 'warn'], session: ['Open in Claude', 'muted'],
+      scheduled: ['Scheduled', 'muted'], parked: ['Parked', 'muted'], waiting: ['Waiting on others', 'warn'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'], dropped: ['Dropped', 'muted'], resolved: ['Done', 'ok']
     };
     var m = map[it.state] || ['Waiting in triage', 'muted'];
     if (c.doc && it.state === 'triage') m = ['Added to triage with the document', 'ok'];

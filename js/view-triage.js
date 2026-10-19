@@ -237,6 +237,7 @@
     var a = [];
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
     if (it.context.length) a.push(['context', 'Context', it.context.length]);
+    if (it.code && it.code.length) a.push(['code', 'Code', it.code.length]);
     if (it.log.length) a.push(['done', 'Done so far', it.log.length]);
     if (it.sources.length) a.push(['sources', 'Sources', it.sources.length]);
     return a;
@@ -249,6 +250,7 @@
     var body = '';
     if (t === 'conversation') body = '<ol class="convo">' + it.conversation.map(function (m) { var you = m.who === 'You'; return '<li class="' + (you ? 'you' : 'fuzz') + '"><span class="who">' + (you ? '' : Fuzz.mini('good', { cls: 'who-av' })) + esc(m.who) + ' · <span>' + esc(m.time) + '</span></span><span class="bub">' + esc(m.text) + '</span></li>'; }).join('') + '</ol>';
     else if (t === 'context') body = '<ul class="ctx">' + it.context.map(function (c) { return '<li><i aria-hidden="true"></i><span>' + esc(c) + '</span></li>'; }).join('') + '</ul>';
+    else if (t === 'code') body = CodeView.section(it.code, 'card:' + it.id);
     else if (t === 'done') body = UI.logHTML(it.log);
     else body = UI.sourcesHTML(it.sources);
     return '<div class="tabs" role="group" aria-label="More about this task">' + tabs + '</div><div class="tabbody">' + body + '</div>';
@@ -285,7 +287,7 @@
     if (it.handedBack && it.quick && it.quick.length) {
       h += '<div class="quick" role="group" aria-label="Quick answers">' + it.quick.map(function (q, i) { return '<button type="button" class="chip" data-quick="' + i + '">' + esc(q) + '</button>'; }).join('') + '</div>';
     }
-    h += '<p class="incoming">' + esc(it.incoming) + '</p>';
+    h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
 
     if (it.kind === 'entity' && it.entity === 'person') {
       h += '<div class="profiles">' + it.profiles.map(function (p) { return '<div class="profile"><span class="plabel">' + esc(p.where) + '</span><span class="pname">' + esc(p.name) + '</span><span class="pdetail">' + esc(p.detail) + '</span><span class="pseen">' + esc(p.seen) + '</span></div>'; }).join('') + '</div>';
@@ -302,7 +304,7 @@
     if (isTask && (it.handedBack || it.updated || it.log.length >= 3) && it.log.length) {
       h += '<p class="leftoff"><strong>Where you left off.</strong> ' + esc(it.log[0].text) + '</p>';
     }
-    if (it.aiNote) h += '<section class="ainote"><h2>' + esc(it.aiHeading || 'What Fuzz did') + '</h2><p>' + esc(it.aiNote) + '</p></section>';
+    if (it.aiNote) h += '<section class="ainote"><h2>' + esc(it.aiHeading || 'What Fuzz did') + '</h2><p>' + UI.text(it.aiNote) + '</p></section>';
     if (isTask && it.firstStep) h += '<section class="firststep"><h2>Smallest first step · two minutes</h2><p>' + esc(it.firstStep) + '</p></section>';
     if (it.effect) h += '<section class="effect"><h2>What this changes</h2><p>' + esc(it.effect) + '</p></section>';
     if (isTask) h += '<section id="rich" class="rich">' + richHTML(it) + '</section>';
@@ -395,7 +397,7 @@
     var tok = Fuzz.newTok();
     (function qloop() {
       if (!alive || tok !== Fuzz.tok() || Fuzz.mood() !== 'puzzled') return;
-      Fuzz.hearts('?', 'var(--sec)', 3); setTimeout(qloop, 2300);
+      Fuzz.hearts('?', 'var(--wait)', 3); setTimeout(qloop, 2300);
     })();
     if (!Fuzz.isCalm()) Fuzz.glitch(220);
     Fuzz.say(t.kind === 'dup' ? 'Hm. These two look alike. Same thing, or not?' : 'Hm. One thing I can’t work out on my own.', { type: false });
@@ -576,7 +578,7 @@
   var STAMPS = ['signal: strong.', 'loud and clear.', 'one down.', 'tidy.', 'crisp.'];
   var DONES = [
     { mood: 'proud', say: null, hold: 1000, fx: function (c) { Fuzz.pAnim('hop'); Fuzz.confetti(c); } },
-    { mood: 'happy', say: 'nailed it.', hold: 1400, fx: function () { Fuzz.pAnim('lift'); Fuzz.fxOn('star', 1350); Fuzz.hearts('★', 'var(--sec)', 6); } },
+    { mood: 'happy', say: 'nailed it.', hold: 1400, fx: function () { Fuzz.pAnim('lift'); Fuzz.fxOn('star', 1350); Fuzz.hearts('★', 'var(--wait)', 6); } },
     { mood: 'happy', say: 'ta-da.', hold: 1100, fx: function () { Fuzz.pAnim('spin'); } },
     { mood: 'happy', say: 'little victory dance.', hold: 1300, fx: function () { Fuzz.fxOn('dance', 1250); Fuzz.hearts('♪', 'var(--accent)', 5); } },
     { mood: 'happy', say: 'thank you, thank you.', hold: 1400, fx: function () { Fuzz.pAnim('bow'); Fuzz.checkGlyph(1300); } }
@@ -794,7 +796,7 @@
           clearTimeout(rushTimer);
           if (v === 'bored') { Fuzz.startBored(); return; }
           Fuzz.newTok(); Fuzz.setMood(v); Fuzz.say('Mood: ' + b.textContent.toLowerCase() + '.', { type: false });
-          if (v === 'puzzled') Fuzz.hearts('?', 'var(--sec)', 3);
+          if (v === 'puzzled') Fuzz.hearts('?', 'var(--wait)', 3);
           if (v === 'grateful') Fuzz.hearts();
           if (['chill', 'bored', 'sleepy', 'stare', 'caring'].indexOf(v) < 0) setTimeout(function () { if (alive && Fuzz.mood() === v) Fuzz.setMood('idle'); }, 6000);
         } else if (k === 'rush') {

@@ -5,7 +5,19 @@
   }
 
   /* Status chips use a tone, never red. Tones map to theme tokens in app.css. */
-  function pill(text, tone) { return '<span class="pill pill--' + (tone || 'muted') + '">' + esc(text) + '</span>'; }
+  /* Status colours always come with an icon (done, waiting, blocked), never colour alone. */
+  var ICON_BASE = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" style="stroke:var(--tone)" stroke-width="1.8"/>';
+  var STATUS_ICON = {
+    ok: ICON_BASE + '<path d="M4.8 8.2 L7.1 10.5 L11.2 5.8" fill="none" style="stroke:var(--tone)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    warn: ICON_BASE + '<path d="M8 4.2 V8 L10.6 9.6" fill="none" style="stroke:var(--tone)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    danger: ICON_BASE + '<path d="M5.2 5.2 L10.8 10.8 M10.8 5.2 L5.2 10.8" fill="none" style="stroke:var(--tone)" stroke-width="1.8" stroke-linecap="round"/></svg>'
+  };
+  function pill(text, tone) {
+    tone = tone || 'muted'; var ic = STATUS_ICON[tone];
+    return '<span class="pill pill--' + tone + (ic ? ' pill--icon' : '') + '">' + (ic || '') + esc(text) + '</span>';
+  }
+  /* Escape text, then turn `backticked` bits into inline code. */
+  function text(s) { return esc(s).replace(/`([^`]+)`/g, '<code class="icode">$1</code>'); }
 
   var KINDS = {
     research: { label: 'Research', icon: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.5-4.5' },
@@ -20,7 +32,7 @@
     return '<ol class="log">' + entries.map(function (d) {
       var k = KINDS[d.kind] || KINDS.action;
       return '<li><span class="badge k-' + d.kind + '" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="' + k.icon + '"/></svg></span>' +
-        '<span class="log-body"><span class="log-meta"><span class="log-kind k-' + d.kind + '">' + k.label + '</span><span aria-hidden="true">&middot;</span><span>' + esc(d.time) + '</span></span><span class="log-text">' + esc(d.text) + '</span></span></li>';
+        '<span class="log-body"><span class="log-meta"><span class="log-kind k-' + d.kind + '">' + k.label + '</span><span aria-hidden="true">&middot;</span><span>' + esc(d.time) + '</span></span><span class="log-text">' + text(d.text) + '</span></span></li>';
     }).join('') + '</ol>';
   }
 
@@ -44,5 +56,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, text: text, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
 })();

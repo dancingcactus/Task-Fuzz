@@ -7,7 +7,7 @@
     capture: { view: window.CaptureView, title: 'New task' }
   };
   var PREF_KEY = 'fuzz.prefs.v1';
-  var prefs = { theme: 'terracotta', mode: 'auto', calm: false };
+  var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
   var current = null, currentName = null;
 
   function load() {
@@ -16,9 +16,13 @@
   }
   function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
+  function paint() { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); save(); paintPopover(); }
+
   var App = {
-    setTheme: function (id) { prefs.theme = id; Themes.apply(prefs.theme, prefs.mode); save(); paintPopover(); },
-    setMode: function (m) { prefs.mode = m; Themes.apply(prefs.theme, prefs.mode); save(); paintPopover(); },
+    setTheme: function (id) { prefs.theme = id; paint(); },
+    setMode: function (m) { prefs.mode = m; paint(); },
+    setContrast: function (c) { prefs.contrast = c; paint(); },
+    setCodeFont: function (id) { prefs.codeFont = id; paint(); },
     setCalm: function (v) {
       prefs.calm = !!v; Fuzz.setCalm(prefs.calm); save(); paintPopover();
     },
@@ -48,12 +52,13 @@
     document.getElementById('themepop').addEventListener('keydown', function (e) { if (e.key === 'Escape') { togglePopover(false); document.getElementById('themebtn').focus(); } });
     document.getElementById('themepop').addEventListener('click', function (e) {
       e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-reset],[data-calm]'); if (!t) return;
+      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-calm]'); if (!t) return;
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
+      else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
       else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
     });
-    document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); });
+    document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); if (e.target.id === 'codefont') App.setCodeFont(e.target.value); });
     paintPopover();
   }
   function togglePopover(force) {
@@ -65,18 +70,20 @@
   function paintPopover() {
     var pop = document.getElementById('themepop'); if (!pop) return;
     var mode = Themes.resolveMode(prefs.mode);
-    var focused = document.activeElement && pop.contains(document.activeElement) ? document.activeElement.getAttribute('data-theme-id') || document.activeElement.getAttribute('data-mode') : null;
+    var ae = document.activeElement, focused = ae && pop.contains(ae) ? ae.getAttribute('data-theme-id') || ae.getAttribute('data-mode') || ae.getAttribute('data-contrast') : null;
     pop.innerHTML =
-      '<h2>Palette</h2><div class="palettes" role="group" aria-label="Palette">' + Themes.list.map(function (t) {
-        var p = t[mode], on = t.id === prefs.theme;
-        return '<button type="button" class="pal" data-theme-id="' + t.id + '" aria-pressed="' + on + '" title="' + esc(t.full) + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.sec + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.full) + '</span></button>';
+      '<h2>Theme</h2><div class="palettes" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
+        var p = Themes.palette(t.id, mode, prefs.contrast), on = t.id === prefs.theme;
+        return '<button type="button" class="pal" data-theme-id="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
       }).join('') + '</div>' +
       '<h2>Appearance</h2><div class="segrow" role="group" aria-label="Appearance">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']].map(function (m) { return '<button type="button" class="seg" data-mode="' + m[0] + '" aria-pressed="' + (prefs.mode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
+      '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
+      '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
       '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>';
-    var sw = document.getElementById('swatches'); var cur = Themes.byId(prefs.theme)[mode];
-    if (sw) sw.innerHTML = '<i style="background:' + cur.accent + '"></i><i style="background:' + cur.sec + '"></i>';
-    if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"]'); if (el) el.focus(); }
+    var sw = document.getElementById('swatches'); var cur = Themes.palette(prefs.theme, mode, prefs.contrast);
+    if (sw) sw.innerHTML = '<i style="background:' + cur.accent + '"></i><i style="background:' + cur.link + '"></i>';
+    if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }
 
   /* ---------- Router ---------- */
@@ -121,8 +128,8 @@
 
   /* ---------- Boot ---------- */
   load();
-  Themes.apply(prefs.theme, prefs.mode);
-  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode); paintPopover(); } });
+  Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont);
+  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;

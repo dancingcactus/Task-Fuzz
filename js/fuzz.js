@@ -8,7 +8,7 @@
   var FACES = {
     good: '<path d="M20 34Q23.5 27.5 27 34M31 34Q34.5 27.5 38 34" stroke="var(--glow)" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M24 40Q28.5 45.5 33 40" stroke="var(--glow)" stroke-width="2.4" stroke-linecap="round" fill="none"/><circle cx="17" cy="40" r="2.6" fill="#FF8A5C" opacity=".35"/><circle cx="40" cy="40" r="2.6" fill="#FF8A5C" opacity=".35"/>',
     okay: '<rect x="21" y="27" width="5.2" height="9" rx="2.6" fill="var(--glow)"/><rect x="32" y="27" width="5.2" height="9" rx="2.6" fill="var(--glow)"/><path d="M24.5 42.5H33.5" stroke="var(--glow)" stroke-width="2.4" stroke-linecap="round"/>',
-    tired: '<path d="M20 32.5H27.4V35a3.7 3.7 0 0 1-7.4 0Z M31 32.5H38.4V35a3.7 3.7 0 0 1-7.4 0Z" fill="var(--glow)"/><path d="M25 43Q28.7 41 32.5 43" stroke="var(--glow)" stroke-width="2.2" stroke-linecap="round" fill="none"/><text x="40" y="27" font-size="7" font-weight="800" fill="var(--glow)" font-family="Figtree,sans-serif">z</text>',
+    tired: '<path d="M20 32.5H27.4V35a3.7 3.7 0 0 1-7.4 0Z M31 32.5H38.4V35a3.7 3.7 0 0 1-7.4 0Z" fill="var(--glow)"/><path d="M25 43Q28.7 41 32.5 43" stroke="var(--glow)" stroke-width="2.2" stroke-linecap="round" fill="none"/><text x="40" y="27" font-size="7" font-weight="800" fill="var(--glow)" font-family="Nunito Sans,sans-serif">z</text>',
     over: '<rect x="20" y="25.5" width="7" height="11.5" rx="3.5" fill="var(--glow)"/><rect x="31" y="25.5" width="7" height="11.5" rx="3.5" fill="var(--glow)"/><circle cx="23.5" cy="31" r="1.6" fill="var(--screen)"/><circle cx="34.5" cy="31" r="1.6" fill="var(--screen)"/><path d="M23.5 43Q26 40 28.5 43T33.5 43" stroke="var(--glow)" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M42 24Q44.5 28 42 30Q39.5 28 42 24Z" fill="#8FC4E8"/>',
     think: '<rect x="21" y="25" width="5.2" height="8.5" rx="2.6" fill="var(--glow)"/><rect x="32" y="25" width="5.2" height="8.5" rx="2.6" fill="var(--glow)"/><g fill="var(--glow)"><circle class="fz-dot" cx="25" cy="42.5" r="1.7"/><circle class="fz-dot" style="animation-delay:.2s" cx="29.5" cy="42.5" r="1.7"/><circle class="fz-dot" style="animation-delay:.4s" cx="34" cy="42.5" r="1.7"/></g>'
   };
@@ -165,7 +165,7 @@
 
   F.confetti = function (anchor) {
     if (calm || !el) return;
-    var c = rel(anchor), fx = el.fx, cols = ['var(--accent)', 'var(--sec)', 'var(--ok)'];
+    var c = rel(anchor), fx = el.fx, cols = ['var(--accent)', 'var(--wait)', 'var(--done)'];
     for (var i = 0; i < 18; i++) {
       var s = document.createElement('i');
       s.style.left = (c.x + 60) + 'px'; s.style.top = c.y + 'px'; s.style.background = cols[i % 3];
