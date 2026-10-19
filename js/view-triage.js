@@ -10,7 +10,7 @@
   var ciOpen = false, ciBusy = false, checkedIn = false, ciTimer = 0, ciSecs = 300;
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, tab = null, keptStale = {}, edits = {}, greeted = false;
-  var docClick = null, unsubUndo = null;
+  var docClick = null;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -56,7 +56,6 @@
     wire();
     unsub = Store.on(onStore);
     Say.setBusyCheck(function () { return busy || ciOpen; });
-    unsubUndo = Say.onUndoChange(paintUndo); paintUndo();
     ambientTimer = setInterval(ambient, 45000);
     V.tickTimer = setInterval(function () { var t = cur(); if (t && t.dueAt && card.style.display !== 'none' && !ciOpen) paintDue(t); }, 1000);
     if (!greeted) { greeted = true; greet(); } else { Fuzz.say('Back to the queue.', { type: false }); }
@@ -67,7 +66,7 @@
     alive = false; epoch++;
     clearTimeout(rushTimer); clearInterval(ciTimer); clearInterval(ambientTimer); clearInterval(V.tickTimer);
     if (unsub) unsub(); unsub = null;
-    if (unsubUndo) unsubUndo(); unsubUndo = null; Say.setBusyCheck(null);
+    Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
     Fuzz.unmount(); root = null;
   };
@@ -128,7 +127,6 @@
           '<button type="button" class="seg" data-moment="any">Anything</button>' +
           '<button type="button" class="seg" data-moment="quick">5 minutes</button>' +
           '<button type="button" class="seg" data-moment="low">Low energy</button></div>' +
-        '<button type="button" class="undo-pill" id="undobtn" hidden></button>' +
       '</div>' +
       '<section class="stage" id="stage">' +
         '<div class="fx" id="fx"></div>' +
@@ -154,11 +152,6 @@
         '<p class="note">Tap Fuzz for a boop, tug an antenna, or twist a knob. Calm mode (in Settings) removes flashes and gags.</p>' +
       '</div></details>' +
     '</section>';
-  }
-
-  function paintUndo() {
-    var b = root && $('#undobtn'); if (!b) return;
-    var u = Say.lastUndo(); b.hidden = !u; if (u) b.textContent = 'Undo: ' + u.label;
   }
 
   /* ---------- Stats, stack ---------- */
@@ -748,7 +741,6 @@
       if (e.key === 'Escape') { var mm = $('#moremenu'); if (mm && !mm.hidden) { mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } } }
     });
 
-    $('#undobtn').addEventListener('click', function () { var u = Say.lastUndo(); if (u) u.run(); });
     $('#dropbtn').addEventListener('click', function () {
       moment(function () { return quickClear('Dropped. Undo if that was a slip.', function (i) { if (i.kind === 'task') Store.drop(i.id); else Store.resolve(i.id, 'dismissed'); }, 'Dropped. One less thing.', 'idle'); });
     });

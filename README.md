@@ -65,7 +65,7 @@ Fuzz also works in the background: tasks you assign move through research and dr
 | 3 | Show the work | Every task has a "Done so far" log (research, action, guidance, status, sent, blocked), and every click in the app writes to it |
 | 4 | Thin records | Tasks hold a reference list (Sources) and the extracted ask, never the full message |
 | 5 | Shared entity service | Entity checks (person, term) and merge/keep-separate matching cards |
-| 6 | Humans approve what can't be undone | Drafts wait for **Approve and send**, concurrency starts at five (the sixth task shows "Next up"), and every change has **Undo** (a link under the Triage card, and a button in Fuzz's bubble) |
+| 6 | Humans approve what can't be undone | Drafts wait for **Approve and send**, concurrency starts at five (the sixth task shows "Next up"), and every change has **Undo** (an Undo button in the header with a list of recent actions, and a button in Fuzz's bubble) |
 | 8 | Capture costs nothing | New task is one field, one key (N), no categories. |
 | 9 | Lower the cost of starting | "Smallest first step, two minutes" on each task card |
 | 10 | Time is human | Schedule uses "when I'm back at my desk", "before the planning review" and so on, with exact time as the fallback. Age is a three-segment cue, not a date |

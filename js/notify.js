@@ -1,11 +1,11 @@
 /* Everything the app has to tell you comes from Fuzz, not from a toast.
    - On Triage, Fuzz says it from the perch, in his own speech bubble.
    - On other pages, a small Fuzz appears bottom right with a speech bubble, then tucks away.
-   Undo: the last undoable change stays available as a quiet "Undo" link on Triage (Fuzz's next line would
-   otherwise replace the bubble within a second or two), and as a button in the bubble. */
+   Undo: recent undoable changes stay available from the Undo button in the header (Fuzz's next line would
+   otherwise replace the bubble within a second or two), and the latest also as a button in the bubble. */
 (function () {
   var S = {};
-  var dockTimer = 0, undoTimer = 0, lastUndo = null, busyFn = null, listeners = [];
+  var dockTimer = 0, undoTimer = 0, history = [], busyFn = null, listeners = [];
 
   function dock() { return document.getElementById('fuzz-dock'); }
   function button(label, fn) {
@@ -15,15 +15,24 @@
   function short(t) { t = String(t).replace(/[.!]+$/, ''); return t.length > 60 ? t.slice(0, 57) + '…' : t; }
 
   /* ---------- Undo ---------- */
+  /* A short history, newest first. Each entry restores a snapshot taken before its change, so undoing an
+     older entry also rolls back everything after it; those newer entries leave the list with it. */
+  var MAX_UNDO = 8, UNDO_TTL = 10 * 60 * 1000;
+  function prune() { var now = Date.now(); history = history.filter(function (u) { return now - u.at < UNDO_TTL; }); }
   function emitUndo() { listeners.forEach(function (l) { l(); }); }
-  function clearUndo() { lastUndo = null; clearTimeout(undoTimer); emitUndo(); }
+  function clearUndo() { history = []; clearTimeout(undoTimer); emitUndo(); }
   function setUndo(label, fn) {
-    clearTimeout(undoTimer);
-    lastUndo = { label: short(label), run: function () { var f = fn; clearUndo(); S.hideDock(); f(); } };
-    undoTimer = setTimeout(clearUndo, 90000);
+    var u = { label: short(label), at: Date.now() };
+    u.run = function () {
+      var i = history.indexOf(u); if (i < 0) return;
+      history = history.slice(i + 1); S.hideDock(); emitUndo(); fn();
+    };
+    prune(); history.unshift(u); history = history.slice(0, MAX_UNDO);
+    clearTimeout(undoTimer); undoTimer = setTimeout(function () { prune(); emitUndo(); }, UNDO_TTL + 1000);
     emitUndo();
   }
-  S.lastUndo = function () { return lastUndo; };
+  S.lastUndo = function () { prune(); return history[0] || null; };
+  S.undoList = function () { prune(); return history.slice(); };
   S.onUndoChange = function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (l) { return l !== fn; }); }; };
   /* Fuzz has already said something about the change; just keep Undo within reach. */
   S.offerUndo = function (label, fn) { setUndo(label, fn); };
@@ -39,7 +48,7 @@
     Fuzz.say(text, { type: false });
     var b = Fuzz.bubbleEl(); if (!b) return;
     if (o.action) b.appendChild(button(o.action.label, o.action.run));
-    if (o.undo && lastUndo) b.appendChild(button('Undo', lastUndo.run));
+    if (o.undo && history[0]) b.appendChild(button('Undo', history[0].run));
   }
   function onDock(text, o) {
     var d = dock(); if (!d) return;
@@ -48,7 +57,7 @@
     var bub = document.createElement('div'); bub.className = 'bubble pop';
     var span = document.createElement('span'); span.textContent = text; bub.appendChild(span);
     if (o.action) bub.appendChild(button(o.action.label, function () { S.hideDock(); o.action.run(); }));
-    if (o.undo && lastUndo) bub.appendChild(button('Undo', lastUndo.run));
+    if (o.undo && history[0]) bub.appendChild(button('Undo', history[0].run));
     var close = button('Dismiss', S.hideDock); close.className = 'dock-x'; close.setAttribute('aria-label', 'Dismiss'); close.innerHTML = '&times;'; bub.appendChild(close);
     var av = document.createElement('div'); av.className = 'dock-av'; av.innerHTML = Fuzz.mini('good', { cls: 'dock-fz' });
     d.appendChild(bub); d.appendChild(av); d.hidden = false;

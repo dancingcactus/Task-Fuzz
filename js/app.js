@@ -36,19 +36,32 @@
   function buildHeader() {
     var h = document.getElementById('appbar');
     h.innerHTML =
-      '<a class="brand" href="#/triage" aria-label="Fuzz, go to triage">' + Fuzz.mini('good', { cls: 'brand-av' }) + '<span class="brand-name">Fuzz</span></a>' +
+      '<div class="appbar-left"><a class="brand" href="#/triage" aria-label="Fuzz, go to triage">' + Fuzz.mini('good', { cls: 'brand-av' }) + '<span class="brand-name">Fuzz</span></a>' +
       '<nav class="mainnav" aria-label="Main">' +
         '<a href="#/triage" data-nav="triage">Triage<span class="navcount" id="navcount" aria-label="waiting"></span></a>' +
         '<a href="#/tasks" data-nav="tasks">All tasks</a>' +
         '<a href="#/capture" data-nav="capture" class="nav-cta" title="New task (N)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>' +
-      '</nav>' +
+      '</nav></div>' +
       '<div class="hprog" id="hprog" hidden><div class="progress" role="progressbar" aria-label="Triage progress" aria-valuemin="0" aria-valuemax="100" id="prog"><div class="progress-bar" id="pbar"></div></div><span class="left" id="left"></span></div>' +
-      '<div class="appbar-right"><button type="button" class="themebtn" id="themebtn" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><span class="swatches" id="swatches" aria-hidden="true"></span>Theme</button>' +
+      '<div class="appbar-right"><div class="undowrap"><button type="button" class="themebtn undobtn" id="undobtn" aria-expanded="false" aria-controls="undopop" aria-haspopup="dialog" disabled>' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo<span class="navcount" id="undocount"></span></button>' +
+        '<div class="themepop undopop" id="undopop" role="dialog" aria-label="Recent actions" hidden></div></div>' +
+        '<button type="button" class="themebtn" id="themebtn" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><span class="swatches" id="swatches" aria-hidden="true"></span>Theme</button>' +
         '<div class="themepop" id="themepop" role="dialog" aria-label="Theme and settings" hidden></div></div>';
-    document.getElementById('themebtn').addEventListener('click', function () { togglePopover(); });
+    document.getElementById('themebtn').addEventListener('click', function () { toggleUndo(false); togglePopover(); });
+    document.getElementById('undobtn').addEventListener('click', function () { togglePopover(false); toggleUndo(); });
+    document.getElementById('undopop').addEventListener('click', function (e) {
+      e.stopPropagation();
+      var b = e.target.closest('[data-undo]'); if (!b) return;
+      var u = Say.undoList()[parseInt(b.dataset.undo, 10)]; toggleUndo(false);
+      if (u) { u.run(); document.getElementById('undobtn').focus(); }
+    });
+    document.getElementById('undopop').addEventListener('keydown', function (e) { if (e.key === 'Escape') { toggleUndo(false); document.getElementById('undobtn').focus(); } });
+    Say.onUndoChange(paintUndo); setInterval(paintUndo, 30000); paintUndo();
     document.addEventListener('click', function (e) {
       var pop = document.getElementById('themepop');
       if (!pop.hidden && !e.target.closest('#themepop') && !e.target.closest('#themebtn')) togglePopover(false);
+      if (!document.getElementById('undopop').hidden && !e.target.closest('#undopop') && !e.target.closest('#undobtn')) toggleUndo(false);
     });
     document.getElementById('themepop').addEventListener('keydown', function (e) { if (e.key === 'Escape') { togglePopover(false); document.getElementById('themebtn').focus(); } });
     document.getElementById('themepop').addEventListener('click', function (e) {
@@ -67,6 +80,26 @@
     var show = force === undefined ? pop.hidden : force;
     pop.hidden = !show; btn.setAttribute('aria-expanded', String(show));
     if (show) { var first = pop.querySelector('[aria-pressed="true"]'); if (first) first.focus(); }
+  }
+  function toggleUndo(force) {
+    var pop = document.getElementById('undopop'), btn = document.getElementById('undobtn');
+    var show = force === undefined ? pop.hidden : force;
+    if (show && btn.disabled) show = false;
+    pop.hidden = !show; btn.setAttribute('aria-expanded', String(show));
+    if (show) { var first = pop.querySelector('button'); if (first) first.focus(); }
+  }
+  function ago(t) {
+    var m = Math.floor((Date.now() - t) / 60000);
+    return m < 1 ? 'Just now' : m + ' min ago';
+  }
+  function paintUndo() {
+    var btn = document.getElementById('undobtn'), pop = document.getElementById('undopop'), cnt = document.getElementById('undocount'); if (!btn) return;
+    var list = Say.undoList();
+    btn.disabled = !list.length; cnt.textContent = list.length ? String(list.length) : '';
+    if (!list.length) { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); pop.innerHTML = ''; return; }
+    pop.innerHTML = '<h2>Recent actions</h2><ul class="undolist">' + list.map(function (u, i) {
+      return '<li><button type="button" data-undo="' + i + '"><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + ago(u.at) + (i > 0 ? ' · also undoes ' + i + ' newer' : '') + '</span></button></li>';
+    }).join('') + '</ul>';
   }
   function paintPopover() {
     var pop = document.getElementById('themepop'); if (!pop) return;
