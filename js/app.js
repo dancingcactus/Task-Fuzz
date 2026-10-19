@@ -106,12 +106,8 @@
   }
 
   function updateCount() {
-    var has = Store.get().queue.length > 0, el = document.getElementById('navcount');
-    if (!el) return;
-    var glyph = has ? '●' : '✓';
-    if (el.textContent !== glyph) el.textContent = glyph;
-    el.classList.toggle('done', !has);
-    el.setAttribute('aria-label', has ? 'Tasks to triage' : 'All triaged');
+    var n = Store.get().queue.length, el = document.getElementById('navcount');
+    if (el && el.textContent !== (n ? String(n) : '')) el.textContent = n ? String(n) : '';
   }
 
   /* ---------- Notifications from Fuzz's background work ---------- */
