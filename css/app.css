@@ -188,9 +188,6 @@ html.calm .fzmini .fz-a1, html.calm .fzmini .fz-a2, html.calm .fzmini .fz-dot { 
 .pg-plus { position: absolute; top: -13px; text-align: center; font-size: 12px; font-weight: 600; color: var(--pg-bank); white-space: nowrap; }
 html.calm .pg-seg { transition: none; }
 .left { flex: none; width: 4.6em; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.moment { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.moment-l { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
-.moment .seg { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .stage { margin-top: 2px; }
 .triage-foot { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px; color: var(--muted); }
 .parkform { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }

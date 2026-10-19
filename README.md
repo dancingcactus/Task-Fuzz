@@ -51,7 +51,7 @@ The demo queue has every card type from the mockups and the matching doc:
 - **Handed back**: sits at the end of the queue, Fuzz looks sheepish and asks a quick either/or.
 - **Entity check** (person and term): Same person / Different people, Save definition.
 - **Possible duplicate**: Merge / Keep separate, with the reason shown.
-- **Check-in**: appears after the last time-sensitive card. Good, Okay, Tired (5-minute break) or Overloaded (hold the rest until tomorrow).
+- **Check-in**: comes back through the session, often at first and then less often (after 2 cleared cards, then 4 more, 8 more, 16 more), and never while time-sensitive cards are waiting. Good or Okay keeps the usual order, Tired brings gentle cards first (with an optional 5-minute break), Overloaded brings quick cards first (or holds the rest until tomorrow). The spacing is `CI_FIRST` in `js/view-triage.js`.
 
 Fuzz also works in the background: tasks you assign move through research and drafting on their own, finish as
 **Needs your OK**, and one of them (the dashboard filter bug) gets stuck and comes back to your queue.
@@ -73,8 +73,8 @@ Fuzz also works in the background: tasks you assign move through research and dr
 | 12 | Easy re-entry | "Where you left off" recap on returning cards, and **Park a stray thought** without leaving the card |
 | 13 | One thing at a time | One card, with instructions and actions pinned at the top and Fuzz's suggestion pre-filled |
 | 14 | Work alongside | Fuzz works visibly in the background, with a light status line now and then (never nagging) |
-| 15 | Ambient beats initiated | Fuzz tells you when a draft is ready or something is handed back, from the perch or a small Fuzz on other pages. Fuzz also asks how you are after the urgent cards |
-| 16 | Match the task to the moment | **Right now**: Anything / 5 minutes / Low energy reorders the queue |
+| 15 | Ambient beats initiated | Fuzz tells you when a draft is ready or something is handed back, from the perch or a small Fuzz on other pages. Fuzz also checks in on how you are, often at first and then less often |
+| 16 | Match the task to the moment | Your check-in answer reorders the queue: Tired brings gentle cards first, Overloaded brings quick ones first |
 | 17, 18 | Emotional connection, warm and quirky | Fuzz, the palettes, and a Calm mode that keeps the fades and drops the flashes |
 
 Principles 7 (simplest thing that works) is about the build, so it shows up as the shape of this repo.
