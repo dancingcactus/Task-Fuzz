@@ -123,16 +123,11 @@
     return '' +
     '<section class="triage" aria-labelledby="triage-h">' +
       '<div class="triage-top">' +
-        '<div class="triage-title"><h1 id="triage-h">Triage</h1>' +
-          '<div class="progress" role="progressbar" aria-label="Triage progress" aria-valuemin="0" aria-valuemax="100" id="prog"><div class="progress-bar" id="pbar"></div></div>' +
-          '<span class="left" id="left"></span></div>' +
+        '<h1 id="triage-h" class="sr">Triage</h1>' +
         '<div class="moment" role="group" aria-label="What have you got right now?"><span class="moment-l">Right now</span>' +
           '<button type="button" class="seg" data-moment="any">Anything</button>' +
           '<button type="button" class="seg" data-moment="quick">5 minutes</button>' +
           '<button type="button" class="seg" data-moment="low">Low energy</button></div>' +
-        '<div class="stats" aria-label="Queue status">' +
-          '<span class="stat" id="st-wait"><b>0</b> waiting</span><span class="stat" id="st-peb"><b>0</b> with Fuzz</span>' +
-          '<span class="stat" id="st-claude"><b>0</b> in Claude</span><span class="stat" id="st-later"><b>0</b> later</span><span class="stat" id="st-done"><b>0</b> done</span></div>' +
         '<button type="button" class="undo-pill" id="undobtn" hidden></button>' +
       '</div>' +
       '<section class="stage" id="stage">' +
@@ -167,18 +162,12 @@
   }
 
   /* ---------- Stats, stack ---------- */
-  function pop(id) { var e = $(id); if (!e) return; e.classList.remove('pop'); void e.offsetWidth; e.classList.add('pop'); }
   function stats() {
     if (!root) return;
-    var s = Store.stats(), vals = { '#st-wait': s.waiting, '#st-peb': s.withFuzz, '#st-claude': s.inClaude, '#st-later': s.later, '#st-done': s.done };
-    Object.keys(vals).forEach(function (k) {
-      var b = $(k + ' b');
-      if (String(vals[k]) !== b.textContent) { b.textContent = vals[k]; pop(k); }
-    });
     var st = Store.get(), total = Math.max(st.totalEver, 1), left = st.queue.length, pct = Math.round(((total - left) / total) * 100);
-    $('#pbar').style.width = pct + '%';
-    $('#prog').setAttribute('aria-valuenow', String(pct));
-    $('#left').textContent = left === 0 ? 'All done' : left + ' left';
+    document.getElementById('pbar').style.width = pct + '%';
+    document.getElementById('prog').setAttribute('aria-valuenow', String(pct));
+    document.getElementById('left').textContent = left === 0 ? 'All done' : left + ' left';
     root.querySelectorAll('[data-moment]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.moment === st.moment)); });
   }
   function updateStack(arriveLast) {
@@ -648,7 +637,7 @@
     await sleep(1500);
     Fuzz.clearSched();
     await sleep(500);
-    await fly(card, $('#st-later'), { scale: 0.06, rot: 8, dur: 680 });
+    await fly(card, document.getElementById('prog'), { scale: 0.06, rot: 8, dur: 680 });
     stats(); Fuzz.pAnim('hop');
     Say.offerUndo('Scheduled “' + it.title + '” for ' + w.text + '.', function () { Store.restore(snap); V.refresh(); });
     await sleep(700);

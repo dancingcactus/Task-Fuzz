@@ -156,8 +156,8 @@ html.calm .fzmini .fz-a1, html.calm .fzmini .fz-a2, html.calm .fzmini .fz-dot { 
 /* ---------- Triage ---------- */
 .triage { display: flex; flex-direction: column; gap: 14px; }
 .triage-top { display: flex; flex-direction: column; gap: 10px; }
-.triage-title { display: flex; align-items: center; gap: 12px; }
-.triage-title h1 { font-family: var(--font-display); font-size: 26px; line-height: 1.1; font-weight: 800; letter-spacing: -.01em; }
+.hprog { flex: 1 1 160px; min-width: 120px; max-width: 360px; display: flex; align-items: center; gap: 10px; }
+.hprog[hidden] { display: none; }
 .progress { flex: 1; height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .progress-bar { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .5s cubic-bezier(.3,1.2,.5,1); }
 .left { flex: none; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -405,6 +405,7 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 @media (max-width: 760px) {
   .appbar { padding-top: 6px; padding-bottom: 6px; }
   .mainnav { order: 3; width: 100%; margin-right: 0; }
+  .hprog { order: 2; max-width: none; }
   .appbar-right { margin-left: auto; }
   .cap-card { padding: 20px; border-radius: 22px; }
   .cap-head h1 { font-size: 26px; }
