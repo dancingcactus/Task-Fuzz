@@ -86,6 +86,7 @@ textarea { resize: vertical; }
 .mainnav a.nav-cta:hover { filter: brightness(1.06); }
 .navcount { min-width: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 600; text-align: center; line-height: 22px; }
 .navcount:empty { display: none; }
+.navcount.done { background: color-mix(in srgb, var(--ok) 26%, var(--surface)); color: var(--ink); }
 .appbar-right { position: relative; }
 .themebtn {
   display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: var(--bw) solid var(--line); border-radius: 999px;
