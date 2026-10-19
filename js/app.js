@@ -42,6 +42,7 @@
         '<a href="#/tasks" data-nav="tasks">All tasks</a>' +
         '<a href="#/capture" data-nav="capture" class="nav-cta" title="New task (N)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>' +
       '</nav>' +
+      '<div class="hprog" id="hprog" hidden><div class="progress" role="progressbar" aria-label="Triage progress" aria-valuemin="0" aria-valuemax="100" id="prog"><div class="progress-bar" id="pbar"></div></div><span class="left" id="left"></span></div>' +
       '<div class="appbar-right"><button type="button" class="themebtn" id="themebtn" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><span class="swatches" id="swatches" aria-hidden="true"></span>Theme</button>' +
         '<div class="themepop" id="themepop" role="dialog" aria-label="Theme and settings" hidden></div></div>';
     document.getElementById('themebtn').addEventListener('click', function () { togglePopover(); });
@@ -97,6 +98,7 @@
     main.className = 'view view--' + name;
     if (name === 'triage') Say.hideDock(); /* Fuzz speaks from the perch there */
     currentName = name; current = ROUTES[name].view;
+    document.getElementById('hprog').hidden = name !== 'triage';
     current.mount(main);
     document.title = ROUTES[name].title + ' · Fuzz';
     document.querySelectorAll('[data-nav]').forEach(function (a) { if (a.dataset.nav === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
