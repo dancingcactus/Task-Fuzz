@@ -72,6 +72,19 @@ textarea { resize: vertical; }
   padding: 8px max(16px, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 90%, transparent);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: var(--bw) solid var(--line);
 }
+.appbar { display: grid; grid-template-columns: 1fr minmax(160px, 360px) 1fr; }
+.appbar-left { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; min-width: 0; }
+.appbar-left .mainnav { margin-right: 0; }
+.appbar-left { grid-column: 1; }
+.appbar-right { grid-column: 3; position: relative; justify-self: end; display: flex; align-items: center; gap: 8px; }
+.undowrap { position: relative; }
+.undobtn:disabled { opacity: .5; cursor: default; }
+.undopop { width: 320px; }
+.undolist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.undolist button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 12px; min-height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); }
+.undolist button:hover { background: var(--chip); }
+.u-l { font-weight: 600; font-size: 14px; }
+.u-m { font-size: 12.5px; color: var(--muted); }
 .brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); min-height: 44px; }
 .brand-av { width: 40px; }
 .brand-name { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: -.01em; }
@@ -158,7 +171,7 @@ html.calm .fzmini .fz-a1, html.calm .fzmini .fz-a2, html.calm .fzmini .fz-dot { 
 /* ---------- Triage ---------- */
 .triage { display: flex; flex-direction: column; gap: 14px; }
 .triage-top { display: flex; flex-direction: column; gap: 10px; }
-.hprog { flex: 1 1 160px; min-width: 120px; max-width: 360px; display: flex; align-items: center; gap: 10px; }
+.hprog { grid-column: 2; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .hprog[hidden] { display: none; }
 .progress { flex: 1; height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .progress-bar { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .5s cubic-bezier(.3,1.2,.5,1); }
@@ -398,16 +411,16 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 .fuzz-dock .bubble { margin-bottom: 24px; max-width: 420px; border-radius: 16px 16px 4px 16px; box-shadow: var(--shadow); padding-right: 8px; }
 .bubble button { min-height: 32px; }
 .bubble button.dock-x { border: 0; min-width: 32px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); }
-.undo-pill { align-self: flex-start; min-height: 40px; max-width: 100%; padding: 0 16px; border: 2px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--link); font-weight: 600; font-size: 14px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.undo-pill:hover { background: var(--chip); }
-.undo-pill[hidden] { display: none; }
 
 /* ---------- Small screens ---------- */
 @media (max-width: 760px) {
   .appbar { padding-top: 6px; padding-bottom: 6px; }
+  .appbar { display: flex; flex-wrap: wrap; }
+  .appbar-left { display: contents; }
   .mainnav { order: 3; width: 100%; margin-right: 0; }
-  .hprog { order: 2; max-width: none; }
+  .hprog { order: 2; flex: 1 1 120px; }
   .appbar-right { margin-left: auto; }
+  .undobtn { padding: 0 10px; }
   .cap-card { padding: 20px; border-radius: 22px; }
   .cap-head h1 { font-size: 26px; }
   .cap-fuzz { width: 60px; }
