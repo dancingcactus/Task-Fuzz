@@ -36,8 +36,9 @@
   --trim: color-mix(in srgb, var(--surface) 62%, #fff);
 }
 :root[data-mode="light"] {
-  --bezel: color-mix(in srgb, var(--ink) 92%, #000);
-  --screen: color-mix(in srgb, var(--ink) 86%, #000);
+  /* an unlit TV is black glass: near-black screen (a breath of warmth), slightly lighter bezel so the glass reads */
+  --bezel: color-mix(in srgb, var(--ink) 80%, #000);
+  --screen: color-mix(in srgb, var(--ink) 12%, #000);
 }
 :root[data-mode="dark"] {
   --bezel: color-mix(in srgb, var(--bg) 55%, #000);
