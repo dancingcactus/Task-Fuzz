@@ -98,7 +98,8 @@ textarea { resize: vertical; }
 .mainnav a.nav-cta { background: var(--accent); color: var(--on-accent); }
 .mainnav a.nav-cta:hover { filter: brightness(1.06); }
 .navcount { min-width: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 600; text-align: center; line-height: 22px; }
-.navcount:empty { display: none; }
+.navcount:empty:not(.has) { display: none; }
+.navcount.has { min-width: 0; width: 10px; height: 10px; padding: 0; line-height: 0; }
 .navcount.done { background: color-mix(in srgb, var(--ok) 26%, var(--surface)); color: var(--ink); }
 .appbar-right { position: relative; }
 .themebtn {
