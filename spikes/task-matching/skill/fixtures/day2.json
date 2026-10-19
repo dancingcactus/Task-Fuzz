@@ -1,0 +1,53 @@
+[
+  {
+    "source": "slack", "source_id": "C0PRICING:1760600000.000100", "version": "1",
+    "anchor": "slack:C0PRICING:1760600000.000100",
+    "link": "https://acme.slack.example/archives/C0PRICING/p1760600000000100", "ts": "2026-10-16T09:00:00Z",
+    "from": {"name": "Priya Shah", "slack_id": "U0PRIYA"},
+    "links": ["https://docs.google.com/presentation/d/PRICINGDECK123/edit#slide=4"],
+    "quote": "Hey! Still need your comments on the pricing deck, finance is waiting on it",
+    "candidates": [{"ask": "Comment on the pricing deck, finance is waiting", "owner": "me", "topics": ["Q4 pricing"]}]
+  },
+  {
+    "source": "meeting", "source_id": "20261016 - Pricing review#justin-finish-pricing-deck-review", "version": "1",
+    "anchor": "meeting:20261016 - Pricing review#justin-finish-pricing-deck-review",
+    "link": "file:///Users/jgrover/Context/meetings/summaries/20261016%20-%20Pricing%20review%20-%20Write%20Meeting%20Notes.md#justin-finish-pricing-deck-review",
+    "ts": "2026-10-16T17:00:00Z", "from": {"name": "Pricing review"},
+    "people": [{"name": "Priya"}],
+    "quote": "Justin to finish the pricing deck review before Thursday",
+    "candidates": [{"ask": "Finish the pricing deck review before Thursday", "owner": "me", "topics": ["Q4 pricing"], "people": [{"name": "Priya"}]}]
+  },
+  {
+    "source": "email", "source_id": "msg-d1", "version": "1",
+    "anchor": "email:conv-D", "message_ids": ["<d1@acme.example>", "<a1@acme.example>"],
+    "link": "https://outlook.example/mail/msg-d1", "ts": "2026-10-16T18:00:00Z",
+    "from": {"name": "Lee Park", "email": "lee@acme.example"},
+    "quote": "Fwd: Q4 pricing deck. Justin, when you review this, can you check the discount tiers against EMEA?",
+    "candidates": [{"ask": "Check the pricing deck discount tiers against EMEA when reviewing", "owner": "me"}]
+  },
+  {
+    "source": "email", "source_id": "msg-c2", "version": "1",
+    "anchor": "email:conv-C", "message_ids": ["<c2@acme.example>"],
+    "link": "https://outlook.example/mail/msg-c2", "ts": "2026-10-16T19:00:00Z",
+    "from": {"name": "Dana Kim", "email": "dana@acme.example"},
+    "quote": "Thanks so much!",
+    "candidates": []
+  },
+  {
+    "source": "email", "source_id": "msg-c3", "version": "1",
+    "anchor": "email:conv-C", "message_ids": ["<c3@acme.example>"],
+    "link": "https://outlook.example/mail/msg-c3", "ts": "2026-10-16T20:00:00Z",
+    "from": {"name": "Dana Kim", "email": "dana@acme.example"},
+    "people": [{"name": "Sam Ortiz", "email": "sam@acme.example"}],
+    "quote": "One more thing: could you also approve Sam's travel request for the conference?",
+    "candidates": [{"ask": "Approve Sam's conference travel request", "owner": "me"}]
+  },
+  {
+    "source": "email", "source_id": "msg-b2", "version": "1",
+    "anchor": "email:conv-B", "message_ids": ["<b2@acme.example>"],
+    "link": "https://outlook.example/mail/msg-b2", "ts": "2026-10-16T21:00:00Z",
+    "from": {"name": "Marco Diaz", "email": "marco@acme.example"},
+    "quote": "The venue needs a deposit by Friday to hold the November dates.",
+    "candidates": [{"ask": "Pay the offsite venue deposit by Friday", "owner": "me", "due": "2026-10-17"}]
+  }
+]

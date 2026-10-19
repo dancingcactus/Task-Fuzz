@@ -1,0 +1,50 @@
+[
+  {
+    "source": "email", "source_id": "msg-a1", "version": "1",
+    "anchor": "email:conv-A", "message_ids": ["<a1@acme.example>"],
+    "link": "https://outlook.example/mail/msg-a1", "ts": "2026-10-15T14:00:00Z",
+    "from": {"name": "Priya Shah", "email": "priya@acme.example"},
+    "people": [], "links": ["https://docs.google.com/presentation/d/PRICINGDECK123/edit"],
+    "quote": "Could you review the Q4 pricing deck by Thursday? Mostly the discount tiers.",
+    "candidates": [
+      {"ask": "Review the Q4 pricing deck (discount tiers)", "owner": "me", "due": "2026-10-16", "topics": ["Q4 pricing"]}
+    ]
+  },
+  {
+    "source": "email", "source_id": "msg-b1", "version": "1",
+    "anchor": "email:conv-B", "message_ids": ["<b1@acme.example>"],
+    "link": "https://outlook.example/mail/msg-b1", "ts": "2026-10-15T15:00:00Z",
+    "from": {"name": "Marco Diaz", "email": "marco@acme.example"},
+    "quote": "Two things: send the vendor contract to legal, and book a venue for the November offsite.",
+    "candidates": [
+      {"ask": "Send the vendor contract to legal", "owner": "me"},
+      {"ask": "Book a venue for the November offsite", "owner": "me"}
+    ]
+  },
+  {
+    "source": "email", "source_id": "msg-c1", "version": "1",
+    "anchor": "email:conv-C", "message_ids": ["<c1@acme.example>"],
+    "link": "https://outlook.example/mail/msg-c1", "ts": "2026-10-15T16:00:00Z",
+    "from": {"name": "Dana Kim", "email": "dana@acme.example"},
+    "people": [{"name": "Sam Ortiz", "email": "sam@acme.example"}],
+    "quote": "Please approve Sam's PTO request for next week.",
+    "candidates": [{"ask": "Approve Sam's PTO request", "owner": "me"}]
+  },
+  {
+    "source": "meeting", "source_id": "20261015 - Dashboard sync#ivan-to-update-dashboard-filters", "version": "1",
+    "anchor": "meeting:20261015 - Dashboard sync#ivan-to-update-dashboard-filters",
+    "link": "file:///Users/jgrover/Context/meetings/summaries/20261015%20-%20Dashboard%20sync%20-%20Write%20Meeting%20Notes.md#ivan-to-update-dashboard-filters",
+    "ts": "2026-10-15T18:00:00Z", "from": {"name": "Dashboard sync"},
+    "people": [{"name": "Ivan"}],
+    "quote": "Ivan to update the dashboard filters",
+    "candidates": [{"ask": "Update the dashboard filters", "owner": "Ivan"}]
+  },
+  {
+    "source": "meeting", "source_id": "20261015 - Dashboard sync#write-up-incident-retro", "version": "1",
+    "anchor": "meeting:20261015 - Dashboard sync#write-up-incident-retro",
+    "link": "file:///Users/jgrover/Context/meetings/summaries/20261015%20-%20Dashboard%20sync%20-%20Write%20Meeting%20Notes.md#write-up-incident-retro",
+    "ts": "2026-10-15T18:00:00Z", "from": {"name": "Dashboard sync"},
+    "quote": "Someone should write up the incident retro for OPS-412",
+    "candidates": [{"ask": "Write up the incident retro for OPS-412", "owner": "unclear"}]
+  }
+]

@@ -85,6 +85,7 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 - Dictation inserts a fixed sentence. Attached files record only their names.
 - "Work in Claude" moves the task to Current instead of opening anything.
 - Source linking and matching (the Task matching doc) is represented by the duplicate and entity cards only.
+  A working spike of the matcher itself, as a GitHub Copilot skill, is in [`spikes/task-matching/`](spikes/task-matching/README.md).
 
 ## Layout of the code
 
