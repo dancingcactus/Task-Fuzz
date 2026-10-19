@@ -4,10 +4,13 @@
 (function () {
   var V = {};
   var ABORT = {};
+  /* Check-ins come often at first, then back off: after 2 cleared cards, then 4 more, 8 more, 16 more… */
+  var CI_FIRST = 2;
   var esc = UI.esc;
 
   var root, card, stack, stage, alive = false, busy = false, epoch = 0, unsub = null;
-  var ciOpen = false, ciBusy = false, checkedIn = false, ciTimer = 0, ciSecs = 300;
+  var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false;
+  var ciCount = 0, ciNextAt = CI_FIRST;
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, tab = null, keptStale = {}, edits = {}, greeted = false;
   var docClick = null;
@@ -38,7 +41,7 @@
   function lock(on) {
     busy = on;
     if (!root) return;
-    root.querySelectorAll('[data-act],[data-moment],[data-demo],[data-quick]').forEach(function (b) { b.disabled = on || (ciOpen && !!b.dataset.act); });
+    root.querySelectorAll('[data-act],[data-demo],[data-quick]').forEach(function (b) { b.disabled = on || (ciOpen && !!b.dataset.act); });
   }
   async function moment(fn) {
     if (busy || !alive) return;
@@ -70,7 +73,7 @@
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; checkedIn = false; lastTask = null; greeted = false; };
+  V.hardReset = function () { keptStale = {}; edits = {}; ciCount = 0; ciNextAt = CI_FIRST; lastTask = null; greeted = false; };
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; clearInterval(ciTimer); clearTimeout(rushTimer);
@@ -123,10 +126,6 @@
     '<section class="triage" aria-labelledby="triage-h">' +
       '<div class="triage-top">' +
         '<h1 id="triage-h" class="sr">Triage</h1>' +
-        '<div class="moment" role="group" aria-label="What have you got right now?"><span class="moment-l">Right now</span>' +
-          '<button type="button" class="seg" data-moment="any">Anything</button>' +
-          '<button type="button" class="seg" data-moment="quick">5 minutes</button>' +
-          '<button type="button" class="seg" data-moment="low">Low energy</button></div>' +
       '</div>' +
       '<section class="stage" id="stage">' +
         '<div class="fx" id="fx"></div>' +
@@ -135,7 +134,7 @@
           '<article class="card" id="card"></article>' +
           '<article class="card checkin" id="checkin" hidden>' +
             '<div class="tagrow"><span class="src">Quick pause</span></div>' +
-            '<h2>The urgent stuff is handled. How are you doing?</h2><p class="meta">Totally optional. It takes about five seconds.</p>' +
+            '<h2 id="ci-h">How are you doing?</h2><p class="meta">Totally optional. It takes about five seconds.</p>' +
             '<div class="moods" id="ci-moods" role="group" aria-label="How are you doing?">' + moodBtns + '</div>' +
             '<div class="ci-follow" id="ci-follow"></div>' +
             '<div class="ci-break" id="ci-break" hidden><div class="breath" aria-hidden="true"></div><p class="ci-time" id="ci-time">5:00</p><p class="meta">Fuzz has the queue. Step away for a bit.</p><button class="btn primary" data-ci="back">I’m back</button></div>' +
@@ -161,7 +160,6 @@
     Progress.render(cleared, cleared + left);
     /* count what's cleared, never what's left */
     document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
-    root.querySelectorAll('[data-moment]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.moment === st.moment)); });
   }
   function updateStack(arriveLast) {
     stack.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
@@ -344,9 +342,14 @@
   function settleSheepish() { setTimeout(function () { if (alive && Fuzz.mood() === 'sheepish') { Fuzz.setMood('idle'); Fuzz.setArm('none'); } }, 3500); }
 
   /* ---------- Showing the next card ---------- */
+  function cleared() { var st = Store.get(); return Math.max(st.totalEver - st.queue.length, 0); }
+  /* Never mid-rush: wait until the time-sensitive cards are handled. */
   function shouldCheckin(next) {
-    var q = Store.queue();
-    return !checkedIn && lastTask && lastTask.dueAt && lastTask.state !== 'triage' && !q.some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack;
+    return cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack;
+  }
+  function ciDone() {
+    if (ciDemo) { ciDemo = false; return; }
+    ciCount++; ciNextAt = cleared() + CI_FIRST * Math.pow(2, ciCount);
   }
   async function showNext() {
     var e = epoch;
@@ -429,14 +432,20 @@
     }
   }
 
-  /* ---------- Check-in (after the urgent cards are handled) ---------- */
+  /* ---------- Check-in (repeats through the session; the answer reorders the queue, principle 16) ---------- */
   var CI_REPLY = {
-    good: { mood: 'happy', line: 'Love that. Let’s keep the momentum.', auto: true },
-    okay: { mood: 'idle', line: 'Okay works. I’ll keep things light.', auto: true },
-    tired: { mood: 'caring', line: 'Long stretch. Want to take five? I’ll watch the queue.', opts: [['break', 'Take 5'], ['go', 'Keep going']] },
-    over: { mood: 'caring', line: 'That’s a lot at once. We can slow down. Want me to hold the rest until tomorrow?', opts: [['hold', 'Hold the rest until tomorrow'], ['slow', 'One at a time'], ['break', 'Take 5']] }
+    good: { mood: 'happy', moment: 'any', line: 'Love that. Let’s keep the momentum.', auto: true },
+    okay: { mood: 'idle', moment: 'any', line: 'Okay works. I’ll keep things light.', auto: true },
+    tired: { mood: 'caring', moment: 'low', line: 'Long stretch. I’ll bring the gentle ones first. Want to take five? I’ll watch the queue.', opts: [['break', 'Take 5'], ['go', 'Keep going']] },
+    over: { mood: 'caring', moment: 'quick', line: 'That’s a lot at once. I’ll put the quick ones first. Want me to hold the rest until tomorrow?', opts: [['hold', 'Hold the rest until tomorrow'], ['slow', 'Quick ones first'], ['break', 'Take 5']] }
   };
-  function showCheckin() {
+  var CI_ASK = [
+    ['Quick pause. How are you doing?', 'Quick pause. How are you doing?'],
+    ['Checking in again. How’s it going?', 'Checking in again. How’s it going?'],
+    ['Been a while. How are you holding up?', 'We’ve been at this a while. How are you holding up?']
+  ];
+  function showCheckin(demo) {
+    ciDemo = !!demo;
     ciOpen = true; lock(busy); clearInterval(ciTimer); ciBusy = false;
     card.style.display = 'none';
     var oldE = stack.querySelector('.empty'); if (oldE) oldE.remove();
@@ -448,12 +457,15 @@
     updateStack(false); stats();
     $('#dropbtn').hidden = true;
     Fuzz.setMood('caring'); Fuzz.setArm('none');
-    Fuzz.say('Urgent stuff is handled. Before we keep going, how are you doing?', { type: false });
+    var ask = lastTask && lastTask.dueAt && lastTask.state !== 'triage' ? ['The urgent stuff is handled. How are you doing?', 'Urgent stuff is handled. Before we keep going, how are you doing?'] : CI_ASK[Math.min(ciCount, CI_ASK.length - 1)];
+    $('#ci-h').textContent = ask[0];
+    Fuzz.say(ask[1], { type: false });
   }
   async function ciPick(kind) {
     if (ciBusy) return;
     var r = CI_REPLY[kind], ci = $('#checkin');
     ci.querySelectorAll('.mood').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.pick === kind)); });
+    Store.setMoment(r.moment);
     Fuzz.setMood(r.mood); if (r.mood === 'happy') Fuzz.pAnim('hop');
     Fuzz.say(r.line, { type: false });
     var f = $('#ci-follow'); f.innerHTML = '';
@@ -467,9 +479,10 @@
     if (ciBusy) return;
     try {
       if (a === 'skip') return ciClose('Okay, no pause. Back to it.');
-      if (a === 'go' || a === 'slow') return ciClose('Okay. One at a time.');
+      if (a === 'go') return ciClose('Okay. Gentle ones first.');
+      if (a === 'slow') return ciClose('Okay. Quick ones first, one at a time.');
       if (a === 'hold') {
-        ciBusy = true; checkedIn = true;
+        ciBusy = true; ciDone();
         var snap = Store.snapshot();
         Store.queue().forEach(function (it) { Store.schedule(it.id, '', 'tomorrow morning'); });
         stats(); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Done. They’ll be waiting for you tomorrow morning.', { type: false });
@@ -498,7 +511,7 @@
     } catch (e) { if (e !== ABORT) throw e; }
   }
   async function ciClose(line) {
-    ciBusy = true; clearInterval(ciTimer); checkedIn = true;
+    ciBusy = true; clearInterval(ciTimer); ciDone();
     var ci = $('#checkin');
     if (line) Fuzz.say(line, { type: false });
     if (!Fuzz.isCalm()) await ci.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.97)' }], { duration: 220, easing: 'ease-in', fill: 'forwards' }).finished.catch(function () {});
@@ -755,14 +768,6 @@
       if (!busy) { Fuzz.pAnim('hop'); Fuzz.say('Parked. Back to what you were doing.', { type: false }); }
       $('#parkbtn').focus();
     });
-    root.querySelectorAll('[data-moment]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        if (busy) return;
-        Store.setMoment(b.dataset.moment); stats();
-        Fuzz.say({ any: 'Everything, in the usual order.', quick: 'Quick ones first. Anything over five minutes waits.', low: 'Gentle ones first. The heavy stuff can wait.' }[b.dataset.moment], { type: false });
-        showNext();
-      });
-    });
     $('#checkin').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       if (b.dataset.pick) ciPick(b.dataset.pick); else if (b.dataset.ci) ciAction(b.dataset.ci);
@@ -789,7 +794,7 @@
           else if (v.indexOf('f:') === 0) Fuzz.fxOn(v.slice(2), 1300);
           else if (v === 'confetti') Fuzz.confetti(card.style.display === 'none' ? stack : card);
           else if (v === 'hearts') Fuzz.hearts();
-          else if (v === 'checkin') { checkedIn = false; showCheckin(); }
+          else if (v === 'checkin') showCheckin(true);
         }
       });
     });
