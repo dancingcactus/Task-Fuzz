@@ -36,9 +36,9 @@
   --trim: color-mix(in srgb, var(--surface) 62%, #fff);
 }
 :root[data-mode="light"] {
-  /* mid-gray glass (amber glow keeps ~4.6:1 contrast on it), inside a darker bezel */
+  /* charcoal glass (amber glow keeps ~8:1 contrast on it), inside a darker bezel */
   --bezel: color-mix(in srgb, var(--ink) 80%, #000);
-  --screen: #5C5C5C;
+  --screen: #3A3A3A;
 }
 :root[data-mode="dark"] {
   --bezel: color-mix(in srgb, var(--bg) 55%, #000);
