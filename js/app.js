@@ -108,9 +108,10 @@
   function updateCount() {
     var has = Store.get().queue.length > 0, el = document.getElementById('navcount');
     if (!el) return;
-    var glyph = has ? '●' : '✓';
+    var glyph = has ? '' : '✓';
     if (el.textContent !== glyph) el.textContent = glyph;
     el.classList.toggle('done', !has);
+    el.classList.toggle('has', has);
     el.setAttribute('aria-label', has ? 'Tasks to triage' : 'All triaged');
   }
 
