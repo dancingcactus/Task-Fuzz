@@ -1,6 +1,9 @@
 # Fuzz core: design
 
-Status: draft for discussion. Nothing here is built yet.
+Status: draft for discussion. Build-order steps 1 to 5 are built in [`core/`](../core/README.md), with two
+additions to the task record: `context_md`, a Markdown brief the AI writes for tasks with no draft, and
+`question`, the one question it is asking you now. Both are set with the executor's `update_brief` tool
+(or on an extracted ask) and written as `task.brief_updated` events.
 
 ## Summary
 
@@ -131,7 +134,7 @@ and log zones). The new parts are below.
 ```sql
 users        (id, name, created_at)                    -- one row for now
 events       (id, user_id, ts, actor, type, task_id, payload, caused_by, run_id, model, prompt_version)
-tasks        (id, user_id, state, assignee, title, ask, due, order_key, notes,
+tasks        (id, user_id, state, assignee, title, ask, due, order_key, notes, context_md, question,
               variant_tags, steps_used, attempts, lease_owner, lease_until,
               schedule_anchor, schedule_fire_at, schedule_hints, updated_event_id)
 cards        (id, user_id, kind, task_id, other_id, prompt, reason, options, suggested,
@@ -231,6 +234,7 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `create_task(ask, sources, parent?)` | Splits off a subtask or captures a follow-up | Goes through matching like any other ask |
 | `request_permission(id, scope, resource, why)` | Asks to read a new source or use a connector | Creates a permission card. The task waits until you answer |
 | `suggest_schedule(id, anchor, reason)` | Adds a human-time option for this task | Checked by the core. See [AI suggestions](#ai-suggestions) |
+| `update_brief(id, context_md?, question?)` | Writes the Markdown brief and the one question shown to you | The task card's prompt is the question; answering clears it |
 | `release(id)` | Gives up the lease | A lease that runs out releases itself |
 
 Every call checks that the caller holds the lease on that task and that the task belongs to the
