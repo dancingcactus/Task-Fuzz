@@ -49,6 +49,8 @@ web app, and supporting several users who each have their own queue.
   (see [Personality](#personality)).
 - Teams or shared queues. Multiple users means one queue per person, nothing shared.
 - Real-time collaboration, mobile apps, a plugin system.
+- Domains (personal, work and so on). They're a later idea, noted in
+  [Later: domains](#later-domains) so nothing now gets in their way.
 
 ## Principles that shape the design
 
@@ -76,11 +78,11 @@ A single local service. It owns the database and is the only thing that writes t
 - **Time resolver**: turns human times like "before the planning review" into real ones, and keeps
   them up to date (see [Scheduling with human time](#scheduling-with-human-time)).
 - **Approval gate**: holds drafts until a human approves, then hands them to an actuator.
-- **Interfaces**: an HTTP API for UIs, an MCP server for AI workers, and an event stream that UIs
-  subscribe to.
+- **Interfaces**: an HTTP API for UIs, an MCP server for AI workers, a CLI for you, and an event
+  stream that UIs subscribe to.
 
-The HTTP API and the MCP server are two thin layers over the same core library, so they can't drift
-apart.
+The HTTP API, the MCP server and the CLI are thin layers over the same core library, so they can't
+drift apart. See [Who uses which interface](#who-uses-which-interface).
 
 ### Extractor
 
@@ -95,6 +97,10 @@ an AI role that returns verdicts in the spike's format:
 
 The core maps confidence to an outcome (merge, possible duplicate, related, new). That is already how
 `tasks.apply_verdicts` works.
+
+The extractor stays an AI skill, not core code, because it reads email and Slack through the AI
+client's own connectors. It talks to the core through its own MCP tools (see
+[Extractor tools](#extractor-tools-mcp)), which replace the spike's `tm.py` commands.
 
 ### Executor
 
@@ -184,6 +190,7 @@ entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
 permission.asked permission.granted permission.denied
 checkin.due     checkin.answered
+run.started     run.finished
 ```
 
 `card.created` carries the card's `kind` (`duplicate`, `entity_person`, `is_task`…), so the
@@ -226,6 +233,51 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 Every call checks that the caller holds the lease on that task and that the task belongs to the
 caller's user.
 
+## Extractor tools (MCP)
+
+The same MCP server, started with a different role (`fuzz mcp --role extractor`). Each role sees only
+its own tools, so the executor can't submit signals and the extractor can't claim tasks.
+
+| Tool | Does | Replaces in the spike |
+| --- | --- | --- |
+| `whoami()` | Returns your names, email addresses, Slack IDs and the folders to read | The values hard-coded in `SKILL.md` |
+| `get_cursors()` | Returns where to start reading each source, with the 6-hour overlap | `tm cursors` |
+| `submit_signals(signals)` | Checks signals against the schema, stores them and runs stages 1 to 3. Returns counts | `tm ingest` + `tm propose` |
+| `get_pending_judgments(page?)` | Returns the shortlists the judge must decide, a page at a time | `pending_judgments.json` |
+| `submit_verdicts(verdicts)` | Checks and applies verdicts. Returns counts | `tm apply` |
+
+Matching runs inside `submit_signals`, so the AI can't forget to call it.
+
+Both roles also have `whoami()`, so skills never contain anything about the person using them.
+
+### Keeping tool results small
+
+Most of the tokens in a run are data, not tool definitions, so the tools are built to return little:
+
+- Writes return counts and IDs, never an echo of what was sent.
+- Reads return pages and short summaries. `get_task` returns the notes and the last few log
+  entries. Source content comes only through `read_source`.
+- Errors say exactly which field failed, so the model fixes it in one try.
+
+## Who uses which interface
+
+Everything the spike's CLI did moves into the core library. Each command then goes to the layer that
+fits who uses it:
+
+| Spike command | Goes to | Why |
+| --- | --- | --- |
+| `cursors`, `ingest`, `propose`, `apply` | MCP, extractor role | The AI does these |
+| `merge`, `keep`, `split`, `detach`, `done`, `drop`, `schedule` | HTTP card answers from the UI, and the CLI for debugging | These are your decisions. Headless AI doesn't get them as tools |
+| `show` | CLI (`fuzz show 14`). The AI uses `get_task` | Looking around |
+| `init`, `reembed`, `reset` | CLI only | Admin |
+| `sync`, `report` | Removed | They only existed because `Matched Tasks.md` stood in for a UI |
+
+**The AI uses MCP, not the CLI.** A CLI would save a little context, because MCP tool definitions sit
+in context every turn, but they are small and cached. The real reason is the approval gate: an AI
+using the CLI needs a shell, and even an allowlist of `fuzz *` can be got around with `;`, pipes or
+`$(…)`. With MCP only, a headless run has no shell, so "no `send` tool" stays true. MCP over HTTP
+also works for cloud agents and the web app, where there is no local CLI.
+
 ## Choosing the next task
 
 `claim_next_task` is deterministic code:
@@ -243,12 +295,104 @@ kind of code, run for the human queue.
 
 ### What wakes the executor
 
-1. **Now**: a scheduled loop on the Mac (launchd, or a Claude Code scheduled task) that claims until
-   nothing is eligible.
+1. **Now**: a launchd job on the Mac that runs `fuzz run executor`, which claims until nothing is
+   eligible. You can run the same command by hand (see [Running a role](#running-a-role)).
 2. **Later**: wake on events (`task.assigned`, `task.approved`) through the event stream.
 3. **Web**: a worker pool reading per-user queues.
 
 The loop doesn't change between these three, only what starts it.
+
+## Installing the AI roles
+
+The extractor and the executor each come as a **skill**: a `SKILL.md` and its reference files, in the
+format Claude Code, GitHub Copilot and OpenAI Codex all read. Installing a role for a client means
+two things:
+
+1. **The skill files**, in the folder that client reads.
+2. **The MCP registration**, so the client knows how to start `fuzz mcp --role <role>`.
+
+### The skills
+
+| Skill | Role | Uses |
+| --- | --- | --- |
+| `fuzz-extract` | `extractor.reader` and `extractor.judge` | The client's email and Slack connectors, and the [extractor tools](#extractor-tools-mcp) |
+| `fuzz-executor` | `executor` | The [executor tools](#executor-tools-mcp) only |
+
+- **Instructions only, no scripts.** The spike puts its Python inside the skill. With three clients
+  that would mean three copies drifting apart, so the code lives in the core and the skill only calls
+  tools.
+- **Nothing about you.** The skill gets your names, addresses and folders from `whoami()`, so the
+  same files work for every client and every user.
+- **Versioned.** Each skill's frontmatter carries its `prompt_version`. The skill passes it on its
+  tool calls, the core records it on every event, and `fuzz doctor` warns when an installed skill is
+  out of date.
+- **One copy.** The skills live in the core's repo. The installer copies them out, or links them
+  while you develop.
+
+### Where each client looks
+
+Personal scope only for now. Project scope would put Fuzz in a repo, which doesn't fit a personal
+task system.
+
+| Client | Skills folder | MCP config | Headless command |
+| --- | --- | --- | --- |
+| Claude Code | `~/.claude/skills/` | `claude mcp add --scope user` | `claude -p` |
+| GitHub Copilot (CLI and VS Code) | `~/.copilot/skills/`. Also reads `~/.claude/skills/` and `~/.agents/skills/` | VS Code user `mcp.json`. CLI file to confirm | `copilot -p` |
+| OpenAI Codex | `~/.codex/skills/` (`$CODEX_HOME`) | `[mcp_servers.fuzz-*]` in `~/.codex/config.toml` | `codex exec` |
+
+These paths change often, so they live in one table in the installer, and `fuzz doctor` checks them
+on the machine. Because Copilot also reads `~/.claude/skills/`, installing for both Claude Code and
+Copilot writes the skills once, so Copilot doesn't see each skill twice.
+
+### The installer
+
+Part of the core's CLI, so it ships with what it installs.
+
+```
+fuzz install   --client claude-code|copilot|codex [--roles extractor,executor] [--link]
+fuzz uninstall --client …
+fuzz doctor
+```
+
+- **Safe to run again.** It writes a manifest of every file and config entry it touched, and
+  `uninstall` removes exactly those.
+- **Edits config files in place**, keeping everything else in them: JSON for Claude Code and Copilot,
+  TOML for Codex.
+- **`--link`** symlinks the skills instead of copying, for development. All three clients follow
+  symlinked skill folders.
+- **Sets the role config.** Installing a role for a client sets `{"executor": {"client": …}}` if that
+  role has no client yet, and writes the launchd job that runs it.
+- **Allows only Fuzz's tools for headless runs.** It writes the client's pre-approved tool list for
+  the `fuzz` MCP server and nothing else. No shell, no file writes. This is what keeps the approval
+  gate true when nobody is watching.
+
+`fuzz doctor` checks, for each client: the skill is there and current, the MCP server starts in each
+role, the role config points at an installed client, and an email and a Slack tool are visible to
+the extractor. It can't install connectors, because each client provides them differently, so it
+says which ones are missing.
+
+### Running a role
+
+Headless first. launchd and you run the same command, so a run you start to debug behaves exactly
+like a scheduled one:
+
+```
+fuzz run executor|extractor [--client claude-code] [--task 14] [--scripted] [--verbose]
+```
+
+| Flag | Does |
+| --- | --- |
+| `--client` | Overrides the role config for this run, to compare clients |
+| `--task 14` | Works only that task instead of claiming the next one (executor only) |
+| `--scripted` | Uses the scripted role: checks the core without calling a model |
+| `--verbose` | Prints the client's transcript as it runs |
+
+Every run writes `run.started` and `run.finished` (with the client, model, `prompt_version`, tasks
+touched and whether it ended cleanly), so "what did last night's run do?" is read from the log like
+everything else.
+
+The skills can also be used from a normal chat ("work through my Fuzz queue"). The tools and rules
+are the same, so this costs nothing extra, but headless runs come first.
 
 ## Approval gate and actuators
 
@@ -518,7 +662,8 @@ Deterministic, and only in the UI.
 - SQLite in WAL mode, under `~/Library/Application Support/Fuzz/` (overridable, as with `TM_STORE`).
 - HTTP on `127.0.0.1` only, with a random token in a local config file so other local pages can't
   call it.
-- MCP over stdio for local AI clients (Claude Code, Copilot), started by the client.
+- MCP over stdio for local AI clients (Claude Code, Copilot, Codex), started by the client and
+  registered by `fuzz install`.
 - The UI is served by the core as static files, so it stays no-build.
 - Secrets (connector tokens) in the macOS Keychain, never in the database.
 - Started by a launchd agent.
@@ -543,6 +688,16 @@ Costs almost nothing now if done from the start:
 - Concurrency limits, cursors, config and entities are per user.
 - A test that creates two users and checks that nothing leaks between them.
 
+### Later: domains
+
+Separate areas of one person's life, such as personal and work, each with its own sources and queue.
+Not designed yet. Two choices now keep it cheap:
+
+- **Skills know nothing about domains.** They get everything from `whoami()`, so adding domains
+  doesn't change the skill files or the installer's skill step.
+- **A domain is a scope, like `user_id`.** It would most likely become a column on each row, a
+  `--domain` flag on `fuzz mcp` and `fuzz run`, and one MCP registration per domain.
+
 ## Testing
 
 - **Scripted roles** for the extractor, the judge and the executor, so the full loop runs offline.
@@ -556,6 +711,9 @@ Costs almost nothing now if done from the start:
   date.
 - **Model comparison**: run two configs on a saved set of signals and tasks, and diff their decisions
   using the recorded `model` and `prompt_version`.
+- **Installer tests** against a fake home folder: install, install again and uninstall for each
+  client leave the config files exactly as expected, other entries untouched, and nothing behind.
+- **Role scoping**: the executor role can't see extractor tools, and the reverse.
 - The spike's existing tests carry over.
 
 ## Build order
@@ -566,10 +724,12 @@ Costs almost nothing now if done from the start:
    UI at them instead of `tick`, with the personality tables unchanged.
 3. **Time resolver**, with the timeline options and the anchors that don't need a calendar (`in`,
    `at_desk`, `day_part`, `before_due`, `exact`). This replaces the fixed `WHEN` list.
-4. **MCP server** with the executor tools, and a scripted executor.
-5. **Real executor**: one MCP client running the loop with drafts only, no actuators.
-6. **Extractor wired in**: the spike's flow (sync, cursors, ingest, propose, judge, apply) writes
-   through the core, including `is_task` cards.
+4. **MCP server** with both roles' tools, a scripted executor, and `fuzz run` with `--scripted`.
+5. **Installer and `fuzz doctor`** for Claude Code first, then Copilot and Codex. Until step 6, it
+   can install the spike's `task-matching` skill as a first test of the per-client paths.
+6. **Skills and real runs**: `fuzz-executor` running headless with drafts only, no actuators, then
+   `fuzz-extract` replacing the spike's flow (cursors, ingest, propose, judge, apply) through the
+   extractor tools, including `is_task` cards.
 7. **Calendar anchors and AI schedule suggestions**, once the core can read the calendar.
 8. **First actuator**, probably email reply. Then the rest, one kind at a time.
 9. Web hosting and multiple users, when wanted.
@@ -578,8 +738,8 @@ Costs almost nothing now if done from the start:
 
 1. **Language for the core.** Python reuses the spike and has an official MCP SDK. TypeScript would
    match the UI. Recommendation: Python.
-2. **Which client runs the executor first?** Claude Code, Copilot or an Agent SDK script. MCP keeps
-   this open, but the first one sets what the prompts are tuned for.
+2. **Which client runs the executor first?** Claude Code, Copilot or Codex. The installer keeps this
+   open, but the first one sets what the prompts are tuned for. The build order assumes Claude Code.
 3. **Who reads the sources and the calendar?** The extractor needs email and Slack access, and the
    time resolver needs the calendar. Locally that can be the AI client's connectors, as in the spike.
    On the web the core would need its own integrations.
@@ -593,3 +753,9 @@ Costs almost nothing now if done from the start:
    the one place to clear decisions. Leaving them out keeps Triage about sorting new work.
 8. **Lead times.** The defaults for "before" anchors (an hour, a day, a week), and whether they
    should learn from when you actually pick the task up.
+9. **Client paths to confirm.** Copilot CLI's MCP config file and Codex's personal skills folder
+   weren't confirmed in official docs. `fuzz doctor` should check them on a real machine before the
+   installer relies on them.
+10. **Token cost.** MCP was chosen over the CLI for safety, not cost. A quick measurement (one
+    scripted extraction through `tm.py` and through MCP) would show whether the difference is as
+    small as expected.
