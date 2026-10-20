@@ -120,7 +120,8 @@ There is no `send`, `post` or `delete` tool.
 
 The current clickable demo, with the simulated `tick` in `js/store.js` replaced by calls to the core.
 It reads tasks over HTTP, subscribes to the event stream for changes, and sends your decisions
-(assign, done, schedule, park, approve, undo) as commands. Fuzz's personality lives here.
+(assign, done, schedule, park, approve, undo) as commands. Fuzz's personality lives here. Settings
+also installs and chooses the AI engine (see [Engine settings in the UI](#engine-settings-in-the-ui)).
 
 ## Data model
 
@@ -192,6 +193,7 @@ card.created    card.answered    card.postponed   card.expired
 permission.asked permission.granted permission.denied
 checkin.due     checkin.answered
 run.started     run.finished
+engine.installed engine.removed engine.selected
 ```
 
 `card.created` carries the card's `kind` (`duplicate`, `entity_person`, `is_task`…), so the
@@ -381,24 +383,69 @@ clients:
 
 ### Choosing the client for a role
 
-The core config names a client and a model for each role:
+One **engine** (a client and a model) runs every role by default. The extractor and the executor
+don't need different vendors, so the simple case is one choice:
 
 ```json
 {
-  "executor":        {"client": "claude-code", "model": "…"},
-  "extractor.reader": {"client": "copilot",     "model": "…"},
-  "extractor.judge":  {"client": "copilot",     "model": "…"}
+  "engine": {"client": "claude-code", "model": "…"},
+  "roles":  {}
 }
 ```
 
-- **Switching is a config change.** `fuzz config set executor.client copilot`, or `--client` for one
-  run. Skills, tools and rules stay the same.
+- **Per-role overrides are optional.** `"roles": {"extractor.judge": {"model": "…"}}` changes one
+  role. They live in the config file for experiments, not in the UI.
+- **Switching is a config change.** From Settings in the UI, `fuzz config set engine.client
+  copilot`, or `--client` for one run. Skills, tools and rules stay the same.
+- **Switching only offers ready clients.** You can pick a client only once its install status is
+  Ready (see [Engine settings in the UI](#engine-settings-in-the-ui)). A switch takes effect at the
+  next run, never in the middle of one.
 - **Both clients can run at once.** Leases already keep two workers off the same task, so running a
   Claude Code executor and a Copilot executor side by side is safe. It's useful for comparing them on
   live work. It isn't the default, because it doubles the cost.
 - **Comparisons come from the log.** Every event carries its run, and every run its client and
   model, so "how did Copilot's drafts fare against Claude Code's?" is a query: approved, edited or
   sent back, handbacks, and steps used per task.
+
+### Engine settings in the UI
+
+Installing and choosing the engine is done from **Settings > Engine** in the UI, not only from the
+CLI. The UI calls the same core code as `fuzz install`, `fuzz doctor` and `fuzz config`, over HTTP.
+
+**Install status.** One row per client, with each part's status:
+
+| Part | Shows | Comes from |
+| --- | --- | --- |
+| Client | Found on this Mac, and its version | The adapter looks for the client |
+| Skills | Installed, out of date (with versions), or missing, for each skill | The installer's manifest and each skill's `prompt_version` |
+| MCP server | Registered, and whether it starts in each role | `fuzz doctor` |
+| Headless run | Last run's result and time | The `runs` table |
+| Connectors | Email and Slack tools visible, or which are missing | `fuzz doctor` |
+
+Each row sums up as **Ready**, **Needs attention** (with the first thing to fix) or **Not
+installed**.
+
+**Actions.** Install, Update (when a skill is out of date), Repair (reinstalls what `doctor` found
+broken), Uninstall, and Run now, which starts `fuzz run` for a role so you can test it from the UI.
+Connectors can't be installed from Fuzz, so a missing connector shows how to add it in that client.
+
+**Choosing the engine.** One picker for the client and one for the model, showing only clients that
+are Ready. Fuzz says when the switch happened, through the personality layer, like any other event.
+
+**HTTP API.**
+
+```
+GET  /engine                     current engine, and install status for every client
+POST /engine/clients/{client}/install | update | repair | uninstall
+POST /engine/check               runs doctor again and returns fresh status
+PUT  /engine                     {"client": …, "model": …}
+POST /engine/run                 {"role": "executor", "task_id"?: 14}
+```
+
+Each install, removal and switch writes an event (`engine.installed`, `engine.removed`,
+`engine.selected`), so every change is in the log. Undo works for a switch; an install is reversed
+with Uninstall. Status checks write
+nothing; they're recomputed on request and cached for a minute.
 
 ### The installer
 
@@ -414,8 +461,8 @@ fuzz doctor
   `uninstall` removes exactly those.
 - **Edits config files in place**, keeping everything else in them (JSON for both first clients).
 - **`--link`** symlinks the skills instead of copying, for development.
-- **Sets the role config.** Installing a role for a client sets `{"executor": {"client": …}}` if that
-  role has no client yet, and writes the launchd job that runs it.
+- **Sets the engine.** The first client installed becomes the engine if none is set yet. Installing
+  also writes the launchd jobs that run the roles.
 - **Allows only Fuzz's tools for headless runs.** The adapter passes the client's allow and deny
   flags on every run, allowing the `fuzz` MCP server and nothing else. No shell, no file writes. This
   is what keeps the approval gate true when nobody is watching.
@@ -785,7 +832,7 @@ Not designed yet. Two choices now keep it cheap:
 5. **Adapters, installer and `fuzz doctor`** for Claude Code and Copilot together, so the adapter
    boundary is real from the start. Until step 6, the installer can install the spike's
    `task-matching` skill as a first test of the per-client paths. Codex comes later as a third
-   adapter.
+   adapter. Then the Settings > Engine page in the UI, over the same code.
 6. **Skills and real runs**: `fuzz-executor` running headless with drafts only, no actuators, then
    `fuzz-extract` replacing the spike's flow (cursors, ingest, propose, judge, apply) through the
    extractor tools, including `is_task` cards.
@@ -797,9 +844,8 @@ Not designed yet. Two choices now keep it cheap:
 
 1. **Language for the core.** Python reuses the spike and has an official MCP SDK. TypeScript would
    match the UI. Recommendation: Python.
-2. **Default client for each role.** Claude Code and Copilot are both supported from the start.
-   Which one is the default for the executor, and which models, is a config choice to settle once
-   both have run on the same tasks.
+2. **Default engine.** Claude Code and Copilot are both supported from the start. Which one is the
+   default, and which model, is a choice to settle once both have run on the same tasks.
 3. **Who reads the sources and the calendar?** The extractor needs email and Slack access, and the
    time resolver needs the calendar. Locally that can be the AI client's connectors, as in the spike.
    On the web the core would need its own integrations.
