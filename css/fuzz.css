@@ -148,8 +148,8 @@
 .card{position:relative;z-index:3;background:var(--surface);border:var(--bw) solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:18px 18px 20px;display:flex;flex-direction:column;gap:12px}
 .card.shake{animation:shake .3s ease-in-out}
 @keyframes shake{20%{transform:translate(-5px,3px)}45%{transform:translate(5px,-2px)}70%{transform:translate(-2px,1px)}}
-.card.enter{animation:rise .6s cubic-bezier(.3,1.3,.5,1) backwards}
-.card.enter .decide,.card.enter h2{animation:fadeup .4s ease-out .12s backwards}
+.card.enter{animation:rise .45s cubic-bezier(.3,1.3,.5,1) backwards}
+.card.enter .decide,.card.enter h2{animation:fadeup .3s ease-out .08s backwards}
 .card.enter-tilt{animation:tilt .75s cubic-bezier(.3,1.4,.5,1) backwards}
 @keyframes rise{0%{transform:translateY(18px) scale(.95);opacity:0}70%{transform:translateY(-6px) scale(1.012);opacity:1}100%{transform:none}}
 @keyframes tilt{0%{transform:translateX(70%) rotate(-5deg);opacity:0}60%{transform:translateX(-2%) rotate(1.6deg);opacity:1}100%{transform:none}}

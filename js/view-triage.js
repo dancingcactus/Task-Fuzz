@@ -351,16 +351,29 @@
     if (ciDemo) { ciDemo = false; return; }
     ciCount++; ciNextAt = cleared() + CI_FIRST * Math.pow(2, ciCount);
   }
-  async function showNext() {
+  function enterCard(t) {
+    renderCard(t); updateStack(false); stats();
+    card.classList.add(t.handedBack ? 'enter-tilt' : 'enter');
+    if (Fuzz.isCalm()) card.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
+  }
+  /* Bring the next card in as soon as the last one is gone. Its buttons stay locked, and Fuzz
+     holds his reaction to it, until he has finished with the last one (showNext(shown)). */
+  function bringNext() {
+    var t = Store.queue()[0];
+    if (!t || shouldCheckin(t)) return null;
+    enterCard(t);
+    return t.id;
+  }
+  async function showNext(shown) {
     var e = epoch;
     try {
       var q = Store.queue();
       if (!q.length) return zeroState();
       var t = q[0];
-      if (shouldCheckin(t)) return showCheckin();
-      renderCard(t); updateStack(false); stats();
-      card.classList.add(t.handedBack ? 'enter-tilt' : 'enter');
-      if (Fuzz.isCalm()) card.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
+      if (t.id !== shown) {
+        if (shouldCheckin(t)) return showCheckin();
+        enterCard(t);
+      }
       if (t.handedBack) {
         Fuzz.glitch(600); Fuzz.setMood('sheepish'); Fuzz.setArm('scratch'); Fuzz.pAnim('shrug');
         /* don't hold the busy lock while the line types out */
@@ -554,19 +567,21 @@
     var b = card.querySelector('[data-act="assign"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
     Fuzz.setMood('eager'); Fuzz.setArm('salute'); if (V_.fx) Fuzz.fxOn(V_.fx, V_.ms); else Fuzz.pAnim('lean');
     Fuzz.say(line || V_.inL[r]);
-    await sleep(Math.max(rush ? 300 : 650, V_.ms * (rush ? 0.55 : 0.8)));
-    Fuzz.setArm('none');
+    /* The card heads for Fuzz while his reaction is still playing. */
+    await sleep(rush ? 150 : 250);
     var snap = Store.snapshot(), waited = Store.assign(it.id, instr), title = it.title;
-    await fly(card, root.querySelector('#bot'), { scale: 0.08, rot: -18, dur: rush ? 420 : 760 });
+    var shown = null, flown = fly(card, root.querySelector('#bot'), { scale: 0.08, rot: -18, dur: rush ? 340 : 600 }).then(function () { shown = bringNext(); });
+    await Promise.all([flown, sleep(Math.max(rush ? 300 : 650, V_.ms * (rush ? 0.55 : 0.8)) * 0.7)]);
+    Fuzz.setArm('none');
     Fuzz.flash(); Fuzz.glitch(180); Fuzz.pAnim('gulp'); Fuzz.setMood('thinking'); stats();
     Fuzz.say(V_.midL[r]);
-    await sleep(rush ? 800 : 1300);
+    await sleep(rush ? 560 : 900);
     Fuzz.setMood('happy');
     Fuzz.say(waited ? 'That’s my fifth. This one is next up the moment I’ve got a free hand.' : V_.outL[r]); Fuzz.pAnim('hop');
     Say.offerUndo(waited ? '“' + title + '” is next up. Five are running.' : 'Assigned “' + title + '” to Fuzz.', function () { Store.restore(snap); V.refresh(); });
-    await sleep(1000);
+    await sleep(700);
     Fuzz.setMood('idle');
-    await showNext();
+    await showNext(shown);
   }
 
   var STAMP_V = [['DONE', 's1'], ['✓', 's2'], ['NAILED IT', 's3'], ['DONE', 's4'], ['Nice!', 's5']];
@@ -591,15 +606,17 @@
     streak++; stats();
     Fuzz.say(rushT ? 'with time to spare.' : (V_.say || STAMPS[Store.stats().done % STAMPS.length]), { cls: 'sign', type: false });
     if (streak >= 3) Fuzz.setCool(true);
-    await sleep(V_.hold);
+    /* The card drops away while Fuzz celebrates, after a short beat so the stamp reads. */
+    var shown = null, exit = sleep(200).then(function () {
+      if (Fuzz.isCalm()) return fadeOut();
+      return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(8px) scale(.97)', offset: 0.2 }, { transform: 'translateY(320px) scale(.55) rotate(6deg)', opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.5,0,.9,.6)' });
+    }).then(function () { st.className = 'stamp'; st.textContent = 'DONE'; shown = bringNext(); });
+    await Promise.all([exit, sleep(V_.hold * 0.7)]);
     Fuzz.setArm('none');
-    if (Fuzz.isCalm()) await fadeOut();
-    else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(8px) scale(.97)', offset: 0.2 }, { transform: 'translateY(320px) scale(.55) rotate(6deg)', opacity: 0 }], { duration: 560, easing: 'cubic-bezier(.5,0,.9,.6)' });
-    st.className = 'stamp'; st.textContent = 'DONE';
     Fuzz.setMood('idle');
     Say.offerUndo('Marked “' + it.title + '” done.', function () { Store.restore(snap); V.refresh(); });
     if (streak >= 3) Fuzz.say('Three in a row. Sunglasses are earned.');
-    await showNext();
+    await showNext(shown);
   }
 
   async function inClaude() {
@@ -607,16 +624,18 @@
     streak = 0;
     var b = card.querySelector('[data-act="claude"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
     Fuzz.setMood('stare'); Fuzz.say('Oh. Claude.', { type: false });
-    await sleep(1400);
     var snap = Store.snapshot(); Store.session(it.id);
-    if (Fuzz.isCalm()) await fadeOut();
-    else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 620, easing: 'cubic-bezier(.5,0,.8,.4)' });
+    var shown = null, exit = sleep(350).then(function () {
+      if (Fuzz.isCalm()) return fadeOut();
+      return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 460, easing: 'cubic-bezier(.5,0,.8,.4)' });
+    }).then(function () { shown = bringNext(); });
+    await Promise.all([exit, sleep(1000)]);
     stats();
     Say.offerUndo('Opened “' + it.title + '” in Claude. In this demo it just moves to Current.', function () { Store.restore(snap); V.refresh(); });
     Fuzz.say('It’s fine. I’m not jealous. I’ll watch the queue.', { type: false });
-    await sleep(2300);
+    await sleep(1600);
     Fuzz.setMood('idle');
-    await showNext();
+    await showNext(shown);
   }
 
   function renderActionsArea() { var it = cur(); var a = $('#actions'); if (a && it) { a.innerHTML = actionsHTML(it); } }
@@ -640,15 +659,15 @@
     Fuzz.say('Done! I’ll bring it back ' + w.text + '.');
     Fuzz.schedGlyph(w.glyph, w.osd);
     var snap = Store.snapshot(); Store.schedule(it.id, w.label, w.text);
-    await sleep(1500);
+    /* The card flies off while the schedule shows on Fuzz's screen. */
+    var shown = null, exit = sleep(400).then(function () { return fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 520 }); }).then(function () { shown = bringNext(); });
+    await Promise.all([exit, sleep(1050)]);
     Fuzz.clearSched();
-    await sleep(500);
-    await fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 680 });
     stats(); Fuzz.pAnim('hop');
     Say.offerUndo('Scheduled “' + it.title + '” for ' + w.text + '.', function () { Store.restore(snap); V.refresh(); });
-    await sleep(700);
+    await sleep(500);
     Fuzz.setMood('idle');
-    await showNext();
+    await showNext(shown);
   }
   var schedResolve = null, exactOpt = null;
   function renderCardKeep() { var it = cur(); if (!it) return; $('#actions').innerHTML = actionsHTML(it); var st = card.querySelector('.stale'); if (st && scheduling) st.hidden = true; else if (st) st.hidden = false; }
@@ -660,45 +679,48 @@
     var snap = Store.snapshot(); change(it);
     Fuzz.setMood(mood || 'happy'); Fuzz.say(line, { type: false }); if (mood !== 'sheepish') Fuzz.pAnim('hop');
     if (Fuzz.isCalm()) await fadeOut();
-    else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateX(-110%) rotate(-8deg)', opacity: 0 }], { duration: 320, easing: 'ease-in' });
+    else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateX(-110%) rotate(-8deg)', opacity: 0 }], { duration: 260, easing: 'ease-in' });
+    var shown = bringNext();
     stats();
     Say.offerUndo(message, function () { Store.restore(snap); V.refresh(); });
-    await sleep(500);
+    await sleep(350);
     Fuzz.setMood('idle');
-    await showNext();
+    await showNext(shown);
   }
 
-  async function thank() {
+  async function thank(ms) {
     Fuzz.setMood('grateful'); Fuzz.pAnim('lift'); Fuzz.hearts();
     Fuzz.say('Thank you! That’s exactly what I needed.');
-    await sleep(1900);
+    await sleep(ms || 1900);
   }
   async function answerEntity(which) {
     var it = cur(); if (!it || it.kind === 'task') return;
     var snap = Store.snapshot(); Store.resolve(it.id, which);
     var msg = it.answers[which];
-    await thank();
+    var shown = null, exit = sleep(250).then(function () {
+      if (Fuzz.isCalm()) return fadeOut();
+      return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px) scale(.96)', opacity: 0 }], { duration: 300, easing: 'ease-in' });
+    }).then(function () { shown = bringNext(); });
+    await Promise.all([exit, thank(1300)]);
     Fuzz.setMood('happy'); Fuzz.say(msg, { type: false });
-    if (Fuzz.isCalm()) await fadeOut();
-    else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px) scale(.96)', opacity: 0 }], { duration: 300, easing: 'ease-in' });
     stats();
     Say.offerUndo(msg, function () { Store.restore(snap); V.refresh(); });
-    await sleep(600);
+    await sleep(400);
     Fuzz.setMood('idle');
-    await showNext();
+    await showNext(shown);
   }
   async function entityLater() {
     var it = cur(); if (!it) return;
     Store.toBack(it.id);
     Fuzz.setMood('idle'); Fuzz.pAnim('shrug'); Fuzz.say('Okay, I’ll ask again later.', { type: false });
-    await sleep(400);
+    await sleep(280);
     await showNext();
   }
   async function answerHandback(i) {
     var it = cur(); if (!it || !it.quick) return;
     var label = it.quick[i];
     var ta = $('#instr'); if (ta) ta.value = (ta.value ? ta.value.replace(/\s+$/, '') + '\n' : '') + 'Answer: ' + label + '.';
-    await thank();
+    await thank(1100);
     Fuzz.setMood('idle');
     await assign('Got it, ' + label + '. Back on air.');
   }
