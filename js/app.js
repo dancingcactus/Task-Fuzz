@@ -42,7 +42,7 @@
         '<a href="#/tasks" data-nav="tasks">All tasks</a>' +
         '<a href="#/capture" data-nav="capture" class="nav-cta" title="New task (N)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>' +
       '</nav></div>' +
-      '<div class="hprog" id="hprog" hidden>' + Progress.html('prog') + '<span class="left" id="left"></span></div>' +
+      '<div class="hprog" id="hprog" hidden><span class="left" id="left"></span>' + Progress.html('prog') + '</div>' +
       '<div class="appbar-right"><div class="undowrap"><button type="button" class="themebtn undobtn" id="undobtn" aria-expanded="false" aria-controls="undopop" aria-haspopup="dialog" disabled>' +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo<span class="navcount" id="undocount"></span></button>' +
         '<div class="themepop undopop" id="undopop" role="dialog" aria-label="Recent actions" hidden></div></div>' +
