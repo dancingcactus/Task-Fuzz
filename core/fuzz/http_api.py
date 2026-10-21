@@ -100,6 +100,7 @@ class App:
             ("POST", r"/tasks", self.capture),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule)", self.task_action),
+            ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
@@ -148,6 +149,17 @@ class App:
             tasks.bring_back(core, tid, where=where, reason="You brought this back.", type="task.reopened",
                              tags=("returning",))
         return {"task_id": tid, "state": tasks.get(core, tid)["state"]}
+
+    def add_moment(self, core, m, body, q):
+        """A described date you know yourself: {label, at, key?, cancelled?}."""
+        from . import timeres
+        tid = int(m.group(1))
+        if not isinstance(body.get("label"), str):
+            raise FuzzError("label is required, like “Before the leadership meeting”", "label")
+        anchor = {"type": "moment", "label": body["label"], "at": timeres.local_iso(core, body.get("at")),
+                  "key": body.get("key") or timeres.moment_key(body["label"]), "cancelled": bool(body.get("cancelled"))}
+        label = scheduler.suggest_schedule(core, tid, anchor, body.get("reason"), actor="human")
+        return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
 
     def list_cards(self, core, m, body, q):
         return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core)}
@@ -334,6 +346,34 @@ def _ticker(app, stop):
                 print(f"tick failed for user {uid}: {e}")
 
 
+PRESENCE_SECONDS = 30
+
+
+def presence_check(app, watcher, idle):
+    """One look at the idle time. Returns the number of tasks that came back."""
+    if not watcher.check(idle):
+        return 0
+    n = 0
+    for uid in set(load_tokens(app.home).values()):
+        core = app.core(int(uid))
+        with core.lock:
+            n += scheduler.wake(core)
+    return n
+
+
+def _presence(app, stop):
+    from . import presence
+    cfg = app.core(1).config.get("presence") or {}
+    if not cfg.get("enabled", True) or presence.idle_seconds() is None:
+        return   # not a Mac, or the idle time can't be read: fuzz wake still works
+    watcher = presence.Watcher(cfg.get("away_minutes", 15))
+    while not stop.wait(PRESENCE_SECONDS):
+        try:
+            presence_check(app, watcher, presence.idle_seconds())
+        except Exception as e:
+            print(f"presence check failed: {e}")
+
+
 def make_server(home, host="127.0.0.1", port=8765, clock=None, ticker=True):
     app = App(home, clock)
     ensure_token(home, 1)
@@ -343,5 +383,6 @@ def make_server(home, host="127.0.0.1", port=8765, clock=None, ticker=True):
     srv.stop_ticker = threading.Event()
     if ticker:
         threading.Thread(target=_ticker, args=(app, srv.stop_ticker), daemon=True).start()
+        threading.Thread(target=_presence, args=(app, srv.stop_ticker), daemon=True).start()
     return srv
 

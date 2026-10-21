@@ -11,6 +11,7 @@ DEFAULTS = {
     "budget": {"max_working": 5, "max_steps": 20, "max_attempts": 3, "lease_minutes": 10},
     "tz": "local",
     "stale_days": 7,
+    "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
     "embedder": "ollama",
     "ollama_model": "nomic-embed-text",
     "ollama_url": "http://localhost:11434",

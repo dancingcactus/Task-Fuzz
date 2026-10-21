@@ -410,10 +410,22 @@ def create_task(ctx, cand, decision_id):
         note += ". Not sure this is yours, so Fuzz asks first"
     events.emit(core, "task.extracted", task_id=tid, changes=ch, log=("status", note),
                 data={"candidate_id": cand["id"], "decision_id": decision_id, "source": s["source"]})
+    _moments(core, tid, cand)
     core.q("INSERT INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) VALUES (?,?,?,?,?,?,?)",
            (_uid(ctx), tid, cand["id"], cand["signal_key"], "origin", _source_title(s), ctx.run_id))
     _add_anchors(ctx, tid, cand)
     return tid
+
+
+def _moments(core, tid, cand):
+    """Described dates on the ask. One that fails the core's check is dropped without a word."""
+    from .. import scheduler
+    c = json.loads(cand["payload"]) if isinstance(cand["payload"], str) else (cand["payload"] or {})
+    for m in (c.get("moments") or [])[:2]:
+        try:
+            scheduler.suggest_schedule(core, tid, dict(m, type="moment"), m.get("reason"), actor=None)
+        except FuzzError:
+            pass
 
 
 def _source_title(s):
@@ -475,6 +487,8 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
     else:
         events.emit(core, "task.reply_in", task_id=tid, changes=ch, log=("status", text),
                     data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id})
+    if role == "update":
+        _moments(core, tid, cand)
 
 
 def _from_waited_on(t, s):

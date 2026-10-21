@@ -131,12 +131,27 @@ def renew(core, ch, task_id):
 
 
 def suggest_schedule(core, task_id, anchor, reason, actor="fuzz:executor"):
+    """Add a time to this task's Schedule options. A moment with a key the task already has replaces
+    it, and a task scheduled on that moment moves with it, or comes back if it was cancelled."""
     t = tasks.require(core, task_id)
     if not isinstance(anchor, dict):
-        raise FuzzError("anchor is an object like {\"type\": \"before_due\", \"lead\": \"1d\"}", "anchor")
-    timeres.check_hint(core, t, anchor)
-    hints = [h for h in (t.get("schedule_hints") or []) if timeres.canonical(h) != timeres.canonical(anchor)]
+        raise FuzzError("anchor is an object like {\"type\": \"moment\", \"label\": …, \"at\": …}", "anchor")
+    anchor = {k: v for k, v in anchor.items() if k != "reason"}
+    moment = anchor.get("type") == "moment"
+    if moment and isinstance(anchor.get("label"), str) and not anchor.get("key"):
+        anchor["key"] = timeres.moment_key(anchor["label"])
+    cancelled = moment and bool(anchor.get("cancelled"))
+    if cancelled:
+        timeres.check_moment(anchor)
+    else:
+        anchor.pop("cancelled", None)
+        timeres.check_hint(core, t, anchor)
+    key = timeres.canonical(anchor)
+    hints = [h for h in (t.get("schedule_hints") or []) if timeres.canonical(h) != key]
     hints = ([dict(anchor, reason=(reason or "").strip()[:200])] + hints)[:timeres.MAX_AI]
+    lab = timeres.label(core, anchor)
+    on_it = (t["state"] == "scheduled" and t.get("schedule_anchor")
+             and timeres.canonical(t["schedule_anchor"]) == key)
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], schedule_hints=hints)
@@ -144,8 +159,19 @@ def suggest_schedule(core, task_id, anchor, reason, actor="fuzz:executor"):
             renew(core, ch, t["id"])
         cards.refresh_schedule_options(core, ch, t["id"])
         events.emit(core, "task.schedule_suggested", task_id=t["id"], changes=ch,
-                    data={"anchor": anchor, "label": timeres.label(core, anchor)})
-    return timeres.label(core, anchor)
+                    data={"anchor": anchor, "label": lab})
+        if on_it and cancelled:
+            tasks.bring_back(core, t["id"], reason=f"{lab} was cancelled.", type="task.anchor_lost", actor=actor)
+        elif on_it:
+            fire = iso(timeres.resolve(core, anchor, t))
+            if fire != t["schedule_fire_at"]:
+                when = timeres.label(core, {"type": "exact", "at": fire})
+                ch = events.Changes()
+                ch.task(t["id"], schedule_anchor=anchor, schedule_fire_at=fire)
+                events.emit(core, "task.anchor_moved", task_id=t["id"], changes=ch,
+                            data={"from": t["schedule_fire_at"], "to": fire, "key": anchor["key"]},
+                            log=("status", f"{lab} moved to {when}."))
+    return lab
 
 
 # ---------------------------------------------------------------- the clock

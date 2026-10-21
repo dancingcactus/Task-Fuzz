@@ -50,16 +50,14 @@ class Anchors(CoreCase):
         for anchor, field in (({"type": "soon"}, "anchor.type"), ({"type": "in", "minutes": "a while"}, "anchor.minutes"),
                               ({"type": "day_part", "part": "midnight"}, "anchor.part"),
                               ({"type": "before_due"}, "anchor.type"),
-                              ({"type": "before_event", "event_id": "x"}, "anchor.type")):
+                              ({"type": "before_event", "event_id": "x"}, "anchor.type"),   # no calendar types
+                              ({"type": "moment", "key": "k", "label": "Before X"}, "anchor.at")):
             with self.assertRaises(FuzzError) as e:
                 timeres.resolve(self.core, anchor, {})
             self.assertEqual(e.exception.field, field, anchor)
 
     def test_labels_come_from_templates(self):
         self.assertEqual(timeres.label(self.core, {"type": "at_desk"}), "When I’m back at my desk")
-        self.assertEqual(timeres.label(self.core, {"type": "before_event", "title": "the planning review"}),
-                         "Before the planning review")
-        self.assertEqual(timeres.label(self.core, {"type": "next_with_person", "name": "Sam Ortiz"}), "Next time I see Sam")
         self.assertEqual(timeres.line(self.core, {"type": "day_part", "day": "monday", "part": "morning"}),
                          "I’ll bring it back monday morning.")
 

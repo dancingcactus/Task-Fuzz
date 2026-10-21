@@ -1,7 +1,7 @@
 ---
 name: fuzz-extract
 description: Run Fuzz extraction. Reads the person's email, Slack and meeting summaries since the last run with your own connectors, turns each ask into a signal, and judges which existing Fuzz task each ask belongs to. Use when asked to "run Fuzz extraction", "pull my asks into Fuzz" or "update Fuzz from email and Slack".
-prompt_version: extract-0.1
+prompt_version: extract-0.2
 ---
 
 # Fuzz extraction
@@ -13,7 +13,7 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
 
 ## Steps
 
-1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.1`). It returns the person's
+1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.2`). It returns the person's
    names, email addresses, Slack IDs and the folders to read. Use these; never guess who they are.
 2. **`get_cursors`**: where to start reading each source. Read from there to now.
 3. **Read the sources** with your connectors: email (inbox and sent), Slack (mentions, DMs and
@@ -29,6 +29,11 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
      `due` if stated, and `topics` (same spelling every time).
    - When it helps, add `context_md` (a short Markdown brief: what it is, when it's due, links) and
      `question` (the one thing the person must decide) to a candidate.
+   - When an ask hangs on a meeting or a person ("before the leadership meeting"), look the meeting
+     up with your calendar connector and add up to two `moments`: `{"key": "leadership-1030",
+     "label": "Before the leadership meeting", "at": "2026-10-30T09:00:00Z"}`, where `at` is when the
+     task should come back. If a meeting you handed in before has moved or been cancelled, send the
+     same `key` again with the new `at` or `"cancelled": true`.
    - No new ask (a thank-you, an FYI) means `"candidates": []`. Still send the signal.
    - A deleted Slack message: `"withdrawn": true` and no candidates.
 5. **`submit_signals`**, up to 200 at a time. Matching runs inside it. Fix any error it names (it

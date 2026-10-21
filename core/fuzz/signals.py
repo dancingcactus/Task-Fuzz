@@ -11,6 +11,19 @@ PERSON = {"type": "object", "properties": {
     "name": {"type": "string"}, "email": {"type": "string"}, "slack_id": {"type": "string"}},
     "additionalProperties": False}
 
+MOMENT = {   # a described date from the calendar: "Before the leadership meeting", Thu 9:00
+    "type": "object",
+    "required": ["label", "at"],
+    "properties": {
+        "key": {"type": "string", "minLength": 1, "maxLength": 60},
+        "label": {"type": "string", "minLength": 1, "maxLength": 60},
+        "at": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})$"},
+        "cancelled": {"type": "boolean"},
+        "reason": {"type": "string", "maxLength": 200},
+    },
+    "additionalProperties": False,
+}
+
 CANDIDATE = {
     "type": "object",
     "required": ["ask"],
@@ -25,6 +38,7 @@ CANDIDATE = {
         "question": {"type": "string", "maxLength": 500},
         "effort_mins": {"type": "integer", "minimum": 1},
         "energy": {"enum": ["low", "normal", "high"]},
+        "moments": {"type": "array", "maxItems": 2, "items": MOMENT},
     },
     "additionalProperties": False,
 }

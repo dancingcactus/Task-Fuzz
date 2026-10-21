@@ -98,9 +98,12 @@ def build(core, role):
 
         @srv.tool()
         def suggest_schedule(task_id: int, anchor: dict[str, Any], reason: str) -> dict:
-            """Offer a human time for this task's Schedule options, as an anchor such as
-            {"type": "before_due", "lead": "1d"} or {"type": "day_part", "day": "monday", "part": "morning"}.
-            The core checks it and writes the label; at most two suggestions are kept."""
+            """Offer a time for this task's Schedule options. For a meeting or a person, look it up with your
+            calendar connector and hand in a moment: {"type": "moment", "key": "leadership-1030",
+            "label": "Before the leadership meeting", "at": "2026-10-30T09:00:00Z"}, where at is when the task
+            should come back. Re-send the same key with a new at if it moved, or "cancelled": true.
+            Other anchors: {"type": "before_due", "lead": "1d"}, {"type": "day_part", "day": "monday"}.
+            At most two are kept; it must be in the future and before the due date."""
             return _call(tools.suggest_schedule, core, task_id, anchor, reason)
 
         @srv.tool()

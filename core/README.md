@@ -61,6 +61,8 @@ All three are thin layers over the same library, so they can't drift apart.
 | --- | --- |
 | `whoami`, `claim_next_task`, `get_task`, `read_source`, `log_step`, `save_notes`, `save_draft`, `hand_back`, `create_task`, `request_permission`, `suggest_schedule`, `update_brief`, `release` | `whoami`, `get_cursors`, `submit_signals`, `get_pending_judgments`, `submit_verdicts` |
 
+`suggest_schedule` also takes a moment (see Calendar times).
+
 There is no send, post or delete tool. `update_brief` writes the task's `context_md` (a Markdown
 brief for tasks with no draft) and `question` (the one thing Fuzz is asking you now).
 
@@ -69,6 +71,7 @@ brief for tasks with no draft) and `question` (the one thing Fuzz is asking you 
 ```
 GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, docs?, due?}
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
+POST /tasks/{id}/moments {label, at, key?, cancelled?}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
 GET  /undo                     POST /undo {group?}
 GET  /events?after=N           GET  /events/stream       (server-sent events; ?token= for EventSource)
@@ -93,7 +96,8 @@ fuzz/tasks.py       task commands, including update_brief
 fuzz/cards.py       card kinds, one-card-per-task bookkeeping, queue order, the card view
 fuzz/answers.py     answer(card, option, value): the "what each answer writes" table
 fuzz/timeres.py     anchors, labels and the Schedule options
-fuzz/scheduler.py   claim, leases, step budget, handbacks, the minute tick, wake
+fuzz/scheduler.py   claim, leases, step budget, handbacks, moments, the minute tick, wake
+fuzz/presence.py    back-at-desk detection on a Mac
 fuzz/drafts.py      the approval gate: drafts and permissions
 fuzz/matching/      the spike's matcher, moved in: entities, vectors, stages 1–4
 fuzz/signals.py     signal and verdict schemas
@@ -122,11 +126,31 @@ the spike's two-day scenario through the extractor tools, the HTTP API and event
 isolation, and the installer and adapters against a fake home folder with stub `claude` and
 `copilot` executables.
 
+## Calendar times
+
+The core never reads your calendar. Instead a task carries up to two **moments**: described dates
+such as "Before the leadership meeting", Thu 10/30 at 9:00. The AI finds them with its own calendar
+connector (`suggest_schedule`, or `moments` on an extracted ask), or you add one:
+
+```bash
+fuzz moment 14 "Before the leadership meeting" 2026-10-30T09:00     # your time zone
+curl -H "Authorization: Bearer $TOKEN" -d '{"label": "Before the leadership meeting", "at": "2026-10-30T09:00"}' \
+  http://127.0.0.1:8765/tasks/14/moments
+```
+
+Moments come first in the Schedule options. `at` is when the task comes back. Handing in the same
+`key` again with a new time moves a task scheduled on it (`task.anchor_moved`); `cancelled: true`
+brings it back to triage with the reason (`task.anchor_lost`). The button reads as the moment's
+label (one line, at most 60 characters); every other option's label comes from the core's templates.
+
+**Back at my desk.** On a Mac, `fuzz serve` watches the keyboard and mouse idle time (`ioreg`). When
+you come back after 15 minutes or more away (`presence.away_minutes`), the at-desk tasks come back.
+`fuzz wake` still works by hand.
+
 ## Not built yet
 
 - Pointing the demo UI at the core (its `tick` is still simulated), and the Settings > Engine page.
-- Calendar anchors (`before_event`, `after_event`, `next_with_person`, `lighter_day`) and AI suggestions that use them.
-  "Later today" uses 4 PM until the calendar is readable, and "back at my desk" fires on `fuzz wake` or `POST /signals/at_desk`.
+- "Later today" is 4 PM, not "after your last meeting", since the core doesn't read the calendar.
 - Actuators. Approving a draft marks it approved; you copy it into Mail or Slack.
 - Waking the executor on `task.assigned` instead of on a timer.
 - Automatic entity cards. The answers exist; the matcher doesn't raise them yet.

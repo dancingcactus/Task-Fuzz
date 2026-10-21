@@ -3,7 +3,10 @@
 Status: draft for discussion. Build-order steps 1 to 5 are built in [`core/`](../core/README.md), with two
 additions to the task record: `context_md`, a Markdown brief the AI writes for tasks with no draft, and
 `question`, the one question it is asking you now. Both are set with the executor's `update_brief` tool
-(or on an extracted ask) and written as `task.brief_updated` events.
+(or on an extracted ask) and written as `task.brief_updated` events. Calendar times (step 7) are built
+more simply than below: the core never reads a calendar. A task carries up to two **moments**, described
+dates the AI looks up with its own calendar connector (or you type), and the four calendar anchors
+collapse into that one. See [Moments](#moments).
 
 ## Summary
 
@@ -663,10 +666,22 @@ A small, fixed vocabulary. Adding a type is a code change in the core.
 | `day_part` | First thing tomorrow, Monday morning | Your first triage session in that part of the day |
 | `lighter_day` | Sometime next week, on a lighter day | The day in that range with the fewest meetings |
 | `before_due` | The day before it's due | Due date minus a lead time. Only offered when there's a due date |
-| `before_event` | Before the planning review | That calendar event minus a lead time |
-| `after_event` | After this meeting, After my 1:1 with Sam | When that event ends |
-| `next_with_person` | Next time I see Sam | The next event that person is invited to |
+| `moment` | Before the leadership meeting, Next time I see Sam | A described date handed in by the AI or you. See [Moments](#moments) |
 | `exact` | Thu 2:00 PM | The time you picked. Always the last option |
+
+### Moments
+
+Built instead of the calendar anchors `before_event`, `after_event`, `next_with_person` and
+`lighter_day`, which needed the core to read and track a calendar.
+
+- A moment is `{"type": "moment", "key", "label", "at"}`: a short description and the time the task
+  should come back. The AI finds it with its own calendar connector and works out the lead time.
+- A task carries at most two. They go first in the Schedule options. The core checks each one is in
+  the future, before the due date and within a year, and drops it quietly otherwise.
+- Handing in the same `key` again with a new `at` moves a task scheduled on it (`task.anchor_moved`).
+  `"cancelled": true` brings it back to triage with the reason (`task.anchor_lost`).
+- The trade-off: the button reads as the moment's label, not a core template (one line, at most
+  60 characters), and a moved meeting is noticed only when a later run hands it in again.
 
 A scheduled task stores the anchor, for example
 `{"type": "before_event", "event_id": "…", "lead": "1d"}`, plus the time it currently works out to

@@ -124,6 +124,15 @@ def cmd_task_action(a):
     _print({"task_id": a.id, "state": tasks.get(core, a.id)["state"]})
 
 
+def cmd_moment(a):
+    from .timeres import local_iso, moment_key
+    core = _core(a)
+    anchor = {"type": "moment", "label": a.label, "at": local_iso(core, a.when, "when"),
+              "key": a.key or moment_key(a.label), "cancelled": a.cancelled}
+    _print({"task_id": a.id, "label": scheduler.suggest_schedule(core, a.id, anchor, None, actor="human"),
+            "key": anchor["key"]})
+
+
 def cmd_merge(a):
     _print({"merge_id": matching.merge(_core(a), a.a, a.b)})
 
@@ -288,6 +297,14 @@ def parser():
     s.add_argument("action", choices=["assign", "done", "park", "letgo", "wait", "session", "schedule", "reopen"])
     s.add_argument("--value")
     s.set_defaults(fn=cmd_task_action)
+
+    s = sub.add_parser("moment", help="add a described date to a task's Schedule options (at most two)")
+    s.add_argument("id", type=int)
+    s.add_argument("label", help="e.g. \"Before the leadership meeting\"")
+    s.add_argument("when", help="when it should come back, e.g. 2026-10-30T09:00 (your time zone)")
+    s.add_argument("--key", help="name it, to move or cancel it later (default: from the label)")
+    s.add_argument("--cancelled", action="store_true", help="the meeting was cancelled")
+    s.set_defaults(fn=cmd_moment)
 
     for name, fn in (("merge", cmd_merge), ("keep", cmd_keep)):
         s = sub.add_parser(name, help=f"{name} two tasks (a into b for merge)")
