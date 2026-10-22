@@ -212,6 +212,9 @@ CREATE TABLE IF NOT EXISTS sources (
   signal_key TEXT,
   role TEXT NOT NULL,              -- origin | update | context | ignored | attachment
   title TEXT,
+  path TEXT,                       -- an attachment's file, in files/u<user>/t<task>/
+  mime TEXT,
+  size INTEGER,
   added_run INTEGER,
   withdrawn INTEGER NOT NULL DEFAULT 0,
   UNIQUE (task_id, candidate_id)
@@ -313,7 +316,20 @@ def connect(home):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")]}
+
+
+def _migrate(conn):
+    """Add columns that newer versions need to a store made by an older one."""
+    for table, cols in MIGRATIONS.items():
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, typ in cols:
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
 
 
 def row_dict(row):

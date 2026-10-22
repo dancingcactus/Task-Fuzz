@@ -9,6 +9,7 @@ from .base import Adapter, home, read_json, skill_body, write_json
 
 MCP_CONFIG = ".copilot/mcp-config.json"          # to confirm
 RUN_CONFIG_FLAG = "--additional-mcp-config"      # to confirm; takes @<file>
+ADD_DIR_FLAG = "--add-dir"                       # to confirm: that its file reads stay inside added folders
 
 
 class Copilot(Adapter):
@@ -47,11 +48,13 @@ class Copilot(Adapter):
         write_json(path, {"mcpServers": {self.mcp_name(role): self._spec(role, fuzz_home, run_id, user_id)}})
         return path
 
-    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False):
+    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None):
         """Allow Fuzz's server, deny the shell and file writes. Deny always wins."""
         prompt = skill_body(role) + "\n\n" + self.prompt(role, task_id)
         argv = [self.exe, "-p", prompt, RUN_CONFIG_FLAG, f"@{config_path}",
                 "--allow-tool", self.mcp_name(role), "--deny-tool", "shell", "--deny-tool", "write"]
+        if files_dir:
+            argv += [ADD_DIR_FLAG, str(files_dir)]
         if model:
             argv += ["--model", model]
         return argv

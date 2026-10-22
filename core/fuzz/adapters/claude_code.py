@@ -39,15 +39,23 @@ class ClaudeCode(Adapter):
         write_json(path, {"mcpServers": {self.mcp_name(role): spec}})
         return path
 
-    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False):
-        """Only Fuzz's server and only its tools: no built-in tools, nothing else allowed, nobody to ask."""
+    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None):
+        """Only Fuzz's server and its tools, nothing else allowed, nobody to ask. With files_dir, Read is the
+        one built-in tool, allowed only inside that folder (`//` makes the rule's path absolute)."""
+        allowed = [f"mcp__{self.mcp_name(role)}__*"]
+        tools = ""
+        if files_dir:
+            tools = "Read"
+            allowed.append(f"Read(/{str(files_dir).rstrip('/')}/**)")
         argv = [self.exe, "-p", self.prompt(role, task_id),
                 "--mcp-config", str(config_path), "--strict-mcp-config",
-                "--tools", "",
-                "--allowedTools", f"mcp__{self.mcp_name(role)}__*",
+                "--tools", tools,
+                "--allowedTools", *allowed,
                 "--permission-mode", "dontAsk",
                 "--append-system-prompt", skill_body(role),
                 "--no-session-persistence"]
+        if files_dir:
+            argv += ["--add-dir", str(files_dir)]
         if model:
             argv += ["--model", model]
         if verbose:

@@ -6,7 +6,9 @@ additions to the task record: `context_md`, a Markdown brief the AI writes for t
 (or on an extracted ask) and written as `task.brief_updated` events. Calendar times (step 7) are built
 more simply than below: the core never reads a calendar. A task carries up to two **moments**, described
 dates the AI looks up with its own calendar connector (or you type), and the four calendar anchors
-collapse into that one. See [Moments](#moments).
+collapse into that one. See [Moments](#moments). Files you attach are kept in a folder per task and handed to the
+executor as paths; a headless executor run may read that user's files folder with its client's own
+read tool, and nothing else (see `core/README.md`, Attachments).
 
 ## Summary
 

@@ -17,7 +17,7 @@ from unittest import mock
 
 from helpers import HERE, CoreCase
 
-from fuzz import adapters, doctor, engine, events, installer, runner, tasks
+from fuzz import adapters, doctor, engine, events, files, installer, runner, tasks
 from fuzz.db import FuzzError
 
 
@@ -73,7 +73,7 @@ class Install(FakeHome):
         self.assertTrue(out["engine_set"], "the first client installed becomes the engine")
         self.assertEqual(self.core.config["engine"]["client"], "claude-code")
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
-        self.assertIn("prompt_version: executor-0.3", skill.read_text())
+        self.assertIn("prompt_version: executor-0.4", skill.read_text())
         reg = self.stub_registry()
         self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])
@@ -177,10 +177,14 @@ class Adapters(FakeHome):
     def test_a_headless_run_records_its_run_on_every_event(self):
         for client in adapters.ADAPTERS:
             tid = tasks.capture(self.core, f"Reply to Elena ({client})")
+            files.attach(self.core, tid, "thread.txt", b"Elena: can we move launch?")
             tasks.assign(self.core, tid)
             res = runner.run_role(self.core, "executor", client=client, model="model-x", say=lambda s: None)
             self.assertEqual(res["outcome"], "ok", res)
             self.assertEqual(self.task(tid)["state"], "review")
+            self.assertIn("opened thread.txt: 26", [x["text"] for x in events.task_log(self.core, tid)])
+            argv = json.loads(Path(self.home, "runs", str(res["run_id"]), "argv.json").read_text())
+            self.assertIn(files.user_dir(self.core), argv, "the run is given the files folder")
             rows = self.core.all("SELECT DISTINCT run_id, model FROM events WHERE task_id=? AND actor='fuzz:executor'",
                                  (tid,))
             self.assertEqual(rows, [{"run_id": res["run_id"], "model": "model-x"}], client)

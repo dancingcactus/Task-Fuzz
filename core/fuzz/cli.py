@@ -82,8 +82,27 @@ def cmd_run(a):
     _print(res)
 
 
+def _attach(core, tid, path):
+    from . import files
+    with open(path, "rb") as f:
+        data = f.read()
+    r = files.attach(core, tid, os.path.basename(path), data)
+    return {"source_id": r["id"], "name": r["title"], "mime": r["mime"], "size": r["size"], "path": r["path"]}
+
+
 def cmd_capture(a):
-    _print({"task_id": tasks.capture(_core(a), " ".join(a.text), a.doc, due=a.due)})
+    core = _core(a)
+    for p in a.file or []:
+        if not os.path.isfile(p):
+            raise FuzzError(f"No file {p}", "file")
+    tid = tasks.capture(core, " ".join(a.text), a.doc, due=a.due)
+    _print({"task_id": tid, "files": [_attach(core, tid, p) for p in a.file or []]})
+
+
+def cmd_attach(a):
+    if not os.path.isfile(a.path):
+        raise FuzzError(f"No file {a.path}", "path")
+    _print(_attach(_core(a), a.id, a.path))
 
 
 def cmd_tasks(a):
@@ -272,9 +291,15 @@ def parser():
 
     s = sub.add_parser("capture", help="capture a task")
     s.add_argument("text", nargs="+")
-    s.add_argument("--doc", action="append")
+    s.add_argument("--doc", action="append", help="a document's name only (the demo's behaviour)")
+    s.add_argument("--file", action="append", help="attach a file (Fuzz keeps a copy for the executor)")
     s.add_argument("--due")
     s.set_defaults(fn=cmd_capture)
+
+    s = sub.add_parser("attach", help="attach a file to a task")
+    s.add_argument("id", type=int)
+    s.add_argument("path")
+    s.set_defaults(fn=cmd_attach)
 
     s = sub.add_parser("tasks", help="list tasks")
     s.add_argument("--state")

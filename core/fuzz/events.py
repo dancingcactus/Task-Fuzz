@@ -19,7 +19,7 @@ EVENT_TYPES = {
     "task.confirmed", "task.draft_edited", "task.sent_back",
     # not in the design doc's first list; each is a plain fact the UI can ignore
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
-    "task.schedule_suggested", "task.retitled", "source.read",
+    "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached",
     "entity.merged", "entity.kept_separate", "entity.defined",
     "card.created", "card.answered", "card.postponed", "card.expired",
     "permission.asked", "permission.granted", "permission.denied",
@@ -233,7 +233,7 @@ def check_replay(core, user_id=None):
 # ---------------------------------------------------------------- undo
 
 NOT_UNDOABLE = {"task.restored", "run.started", "run.finished", "engine.installed", "engine.removed",
-                "task.sent", "source.read"}
+                "task.sent", "source.read", "task.file_attached"}
 
 
 def _groups(core, limit=200):

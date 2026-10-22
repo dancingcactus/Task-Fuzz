@@ -49,7 +49,7 @@ writes launchd jobs for `fuzz serve` and the two roles.
 A headless run gets its own MCP config that starts `fuzz mcp --role <role> --run <id>`, so it sees
 only Fuzz's server, and every event it writes carries the run, model and `prompt_version`. Claude
 Code runs with `--strict-mcp-config --tools "" --allowedTools "mcp__fuzz-<role>__*"`: no shell and no
-file writes. Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`.
+file writes. The executor also gets read-only access to the attachments folder (see Attachments). Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`.
 
 ## Interfaces
 
@@ -72,6 +72,7 @@ brief for tasks with no draft) and `question` (the one thing Fuzz is asking you 
 GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, docs?, due?}
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
+POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
 GET  /undo                     POST /undo {group?}
 GET  /events?after=N           GET  /events/stream       (server-sent events; ?token= for EventSource)
@@ -98,6 +99,7 @@ fuzz/answers.py     answer(card, option, value): the "what each answer writes" t
 fuzz/timeres.py     anchors, labels and the Schedule options
 fuzz/scheduler.py   claim, leases, step budget, handbacks, moments, the minute tick, wake
 fuzz/presence.py    back-at-desk detection on a Mac
+fuzz/files.py       attachments, in a folder per task
 fuzz/drafts.py      the approval gate: drafts and permissions
 fuzz/matching/      the spike's matcher, moved in: entities, vectors, stages 1–4
 fuzz/signals.py     signal and verdict schemas
@@ -146,6 +148,30 @@ label (one line, at most 60 characters); every other option's label comes from t
 **Back at my desk.** On a Mac, `fuzz serve` watches the keyboard and mouse idle time (`ioreg`). When
 you come back after 15 minutes or more away (`presence.away_minutes`), the at-desk tasks come back.
 `fuzz wake` still works by hand.
+
+## Attachments
+
+Files you add to a task are kept in a folder per task, `<store>/files/u<user>/t<task>/`. Fuzz
+doesn't open them. The executor gets each file's path, name, type and size from `get_task` (and
+`read_source`) and reads it with its own client's file tools, so PDFs, images and documents are read
+however that client reads them best.
+
+```bash
+fuzz capture "Summarise the budget" --file budget.pdf --file chart.png
+fuzz attach 14 notes.txt
+curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/pdf" --data-binary @budget.pdf \
+  "http://127.0.0.1:8765/tasks/14/files?name=budget.pdf"
+```
+
+Limits: 25 MB a file and 10 files a task (`files.max_mb`, `files.max_per_task`). Attaching writes
+`task.file_attached` ("You attached budget.pdf"). `DELETE /tasks/{id}/files/{source_id}` removes one.
+
+A headless executor run may read **only this user's files folder**. Claude Code gets `--tools Read`
+(the one built-in), `--allowedTools "Read(//<folder>/**)"` and `--add-dir <folder>`, and starts in that
+folder. In `dontAsk` mode a read anywhere else is refused. It still can't run commands or write.
+Copilot gets `--add-dir <folder>` with shell and write still denied; whether its reads stay inside
+added folders is still to confirm. Fuzz's log records that a file was handed over; reads made with
+the client's own tool aren't in it.
 
 ## Not built yet
 

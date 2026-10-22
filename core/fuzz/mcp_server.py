@@ -51,12 +51,14 @@ def build(core, role):
 
         @srv.tool()
         def get_task(task_id: int) -> dict:
-            """The ask, notes, brief, source references and the last few log lines of a task you hold."""
+            """The ask, notes, brief, source references and the last few log lines of a task you hold.
+            Files the person attached have a path: open them with your own file tools."""
             return _call(tools.get_task, core, task_id)
 
         @srv.tool()
         def read_source(source_id: int) -> dict:
-            """One source's content (an email, a Slack message, a meeting row). Logged per user."""
+            """One source's content (an email, a Slack message, a meeting row), or an attached file's path.
+            Logged per user."""
             return _call(tools.read_source, core, source_id)
 
         @srv.tool()

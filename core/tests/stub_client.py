@@ -57,6 +57,9 @@ async def work(spec):
         t = (await call("claim_next_task")).get("task")
         if t:
             await call("log_step", {"task_id": t["id"], "kind": "research", "text": f"{NAME} read the task"})
+            for f in [x for x in t["sources"] if x.get("path")]:   # its own file tool, at the path it was given
+                size = len(open(f["path"], "rb").read())
+                await call("log_step", {"task_id": t["id"], "kind": "research", "text": f"opened {f['title']}: {size}"})
             await call("save_draft", {"task_id": t["id"], "kind": "note", "target": "", "body": f"{NAME} draft"})
 
 

@@ -39,6 +39,11 @@ async def _executor(core, task_id, say):
             say(f"Claimed #{tid}: {t['title']}")
             if t["sources"]:
                 await _call(c, "read_source", {"source_id": t["sources"][0]["id"]})
+            for f in [s for s in t["sources"] if s.get("path")][:1]:   # a real client opens it with its own tools
+                with open(f["path"], "rb") as fh:
+                    n = len(fh.read())
+                await _call(c, "log_step", {"task_id": tid, "kind": "research",
+                                            "text": f"Opened {f['title']} ({n} bytes)."})
             await _call(c, "log_step", {"task_id": tid, "kind": "research",
                                         "text": "Read the task" + (" and its first source." if t["sources"] else ".")})
             await _call(c, "log_step", {"task_id": tid, "kind": "action", "text": "Drafted the next step."})

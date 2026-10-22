@@ -12,6 +12,7 @@ DEFAULTS = {
     "tz": "local",
     "stale_days": 7,
     "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
+    "files": {"max_mb": 25, "max_per_task": 10},
     "embedder": "ollama",
     "ollama_model": "nomic-embed-text",
     "ollama_url": "http://localhost:11434",

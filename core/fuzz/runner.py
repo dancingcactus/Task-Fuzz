@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 
-from . import adapters, config, runs
+from . import adapters, config, files, runs
 from .db import FuzzError
 from .roles import scripted
 
@@ -65,11 +65,15 @@ def _headless(core, adapter, role, rid, model, task_id, verbose, say):
     run_dir = os.path.join(core.home, "runs", str(rid))
     os.makedirs(run_dir, exist_ok=True)
     cfg_path = adapter.write_run_config(role, rid, os.path.join(run_dir, "mcp.json"), core.home, core.user_id)
-    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose)
+    files_dir = None
+    if role == "executor":   # attachments: readable with the client's own file tools, nothing else is
+        files_dir = files.user_dir(core)
+        os.makedirs(files_dir, exist_ok=True)
+    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir)
     with open(os.path.join(run_dir, "argv.json"), "w") as f:
         json.dump(argv, f, indent=2)
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            env=adapter.run_env(rid), cwd=run_dir)
+                            env=adapter.run_env(rid), cwd=files_dir or run_dir)   # its working folder is readable too
     out = []
     with open(os.path.join(run_dir, "transcript.log"), "w") as log:
         for line in proc.stdout:

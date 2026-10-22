@@ -98,7 +98,8 @@ class Adapter:
     def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None):
         raise NotImplementedError
 
-    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False):
+    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None):
+        """files_dir: the user's attachments folder, the only place the run may read files from."""
         raise NotImplementedError
 
     def prompt(self, role, task_id=None):

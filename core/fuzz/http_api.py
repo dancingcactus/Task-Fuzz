@@ -60,6 +60,8 @@ def task_view(core, t, full=False):
         out["sources"] = core.all("SELECT id, role, title, withdrawn FROM sources WHERE task_id=? AND user_id=?",
                                   (t["id"], core.user_id))
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
+        from . import files
+        out["files"] = files.listing(core, t["id"])
         out["drafts"] = core.all("SELECT * FROM drafts WHERE task_id=? AND user_id=? ORDER BY id DESC",
                                  (t["id"], core.user_id))
         out["steps_used"], out["attempts"] = t["steps_used"], t["attempts"]
@@ -101,6 +103,8 @@ class App:
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule)", self.task_action),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
+            ("POST", r"/tasks/(\d+)/files", self.upload),
+            ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
@@ -149,6 +153,17 @@ class App:
             tasks.bring_back(core, tid, where=where, reason="You brought this back.", type="task.reopened",
                              tags=("returning",))
         return {"task_id": tid, "state": tasks.get(core, tid)["state"]}
+
+    def upload(self, core, m, body, q):
+        """The raw file is the body: POST /tasks/14/files?name=budget.pdf with its Content-Type."""
+        from . import files
+        f = files.attach(core, int(m.group(1)), q.get("name"), body["_raw"], body.get("_type"))
+        return {"source_id": f["id"], "name": f["title"], "mime": f["mime"], "size": f["size"]}, 201
+
+    def remove_file(self, core, m, body, q):
+        from . import files
+        files.detach(core, int(m.group(1)), int(m.group(2)))
+        return {"removed": int(m.group(2))}
 
     def add_moment(self, core, m, body, q):
         """A described date you know yourself: {label, at, key?, cancelled?}."""
@@ -245,8 +260,8 @@ def make_handler(app):
                     if uid is None:
                         return self._send(401, {"error": "A valid token is required", "field": "Authorization"})
                     try:
-                        body = self._body()
                         core = app.core(uid)
+                        body = self._raw_body(core) if h == app.upload else self._body()
                         with core.lock:
                             res = h(core, mt, body, q)
                         status = 200
@@ -262,6 +277,14 @@ def make_handler(app):
             if any(rx.match(path) for _, rx, _ in routes):
                 return self._send(405, {"error": f"{method} isn't allowed on {path}"})
             return self._send(404, {"error": f"No route {path}"})
+
+        def _raw_body(self, core):
+            from . import files
+            n = int(self.headers.get("Content-Length") or 0)
+            limit = files.limits(core)[0]
+            if n > limit:
+                raise FuzzError(f"The file is over {limit // (1024 * 1024)} MB", "body", 413)
+            return {"_raw": self.rfile.read(n) if n else b"", "_type": self.headers.get("Content-Type")}
 
         def _body(self):
             n = int(self.headers.get("Content-Length") or 0)
@@ -331,6 +354,9 @@ def make_handler(app):
 
         def do_PUT(self):
             self._dispatch("PUT")
+
+        def do_DELETE(self):
+            self._dispatch("DELETE")
 
     return Handler
 
