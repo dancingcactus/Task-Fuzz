@@ -4,7 +4,7 @@
    New cards only append to the open side, so adding work never takes anything away. Fixed width, any number of tasks. */
 (function () {
   /* Sizing for the header (the prototype used 34 / 9 / 6 at 16px tall). */
-  var GAP = 5, SEGW = 26, TICKW = 8, DONE_SHARE = 0.35, PAD = 4;
+  var GAP = 5, SEGW = 26, SEGMAX = 40, TICKW = 8, DONE_SHARE = 0.35, PAD = 4;
   var FLY_MS = 420, STAGGER = 30, SLIDE_MS = 520, SLIDE_STAGGER = 25, SLIDE_GAP = 140;
   var bar = null, row = null, fx = null;
   var lastDone = 0, lastBanked = 0, lastTotal = 0, lastW = 0, token = 0, cur = null;
@@ -82,6 +82,11 @@
     var k = Math.max(0, Math.floor((W - usedW + GAP) / (SEGW + GAP)));
     var real = open, ghosts = 0;
     if (open > k) { real = Math.max(k - 2, 0); ghosts = open - real >= 2 ? 2 : open - real; }
+    /* Open segments stretch so the bar reaches its right edge instead of leaving a ragged gap. The cap comes from
+       --pg-segmax when the layout sets one (the narrow header removes it so the bar always spans the row). */
+    var max = parseFloat(getComputedStyle(row).getPropertyValue('--pg-segmax')) || SEGMAX;
+    var n = real + ghosts, segW = n ? Math.min(max, Math.max(SEGW, Math.floor(((W - usedW + GAP) / n - GAP) * 10) / 10)) : SEGW;
+    row.style.setProperty('--segw', segW + 'px');
     var doAnim = !calm() && done > lastDone && banked > lastBanked && W === lastW;
     var grew = !calm() && total > lastTotal && done === lastDone && W === lastW;
     var kids = [].slice.call(row.children), before = kids.length;

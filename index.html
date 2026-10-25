@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fuzz</title>
-<meta name="description" content="Fuzz: a clickable demo of the Agentic Operating System. Triage, new task capture and all tasks, with Fuzz the TV-head robot.">
+<meta name="description" content="Fuzz: a clickable demo of the Agentic Operating System. Triage, new task capture and the lineup, with Fuzz the TV-head robot.">
 <meta name="theme-color" content="#FBF3E8">
 <link rel="icon" type="image/svg+xml" href="assets/fuzz-favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,7 +18,9 @@
 <a class="skip" href="#view">Skip to content</a>
 <header class="appbar" id="appbar"></header>
 <main id="view" class="view" tabindex="-1"></main>
+<a href="#/capture" class="fab" id="fab" aria-label="New task" title="New task (N)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
 <div id="fuzz-dock" class="fuzz-dock" role="status" aria-live="polite" hidden></div>
+<div id="announcer" class="sr" role="status" aria-live="polite"></div>
 <noscript><p style="padding:24px">Fuzz needs JavaScript to run this demo.</p></noscript>
 
 <script src="js/data.js"></script>

@@ -64,6 +64,13 @@
   F.mounted = function () { return !!el; };
 
   var BOOPS = ['Boop received.', 'Reception: excellent.', 'Hey, watch the screen.', 'That tickles my tubes.', 'Ready when you are.'];
+  var ANT_L = ['Easy on the long one. It picks up everything.', 'Careful. That one gets the weather channel.', 'Boing. Now I can hear a radio in Ohio.', 'Took me years to bend it just right.', 'Hold it there. Ooh, a cooking show.'];
+  var ANT_R = ['Hey! The short one is the touchy one.', 'Ow. That one’s mostly for balance.', 'Short, but it has feelings.', 'Ticklish! Very ticklish.', 'Please don’t. It’s all I’ve got on that side.'];
+  var lastAnt = {};
+  function pickAnt(lines, side) {
+    var i; do { i = Math.floor(Math.random() * lines.length); } while (i === lastAnt[side]);
+    lastAnt[side] = i; return lines[i];
+  }
   function onBoop(e) {
     if (opts.isBusy && opts.isBusy()) return;
     var ant = e.target.closest && e.target.closest('.ant');
@@ -71,7 +78,7 @@
     if (ant) {
       ant.classList.remove('twang'); void ant.getBoundingClientRect(); ant.classList.add('twang');
       ant.addEventListener('animationend', function () { ant.classList.remove('twang'); }, { once: true });
-      F.say(ant.classList.contains('ant-l') ? 'Easy on the long one. It picks up everything.' : 'Hey! The short one is the touchy one.', { type: false });
+      F.say(ant.classList.contains('ant-l') ? pickAnt(ANT_L, 'l') : pickAnt(ANT_R, 'r'), { type: false });
       return;
     }
     if (knob) {
@@ -127,12 +134,35 @@
     setTimeout(function () { if (b.getAttribute('data-sch') === 'check') b.removeAttribute('data-sch'); }, ms);
   };
 
+  /* The bubble holds two lines. If a line runs over, shorten the quoted task title so the
+     rest of the sentence still shows. */
+  function fit(line, text) {
+    var two = parseFloat(getComputedStyle(line).lineHeight) * 2 + 1, m = /“([^”]+)”/.exec(text);
+    line.textContent = text;
+    if (!m) return text;
+    var words = m[1].split(' ');
+    while (line.scrollHeight > two && words.length > 1) {
+      words.pop();
+      text = text.replace(/“[^”]+”/, '“' + words.join(' ').replace(/[\s,.:;–-]+$/, '') + '…”');
+      line.textContent = text;
+    }
+    return text;
+  }
+
+  /* o.type: false shows the line whole. o.cls styles the bubble. o.actions: buttons beside the line. */
+  /* Views can listen for what Fuzz says (Triage echoes it when the perch is scrolled out of view). */
+  var sayFns = [];
+  F.onSay = function (fn) { sayFns.push(fn); return function () { sayFns = sayFns.filter(function (f) { return f !== fn; }); }; };
   F.say = async function (text, o) {
     if (!el) return;
     o = o || {};
+    sayFns.forEach(function (f) { f(text, o); });
     var tok = ++sayTok, b = el.bubble;
     b.className = 'bubble ' + (o.cls || ''); void b.offsetWidth; b.classList.add('pop');
-    if (calm || o.type === false) { b.textContent = text; return; }
+    b.textContent = ''; b = b.appendChild(document.createElement('span')); b.className = 'line';
+    (o.actions || []).forEach(function (n) { el.bubble.appendChild(n); });
+    text = fit(b, text);
+    if (calm || o.type === false) return;
     b.textContent = '';
     var words = text.split(' ');
     for (var i = 0; i < words.length; i++) {
