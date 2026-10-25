@@ -13,6 +13,10 @@ DEFAULTS = {
     "stale_days": 7,
     "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
     "files": {"max_mb": 25, "max_per_task": 10},
+    # The connector tools the sender may call to send an approved draft, per client, as that client
+    # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
+    # hands each draft back.
+    "send": {"tools": {"claude-code": [], "copilot": []}},
     "embedder": "ollama",
     "ollama_model": "nomic-embed-text",
     "ollama_url": "http://localhost:11434",

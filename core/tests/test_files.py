@@ -130,6 +130,21 @@ class HeadlessRuns(CoreCase):
         self.assertEqual(argv[argv.index("--add-dir") + 1], "/x/files/u1")
         self.assertEqual([argv[i + 1] for i, x in enumerate(argv) if x == "--deny-tool"], ["shell", "write"])
 
+    def test_the_sender_loads_your_connectors_but_may_call_only_the_send_tools(self):
+        send = ["mcp__claude_ai_Slack__slack_send_message"]
+        argv = adapters.get("claude-code").headless_command("sender", "/tmp/run.json", send_tools=send)
+        self.assertNotIn("--strict-mcp-config", argv, "the sender sends with your own connectors")
+        self.assertEqual(argv[argv.index("--tools") + 1], "", "no built-in tools")
+        i = argv.index("--allowedTools")
+        self.assertEqual(argv[i + 1:i + 3], ["mcp__fuzz-sender__*"] + send)
+        self.assertEqual(argv[argv.index("--permission-mode") + 1], "dontAsk")
+        self.assertNotIn("--add-dir", argv)
+        ex = adapters.get("claude-code").headless_command("executor", "/tmp/run.json", send_tools=send)
+        self.assertIn("--strict-mcp-config", ex)
+        self.assertNotIn(send[0], ex, "only the sender gets send tools")
+        cp = adapters.get("copilot").headless_command("sender", "/tmp/run.json", send_tools=["slack(send_message)"])
+        self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"], ["fuzz-sender", "slack(send_message)"])
+
     def test_the_extractor_gets_no_files(self):
         argv = adapters.get("claude-code").headless_command("extractor", "/tmp/run.json")
         self.assertEqual(argv[argv.index("--tools") + 1], "")

@@ -6,7 +6,7 @@
   var root, openId = null, dlg = null, unsub = null, timer = 0;
 
   var TABS = {
-    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, with you, open in Claude, or coming back later. Fuzz runs up to five at once.' },
+    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz runs up to five at once.' },
     parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
     waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'With someone else. Fuzz watches for replies and drafts nudges for your OK. Replies go straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
@@ -14,7 +14,7 @@
   };
   function cells(it, key) {
     if (key === 'current') {
-      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], mine: ['With you', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
+      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
       return { tone: m[1], c2: m[0], c3: it.age, c4: Store.nowText(it) || '—' };
     }
     if (key === 'parked') return { tone: it.woke ? 'accent' : 'muted', c2: it.woke ? 'Woke up' : 'Parked', c3: it.parkedAgo || it.age, c4: it.now || '—' };
@@ -59,13 +59,14 @@
 
   /* Fuzz's lane: what he is doing right now, step by step */
   function laneHTML() {
-    var run = Store.inState('ai'), next = Store.inState('ai-queued'), now = Date.now();
-    var ids = run.concat(next).map(function (it) { return it.id; });
+    var run = Store.inState('ai'), next = Store.inState('ai-queued'), sending = Store.inState('sending'), now = Date.now();
+    var ids = run.concat(next, sending).map(function (it) { return it.id; });
     /* Work that left the lane since the last look says where it went, for a few seconds */
     if (prevLane) prevLane.forEach(function (id) {
       if (ids.indexOf(id) > -1 || departed[id]) return;
       var it = Store.item(id); if (!it) return;
-      var note = it.state === 'review' ? 'Draft ready. It’s waiting in Triage.' : it.handedBack ? 'Came back to you in Triage with a question.' : it.state === 'triage' ? 'Back in Triage.' : null;
+      var sent = it.log[0] && it.log[0].kind === 'sent';
+      var note = sent ? (it.state === 'waiting' ? 'Nudge sent. Fuzz watches for the reply.' : 'Sent.') : it.state === 'review' ? 'Draft ready. It’s waiting in Triage.' : it.handedBack ? 'Came back to you in Triage with a question.' : it.state === 'triage' ? 'Back in Triage.' : null;
       if (!note) return;
       departed[id] = { title: it.title, note: note, until: now + 8000 };
       Say.announce('“' + it.title + '”: ' + note);
@@ -88,6 +89,7 @@
         '<span class="lrow-side"><span class="steps" role="img" aria-label="Step ' + Math.min(p.done + 1, p.total) + ' of ' + p.total + '">' + dots + '</span>' + (it.dueAt ? UI.pill('Rush', 'accent') : '') + '</span></button></li>';
     });
     next.forEach(function (it) { h += rowHTML(it, 'Next up', 'muted', 'Starts when a slot opens', 'lane-row'); });
+    sending.forEach(function (it) { h += rowHTML(it, 'Sending', 'accent', Store.nowText(it), 'lane-row'); });
     out.forEach(function (id) { var d = departed[id]; h += '<li class="lane-out"><span class="lrow-main"><span class="rt">' + esc(d.title) + '</span><span class="rs">' + esc(d.note) + '</span></span><a href="#/triage">Go to Triage</a></li>'; });
     return h + '</ul></section>';
   }
@@ -136,11 +138,10 @@
 
   function actionsFor(it) {
     var A = [];
-    /* o.final: it can't be taken back (sending), so it gets no Undo */
-    function act(label, kind, fn, msg, o) { A.push({ label: label, kind: kind, fn: fn, msg: msg, final: !!(o && o.final) }); }
+    function act(label, kind, fn, msg) { A.push({ label: label, kind: kind, fn: fn, msg: msg }); }
     var id = it.id, r = Store.recipient(it);
     if (it.state === 'review') {
-      if (r) act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Sent to ' + r.to + '.', { final: true });
+      if (r) act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Approved. Fuzz is sending it to ' + r.to + '.');
       else act('Looks good', 'primary', function (text) { Store.accept(id, text); }, 'Approved and filed in Done.');
       if (!Store.inQueue(id)) act('Put it in triage', 'secondary', function () { Store.queueUp(Store.item(id), 'front'); }, 'It’s first in triage.');
     } else if (it.state === 'ai' || it.state === 'ai-queued') {
@@ -159,7 +160,7 @@
       act('Hand to Fuzz', 'secondary', function () { Store.handToFuzz(id); }, 'Handed to Fuzz.');
       act('Let go', 'secondary', function () { Store.letGo(id); }, 'Let go. You can bring it back from Let go.');
     } else if (it.state === 'waiting') {
-      if (it.nudge) act('Approve and send nudge', 'primary', function (text) { Store.nudgeSent(id, text); }, 'Nudge sent to ' + (it.waitingOn || 'them') + '. Fuzz checks again tomorrow.', { final: true });
+      if (it.nudge) act('Approve and send nudge', 'primary', function (text) { Store.nudgeSent(id, text); }, 'Approved. Fuzz is sending the nudge to ' + (it.waitingOn || 'them') + '.');
       else act('Draft a nudge', 'secondary', function () { it.nudge = true; it.draft = it.draft || 'Hi ' + (it.waitingOn || 'there') + ', a quick nudge on “' + it.title + '”. Let me know if you need anything from me. Thanks!'; it.nextCheck = 'Nudge drafted, needs your OK'; Store.log(it, 'action', 'Drafted a nudge for your review.'); }, 'Drafted a nudge for your review.');
       act('Replied', 'secondary', function () { Store.replied(id); }, 'Back in triage with the reply attached.');
     } else if (it.state === 'done') {
@@ -171,7 +172,7 @@
   }
 
   /* How each action is named in the Undo list; % is the task title */
-  var DID = { 'Looks good': 'Approved %', 'Put it in triage': 'Moved % to triage', 'Pull back into triage': 'Pulled % back into triage', 'Mark done': 'Marked % done',
+  var DID = { 'Approve and send': 'Approved % to send', 'Approve and send nudge': 'Approved the nudge for %', 'Looks good': 'Approved %', 'Put it in triage': 'Moved % to triage', 'Pull back into triage': 'Pulled % back into triage', 'Mark done': 'Marked % done',
     'Bring back now': 'Brought % back to triage', 'Hand to Fuzz': 'Handed % to Fuzz', 'To triage': 'Moved % to triage', 'Let go': 'Let go of %',
     'Draft a nudge': 'Drafted a nudge for %', 'Replied': 'Marked % replied', 'Reopen': 'Reopened %', 'Bring back': 'Brought back %' };
   function didLabel(a, it) { return (DID[a.label] || a.label + ': %').replace('%', '“' + it.title + '”') + '.'; }
@@ -184,7 +185,7 @@
       '<div class="draft-to">' + (r ? '<span>To</span> <strong>' + esc(r.to) + '</strong><span class="via">' + esc(r.via) + '</span>' : '<strong>Just for you</strong><span class="via">Nothing is sent anywhere</span>') + '</div>' +
       '<label class="sr" for="dlg-draft">' + (r ? 'Message to ' + esc(r.to) : 'Fuzz’s write-up') + '</label><textarea id="dlg-draft" rows="5">' + esc(it.draft) + '</textarea></section>';
     h += actionsRow(acts, it.state === 'review');
-    if (r) h += '<p class="sendnote">Sending can’t be undone. Change anything above first.</p>';
+    if (r) h += '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>';
     if (it.state === 'review') h += '<form class="revise" id="dlg-revise" hidden><label for="dlg-revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="dlg-revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form>';
     return h;
   }
@@ -206,6 +207,8 @@
     if (!draft) h += actionsRow(acts, false);
     return h;
   }
+  /* Each change undoes on its own, or says why it can't (the core's model) */
+  function undoer(ch) { return function () { var why = ch.undo(); if (!why && root) render(); return why; }; }
   function open(id, trigger) {
     var it = Store.item(id); if (!it) return;
     openId = id;
@@ -221,20 +224,20 @@
       var b = e.target.closest('[data-do]'); if (!b) return;
       var cur = Store.item(openId); var a = actionsFor(cur)[parseInt(b.dataset.do, 10)];
       if (!a) return;
-      var ta = d.querySelector('#dlg-draft'), snap = Store.snapshot(); a.fn(ta ? ta.value : null);
+      var ta = d.querySelector('#dlg-draft'), text = ta ? ta.value : null;
+      var ch = Store.track([cur.id], function () { a.fn(text); });
       d.close();
-      /* Sending can't be undone, so it's reported without an Undo */
-      if (a.final) Say.tell(a.msg); else Say.tell(a.msg, { label: didLabel(a, cur), undo: function () { Store.restore(snap); if (root) render(); } });
+      Say.tell(a.msg, { label: didLabel(a, cur), undo: undoer(ch), blocked: ch.blocked });
       render();
     });
     d.addEventListener('submit', function (e) {
       if (e.target.id !== 'dlg-revise') return;
       e.preventDefault();
       var note = d.querySelector('#dlg-revise-text').value.trim(); if (!note) return;
-      var ta = d.querySelector('#dlg-draft'), cur = Store.item(openId), snap = Store.snapshot();
-      Store.revise(cur.id, note, ta ? ta.value : null);
+      var ta = d.querySelector('#dlg-draft'), cur = Store.item(openId), text = ta ? ta.value : null;
+      var ch = Store.track([cur.id], function () { Store.revise(cur.id, note, text); });
       d.close();
-      Say.tell('Sent back to Fuzz to change.', { label: 'Sent “' + cur.title + '” back to Fuzz.', undo: function () { Store.restore(snap); if (root) render(); } });
+      Say.tell('Sent back to Fuzz to change.', { label: 'Sent “' + cur.title + '” back to Fuzz.', undo: undoer(ch), blocked: ch.blocked });
       render(); Store.emit({ type: 'work' });
     });
     renderDialog();

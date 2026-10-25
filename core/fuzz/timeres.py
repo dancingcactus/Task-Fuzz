@@ -225,7 +225,7 @@ def build_options(core, task, now=None):
     due = parse_iso(task.get("due"))
     out, seen = [], set()
 
-    def add(anchor, source):
+    def add(anchor, source, reason=None):
         try:
             t = resolve(core, anchor, task, now)
         except FuzzError:
@@ -238,11 +238,14 @@ def build_options(core, task, now=None):
         if lab in seen:
             return
         seen.add(lab)
-        out.append({"anchor": anchor, "label": lab, "fire_at": iso(t) if t else None, "source": source})
+        o = {"anchor": anchor, "label": lab, "fire_at": iso(t) if t else None, "source": source}
+        if reason:
+            o["reason"] = reason   # why the AI offered it: a hint line under the button
+        out.append(o)
 
     for h in (task.get("schedule_hints") or [])[:MAX_AI]:
         if not h.get("cancelled"):
-            add({k: v for k, v in h.items() if k != "reason"}, "ai")
+            add({k: v for k, v in h.items() if k != "reason"}, "ai", h.get("reason"))
     for a in timeline(due, now):
         add(a, "core")
     out = out[:MAX_OPTIONS]

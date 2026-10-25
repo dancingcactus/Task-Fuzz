@@ -2,7 +2,8 @@
 
 Kept small on purpose (past about fifteen tools a model starts choosing the wrong one), and kept
 quiet: writes return counts and ids, never an echo; reads return short pages.
-There is no send, post or delete tool.
+The executor and extractor have no send, post or delete tool. The sender has none of Fuzz's either:
+it sends an approved draft with its client's own connector, then says so with mark_sent.
 """
 
 import json
@@ -143,6 +144,26 @@ def release(core, task_id):
     return {"state": "queued"}
 
 
+# ---------------------------------------------------------------- sender
+
+def claim_next_send(core):
+    t, d = scheduler.claim_next_send(core)
+    if t is None:
+        return {"send": None, "why": d}
+    return {"send": {"task_id": t["id"], "draft_id": d["id"], "kind": d["kind"], "target": d["target"],
+                     "body": d["body"], "title": t["title"]}, "lease_until": t["lease_until"]}
+
+
+def mark_sent(core, task_id, draft_id, where, link=None):
+    scheduler.require_send_lease(core, task_id)
+    return drafts.mark_sent(core, task_id, draft_id, where, link)
+
+
+def send_failed(core, task_id, draft_id, why):
+    scheduler.require_send_lease(core, task_id)
+    return drafts.send_failed(core, task_id, draft_id, why)
+
+
 # ---------------------------------------------------------------- extractor
 
 def get_cursors(core):
@@ -178,4 +199,5 @@ def submit_verdicts(core, verdicts):
 EXECUTOR = ("whoami", "claim_next_task", "get_task", "read_source", "log_step", "save_notes", "save_draft",
             "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "release")
 EXTRACTOR = ("whoami", "get_cursors", "submit_signals", "get_pending_judgments", "submit_verdicts")
-ROLES = {"executor": EXECUTOR, "extractor": EXTRACTOR}
+SENDER = ("whoami", "claim_next_send", "mark_sent", "send_failed")
+ROLES = {"executor": EXECUTOR, "extractor": EXTRACTOR, "sender": SENDER}

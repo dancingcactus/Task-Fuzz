@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLE_SKILLS = {"executor": "fuzz-executor", "extractor": "fuzz-extract"}
+ROLE_SKILLS = {"executor": "fuzz-executor", "extractor": "fuzz-extract", "sender": "fuzz-send"}
 SKILLS_SRC = Path(__file__).resolve().parents[2] / "skills"
 PKG_PARENT = str(Path(__file__).resolve().parents[2])   # the folder holding the fuzz package
 
@@ -20,6 +20,8 @@ PROMPTS = {
                  "claim_next_task and work each task until there is nothing to claim."),
     "extractor": ("Run Fuzz extraction using the fuzz-extract instructions. Call whoami and get_cursors, read the "
                   "sources, submit signals, judge the pending shortlists and submit verdicts."),
+    "sender": ("Send the drafts the human approved, using the fuzz-send instructions. Call whoami, then "
+               "claim_next_send and send each one until there is nothing to claim."),
 }
 
 
@@ -98,8 +100,10 @@ class Adapter:
     def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None):
         raise NotImplementedError
 
-    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None):
-        """files_dir: the user's attachments folder, the only place the run may read files from."""
+    def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
+                         send_tools=None):
+        """files_dir: the user's attachments folder, the only place the run may read files from.
+        send_tools: for the sender, the connector tools it may call to send, as this client names them."""
         raise NotImplementedError
 
     def prompt(self, role, task_id=None):

@@ -76,6 +76,7 @@ class App:
         self.home = home
         self.clock = clock
         self._cores = {}
+        self.send_kicked = {}
         self._mu = threading.Lock()
         self.changed = threading.Condition()
 
@@ -110,6 +111,7 @@ class App:
             ("GET", r"/undo", self.undo_list),
             ("POST", r"/undo", self.undo),
             ("GET", r"/events", self.events_since),
+            ("POST", r"/checkin", self.checkin),
             ("POST", r"/signals/at_desk", self.at_desk),
             ("POST", r"/tick", self.tick),
             ("GET", r"/engine", self.engine_get),
@@ -193,6 +195,11 @@ class App:
     def events_since(self, core, m, body, q):
         return {"events": events.since(core, int(q.get("after") or 0), min(int(q.get("limit") or 200), 1000))}
 
+    def checkin(self, core, m, body, q):
+        """The UI asked how you're doing: {answer, follow_up?}. It decides when to ask; the core keeps the answer."""
+        from . import checkins
+        return checkins.record(core, body.get("answer"), body.get("follow_up")), 201
+
     def at_desk(self, core, m, body, q):
         return {"came_back": scheduler.wake(core)}
 
@@ -212,8 +219,8 @@ class App:
 
     def engine_run(self, core, m, body, q):
         role = body.get("role", "executor")
-        if role not in ("executor", "extractor"):
-            raise FuzzError("role must be executor or extractor", "role")
+        if role not in ("executor", "extractor", "sender"):
+            raise FuzzError("role must be executor, extractor or sender", "role")
         return engine.run_now(core, role, body.get("task_id"), bool(body.get("scripted"))), 202
 
     def engine_action(self, core, m, body, q):
@@ -361,6 +368,23 @@ def make_handler(app):
     return Handler
 
 
+SEND_KICK_SECONDS = 120
+
+
+def kick_sender(app, core, now=None):
+    """Start the sender soon after you approve a draft, instead of waiting for launchd. At most one
+    start every two minutes per user; a second sender would find nothing to claim anyway."""
+    from . import config
+    now = now or time.time()
+    if not scheduler.sends_waiting(core) or not config.role_engine(core.config, "sender")[0]:
+        return False
+    if now - app.send_kicked.get(core.user_id, 0) < SEND_KICK_SECONDS:
+        return False
+    app.send_kicked[core.user_id] = now
+    engine.run_now(core, "sender")
+    return True
+
+
 def _ticker(app, stop):
     while not stop.wait(TICK_SECONDS):
         for uid in set(load_tokens(app.home).values()):
@@ -368,6 +392,7 @@ def _ticker(app, stop):
             try:
                 with core.lock:
                     scheduler.tick(core)
+                    kick_sender(app, core)
             except Exception as e:   # the clock must keep going
                 print(f"tick failed for user {uid}: {e}")
 

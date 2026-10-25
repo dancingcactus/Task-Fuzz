@@ -60,13 +60,59 @@ class Undo(CoreCase):
         events.undo(self.core)
         self.assertEqual(self.task(a)["state"], "triage")
 
-    def test_ai_work_is_not_undone_by_your_undo(self):
+    def test_undo_is_refused_once_fuzz_has_worked_on_it(self):
         a = tasks.capture(self.core, "One")
         tasks.assign(self.core, a)
         tools.claim_next_task(self.core)
         tools.log_step(self.core, a, "research", "Did a thing")
-        events.undo(self.core)   # undoes your assign... which the AI's claim came after
-        self.assertEqual([g["type"] for g in events.undo_list(self.core)], ["task.captured"])
+        with self.assertRaises(FuzzError) as e:
+            events.undo(self.core)
+        self.assertEqual(e.exception.status, 409)
+        self.assertEqual(self.task(a)["state"], "working")
+        assigned = events.undo_list(self.core)[0]
+        self.assertEqual(assigned["type"], "task.assigned")
+        self.assertIn("Fuzz has already worked on this", assigned["blocked"])
+
+    def test_undo_after_a_draft_leaves_no_stray_cards(self):
+        a = tasks.capture(self.core, "One")
+        answers.answer(self.core, self.card_for(a, "task")["id"], "assign")
+        tools.claim_next_task(self.core)
+        tools.save_draft(self.core, a, "note", "", "Plan")
+        with self.assertRaises(FuzzError):
+            events.undo(self.core)
+        self.assertEqual([c["kind"] for c in self.core.all(
+            "SELECT kind FROM cards WHERE task_id=? AND status='open'", (a,))], ["draft"])
+
+    def test_commands_undo_on_their_own_not_as_a_stack(self):
+        a = tasks.capture(self.core, "One")
+        b = tasks.capture(self.core, "Two")
+        tasks.park(self.core, a)
+        tasks.done(self.core, b)
+        park = next(g for g in events.undo_list(self.core) if g["type"] == "task.parked")
+        events.undo(self.core, park["group"])
+        self.assertEqual((self.task(a)["state"], self.task(b)["state"]), ("triage", "done"))
+
+    def test_a_later_change_of_yours_blocks_until_undone(self):
+        a = tasks.capture(self.core, "One")
+        tasks.park(self.core, a)
+        tasks.done(self.core, a)
+        park = next(g for g in events.undo_list(self.core) if g["type"] == "task.parked")
+        self.assertIn("Undo that first", park["blocked"])
+        with self.assertRaises(FuzzError):
+            events.undo(self.core, park["group"])
+        events.undo(self.core)
+        events.undo(self.core, park["group"])
+        self.assertEqual(self.task(a)["state"], "triage")
+
+    def test_bookkeeping_changed_later_keeps_its_newer_value(self):
+        a = tasks.capture(self.core, "One", due=self.core.now_iso())
+        tasks.park(self.core, a)
+        scheduler.tick(self.core)   # the deadline level and its tag change after the park
+        events.undo(self.core)
+        t = self.task(a)
+        self.assertEqual(t["state"], "triage")
+        self.assertIn("time_sensitive", t["variant_tags"])
+        self.assertEqual(events.check_replay(self.core), [])
 
     def test_undo_a_merge_splits_it(self):
         from fuzz import cards, matching

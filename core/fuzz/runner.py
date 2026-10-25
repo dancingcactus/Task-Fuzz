@@ -1,4 +1,4 @@
-"""`fuzz run executor|extractor`: the same command for launchd, the UI's Run now, and you debugging.
+"""`fuzz run executor|extractor|sender`: the same command for launchd, the UI's Run now, and you debugging.
 
 Every run writes run.started and run.finished. A real run gets its own short-lived MCP config that
 starts `fuzz mcp --role <role> --run <id>`, so it sees Fuzz's server and no other, and every event
@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 
-from . import adapters, config, files, runs
+from . import adapters, config, files, runs, scheduler
 from .db import FuzzError
 from .roles import scripted
 
@@ -21,10 +21,13 @@ def _prompt_version(adapter, role):
 
 def run_role(core, role, client=None, model=None, task_id=None, scripted_=False, verbose=False, trigger="manual",
              signals=None, say=print):
-    if role not in ("executor", "extractor"):
-        raise FuzzError("role must be executor or extractor", "role")
+    if role not in ("executor", "extractor", "sender"):
+        raise FuzzError("role must be executor, extractor or sender", "role")
     if task_id and role != "executor":
         raise FuzzError("--task works only for the executor", "task")
+    if role == "sender" and not scheduler.sends_waiting(core):
+        # launchd checks every couple of minutes; don't start a client (or record a run) for nothing
+        return {"run_id": None, "outcome": "nothing_to_do", "client": None, "model": None}
     adapter = None
     if scripted_:
         client_name, model, pv = "scripted", None, scripted.PROMPT_VERSION
@@ -43,6 +46,9 @@ def run_role(core, role, client=None, model=None, task_id=None, scripted_=False,
             say_ = say if verbose else (lambda s: None)
             if role == "executor":
                 res = scripted.run_executor(core, task_id, say_)
+                outcome = "ok" if res["tasks"] else "nothing_to_do"
+            elif role == "sender":
+                res = scripted.run_sender(core, say_)
                 outcome = "ok" if res["tasks"] else "nothing_to_do"
             else:
                 res = scripted.run_extractor(core, signals, say_)
@@ -69,7 +75,10 @@ def _headless(core, adapter, role, rid, model, task_id, verbose, say):
     if role == "executor":   # attachments: readable with the client's own file tools, nothing else is
         files_dir = files.user_dir(core)
         os.makedirs(files_dir, exist_ok=True)
-    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir)
+    send_tools = None
+    if role == "sender":   # the connector tools you allowed for sending, as this client names them
+        send_tools = list(((core.config.get("send") or {}).get("tools") or {}).get(adapter.name) or [])
+    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir, send_tools=send_tools)
     with open(os.path.join(run_dir, "argv.json"), "w") as f:
         json.dump(argv, f, indent=2)
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

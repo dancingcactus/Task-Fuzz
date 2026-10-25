@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS drafts (
   kind TEXT NOT NULL,              -- email.reply | slack.message | calendar.invite | nudge.* | note
   target TEXT,
   body TEXT,
-  status TEXT NOT NULL,            -- pending | approved | sent_back | withdrawn
+  status TEXT NOT NULL,            -- pending | approved | sent | sent_back | withdrawn
   approved_by TEXT,
   approved_at TEXT,
   created_at TEXT

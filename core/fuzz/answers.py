@@ -9,8 +9,6 @@ from .db import FuzzError
 
 POSTPONE_LIMIT = 2   # after two "Not sure yet", the core takes the safe answer
 SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term": None, "is_task": "mine"}
-CHECKIN_MOMENT = {"good": "any", "okay": "any", "tired": "low", "overloaded": "quick"}
-CHECKIN_GAP_MAX = 16
 
 
 def _task_answer(core, card, t, option, value):
@@ -123,28 +121,9 @@ def _permission(core, card, t, option, value):
     return drafts.answer_permission(core, card, option)
 
 
-def _checkin(core, card, t, option, value):
-    follow = (value or {}).get("follow_up") if isinstance(value, dict) else None
-    if follow not in (None, "take_5", "hold_rest", "quick_first"):
-        raise FuzzError("value.follow_up must be take_5, hold_rest or quick_first", "value.follow_up")
-    moment = "quick" if follow == "quick_first" else CHECKIN_MOMENT[option]
-    with core.tx("human"):
-        ch = events.Changes()
-        cards.mark_answered(core, ch, card, option, value)
-        ch.state("moment", moment)
-        if follow == "take_5":
-            ch.state("break_until", core.now_iso())
-        events.emit(core, "checkin.answered", changes=ch, data={"answer": option, "follow_up": follow, "moment": moment})
-        if follow == "hold_rest":
-            for c, ct in cards.queue(core):
-                if c["kind"] == "task" and ct and ct.get("deadline_level", 0) == 0:
-                    tasks.schedule(core, ct["id"], {"type": "day_part", "day": "tomorrow", "part": "morning"},
-                                   offered_only=False)
-
-
 HANDLERS = {"task": _task_answer, "duplicate": _duplicate, "entity_person": _entity_person,
             "entity_term": _entity_term, "is_task": _is_task, "draft": _draft, "nudge": _draft,
-            "permission": _permission, "checkin": _checkin}
+            "permission": _permission}
 
 
 def answer(core, card_id, option, value=None):
@@ -160,8 +139,6 @@ def answer(core, card_id, option, value=None):
             _postpone(core, card, t)
         else:
             HANDLERS[card["kind"]](core, card, t, option, value)
-            if card["kind"] != "checkin":
-                _count_toward_checkin(core)
     return {"card_id": card_id, "option": option}
 
 
@@ -187,20 +164,3 @@ def _postpone(core, card, t):
     ch = events.Changes()
     ch.card(card["id"], postponed=card["postponed"] + 1, order_key=cards.next_order(core))
     events.emit(core, "card.postponed", task_id=card["task_id"], changes=ch, data={"kind": card["kind"]})
-
-
-def _count_toward_checkin(core):
-    """Check-ins come often at first, then less often: after 2 cleared cards, then 4 more, 8, 16.
-
-    Worked out from the log (answered cards since the last checkin.due), so counting writes nothing.
-    """
-    last = core.one("SELECT COALESCE(MAX(id), 0) m, COUNT(*) n FROM events WHERE user_id=? AND type='checkin.due'",
-                    (core.user_id,))
-    since = core.one("SELECT COUNT(*) n FROM cards WHERE user_id=? AND status='answered' AND kind!='checkin' "
-                     "AND answered_event_id > ?", (core.user_id, last["m"]))["n"]
-    gap = min(2 ** (last["n"] + 1), CHECKIN_GAP_MAX)
-    q = cards.queue(core)
-    urgent = any(t and t.get("deadline_level", 0) >= 1 for c, t in q)
-    if since >= gap and not urgent and q and not any(c["kind"] == "checkin" for c, _ in q):
-        events.emit(core, "checkin.due", data={"after": since}, actor="system")
-        cards.create(core, "checkin", where="front")

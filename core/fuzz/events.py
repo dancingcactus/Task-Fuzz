@@ -16,7 +16,7 @@ EVENT_TYPES = {
     "task.handed_back", "task.scheduled", "task.woke", "task.parked", "task.waiting",
     "task.done", "task.let_go", "task.restored", "task.stale", "task.deadline_level",
     "task.reopened", "task.reply_in", "task.came_back", "task.anchor_moved", "task.anchor_lost",
-    "task.confirmed", "task.draft_edited", "task.sent_back",
+    "task.confirmed", "task.draft_edited", "task.sent_back", "task.send_failed",
     # not in the design doc's first list; each is a plain fact the UI can ignore
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
     "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached",
@@ -31,7 +31,7 @@ EVENT_TYPES = {
 # Projected tables and their key column. user_state is keyed by (user_id, key).
 TABLES = {"tasks": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
 
-ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "system")
+ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "system")
 
 LOG_KINDS = ("research", "action", "guidance", "status", "sent", "blocked")
 
@@ -264,24 +264,15 @@ def _groups(core, limit=200):
     return out
 
 
-def undo_list(core, limit=10):
-    out = []
-    for root, evs in _groups(core)[:limit]:
-        first = evs[0]
-        log = next((e["payload"]["log"]["text"] for e in evs if e["payload"].get("log")), None)
-        out.append({"group": root, "ts": first["ts"], "type": first["type"], "task_id": first["task_id"],
-                    "text": log or first["type"]})
-    return out
+# Fields that say what a command decided. A later change to one of these on the same row means the
+# command can't be undone on its own any more. Other fields (tags, order, deadline level, lease
+# renewals...) are bookkeeping: undo keeps whatever later events set them to.
+DECISIVE = {"tasks": {"state", "assignee", "lease_owner", "notes", "question", "schedule_anchor", "title",
+                      "merged_into", "waiting_on", "quick_answers"},
+            "cards": {"status"}, "drafts": {"status", "body"}, "grants": {"kind"}, "user_state": {"value"}}
 
 
-def undo(core, group=None):
-    """Reverse the newest human command (or the one named). Returns {"undid": root, "event_id": id}."""
-    groups = _groups(core)
-    if group is not None:
-        groups = [g for g in groups if g[0] == group]
-    if not groups:
-        raise FuzzError("Nothing to undo", "group", 404)
-    root, evs = groups[0]
+def _restore_plan(evs):
     restore = {}
     for e in reversed(evs):  # newest first, so the oldest prior value wins
         for table, rows in e["payload"]["prior"].items():
@@ -289,6 +280,75 @@ def undo(core, group=None):
                 if before is None:
                     before = _absent(table, e["payload"]["changes"][table][key])
                 restore.setdefault(table, {}).setdefault(key, {}).update(before)
+    return restore
+
+
+def _later(core, evs):
+    """Events after a command. A later command you undid and the undo itself cancel out, so they're left out."""
+    rows = core.conn.execute("SELECT * FROM events WHERE user_id=? AND id>? ORDER BY id",
+                             (core.user_id, evs[-1]["id"])).fetchall()
+    later = [event_dict(r) for r in rows]
+    roots = {e["caused_by"] or e["id"] for e in later}
+    undone = {e["payload"]["data"].get("undoes") for e in later if e["type"] == "task.restored"} & roots
+    return [e for e in later if (e["caused_by"] or e["id"]) not in undone
+            and not (e["type"] == "task.restored" and e["payload"]["data"].get("undoes") in undone)]
+
+
+def _blocker(restore, later):
+    """The first later event that changed a decisive field this undo would put back, or None."""
+    for e in later:
+        for table, rows in e["payload"].get("changes", {}).items():
+            for key, fields in rows.items():
+                mine = restore.get(table, {}).get(key)
+                if mine and set(fields) & set(mine) & DECISIVE.get(table, set()):
+                    return e
+    return None
+
+
+def _why_blocked(e):
+    if e["actor"] == "human":
+        text = (e["payload"].get("log") or {}).get("text") or e["type"]
+        return f"You changed this since ({text}). Undo that first."
+    if e["actor"].startswith("fuzz"):
+        return "Fuzz has already worked on this since, so it can't be undone. Bring it back from Lineup instead."
+    return "This has changed since, so it can't be undone."
+
+
+def undo_list(core, limit=10):
+    """Recent commands, newest first. Each one undoes on its own; blocked says why one no longer can."""
+    out = []
+    for root, evs in _groups(core)[:limit]:
+        first = evs[0]
+        log = next((e["payload"]["log"]["text"] for e in evs if e["payload"].get("log")), None)
+        b = _blocker(_restore_plan(evs), _later(core, evs))
+        out.append({"group": root, "ts": first["ts"], "type": first["type"], "task_id": first["task_id"],
+                    "text": log or first["type"], "blocked": _why_blocked(b) if b else None})
+    return out
+
+
+def undo(core, group=None):
+    """Reverse the newest human command (or the one named), on its own: commands aren't a stack.
+
+    Refused (409) when a later event changed a decisive field the undo would put back. Bookkeeping
+    fields a later event changed keep their newer value. Returns {"undid": root, "event_id": id}."""
+    groups = _groups(core)
+    if group is not None:
+        groups = [g for g in groups if g[0] == group]
+    if not groups:
+        raise FuzzError("Nothing to undo", "group", 404)
+    root, evs = groups[0]
+    restore = _restore_plan(evs)
+    later = _later(core, evs)
+    b = _blocker(restore, later)
+    if b:
+        raise FuzzError(_why_blocked(b), "group", 409)
+    for e in later:
+        for table, rows in e["payload"].get("changes", {}).items():
+            for key, fields in rows.items():
+                for f in fields:
+                    restore.get(table, {}).get(key, {}).pop(f, None)
+    restore = {t: {k: f for k, f in rows.items() if f} for t, rows in restore.items()}
+    restore = {t: rows for t, rows in restore.items() if rows}
     with core.tx(actor="human"):
         for e in evs:
             if e["type"] == "task.merged":

@@ -179,6 +179,11 @@ def cmd_wake(a):
     _print({"came_back": scheduler.wake(_core(a))})
 
 
+def cmd_checkin(a):
+    from . import checkins
+    _print(checkins.record(_core(a), a.answer, a.follow_up))
+
+
 def cmd_rebuild(a):
     core = _core(a)
     if a.check:
@@ -274,12 +279,12 @@ def parser():
     s.set_defaults(fn=cmd_serve)
 
     s = sub.add_parser("mcp", help="run the MCP server over stdio (started by an AI client)")
-    s.add_argument("--role", required=True, choices=["executor", "extractor"])
+    s.add_argument("--role", required=True, choices=["executor", "extractor", "sender"])
     s.add_argument("--run", type=int)
     s.set_defaults(fn=cmd_mcp)
 
     s = sub.add_parser("run", help="run a role headless, the same way launchd does")
-    s.add_argument("role", choices=["executor", "extractor"])
+    s.add_argument("role", choices=["executor", "extractor", "sender"])
     s.add_argument("--client", choices=["claude-code", "copilot"])
     s.add_argument("--model")
     s.add_argument("--task", type=int)
@@ -347,6 +352,10 @@ def parser():
 
     sub.add_parser("tick", help="run the clock once: due tasks come back, deadlines, stale").set_defaults(fn=cmd_tick)
     sub.add_parser("wake", help="you're back at your desk").set_defaults(fn=cmd_wake)
+    s = sub.add_parser("checkin", help="record how you're doing (the UI decides when to ask)")
+    s.add_argument("answer", choices=["good", "okay", "tired", "overloaded"])
+    s.add_argument("--follow-up", choices=["take_5", "hold_rest", "quick_first"])
+    s.set_defaults(fn=cmd_checkin)
 
     s = sub.add_parser("rebuild", help="replay the event log into the tasks and cards tables")
     s.add_argument("--check", action="store_true", help="only report whether replay matches")
@@ -360,7 +369,7 @@ def parser():
 
     s = sub.add_parser("install", help="install the skills and MCP server for a client")
     s.add_argument("--client", required=True, choices=["claude-code", "copilot"])
-    s.add_argument("--roles", help="executor,extractor (default both)")
+    s.add_argument("--roles", help="executor,extractor,sender (default all three)")
     s.add_argument("--link", action="store_true", help="symlink the skills, for development")
     s.add_argument("--no-launchd", action="store_true")
     s.set_defaults(fn=cmd_install)

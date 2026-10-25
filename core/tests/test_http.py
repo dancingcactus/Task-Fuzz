@@ -69,6 +69,46 @@ class Api(Server):
         self.assertEqual(full["state"], "review")
         self.assertTrue(full["log"] and full["drafts"] and full["cards"])
 
+    def test_checkin_is_recorded_not_raised(self):
+        self.req("POST", "/tasks", {"text": "One"})
+        status, body = self.req("POST", "/checkin", {"answer": "tired"})
+        self.assertEqual((status, body["moment"]), (201, "low"))
+        self.assertEqual(self.req("GET", "/cards")[1]["moment"], "low")
+        self.assertEqual({c["kind"] for c in self.req("GET", "/cards")[1]["cards"]}, {"task"})
+        status, body = self.req("POST", "/checkin", {"answer": "meh"})
+        self.assertEqual((status, body["field"]), (400, "answer"))
+
+    def test_undo_list_says_what_is_blocked(self):
+        tid = self.req("POST", "/tasks", {"text": "One"})[1]["task_id"]
+        self.req("POST", f"/tasks/{tid}/park")
+        self.req("POST", f"/tasks/{tid}/done")
+        recent = self.req("GET", "/undo")[1]["recent"]
+        park = next(r for r in recent if r["type"] == "task.parked")
+        self.assertIn("Undo that first", park["blocked"])
+        status, body = self.req("POST", "/undo", {"group": park["group"]})
+        self.assertEqual((status, body["field"]), (409, "group"))
+
+    def test_the_sender_is_started_when_a_draft_is_approved(self):
+        from unittest import mock
+        app = self.srv.app
+        core = app.core(1)
+        self.assertFalse(http_api.kick_sender(app, core, now=1000))
+        tid = tasks.capture(core, "Reply to Elena")
+        tasks.assign(core, tid)
+        from fuzz import drafts, scheduler
+        scheduler.claim_next(core, tid)
+        drafts.save_draft(core, tid, "email.reply", "Elena", "Hi")
+        card = self.req("GET", "/cards")[1]["cards"][0]
+        self.req("POST", f"/cards/{card['id']}/answer", {"option": "approve"})
+        cfg = core.config
+        cfg["engine"]["client"] = "claude-code"
+        core.save_config(cfg)
+        with mock.patch("fuzz.engine.run_now") as run:
+            self.assertTrue(http_api.kick_sender(app, core, now=1000))
+            self.assertFalse(http_api.kick_sender(app, core, now=1060), "not again within two minutes")
+            self.assertTrue(http_api.kick_sender(app, core, now=1200))
+        self.assertEqual([c.args[1] for c in run.call_args_list], ["sender", "sender"])
+
     def test_errors_name_the_field(self):
         status, body = self.req("POST", "/tasks", {})
         self.assertEqual((status, body["field"]), (400, "text"))

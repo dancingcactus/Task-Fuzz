@@ -36,13 +36,23 @@ def require_lease(core, task_id):
 def expire_leases(core):
     rows = core.all("SELECT * FROM tasks WHERE user_id=? AND state='working' AND lease_until < ?",
                     (core.user_id, core.now_iso()))
+    sends = core.all("SELECT * FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NOT NULL "
+                     "AND lease_until < ?", (core.user_id, core.now_iso()))
+    for t in sends:
+        # It may have gone out before the run stopped. Sending again could send it twice, so it's yours to check.
+        from . import drafts
+        d = drafts.approved_draft(core, t["id"])
+        if d:
+            drafts.send_failed(core, t["id"], d["id"], "Fuzz's send run stopped partway, so it may or may not have "
+                               "gone out. Check before you approve it again.", actor="system",
+                               log="The send run stopped partway, so this came back to you to check.")
     for t in rows:
         with core.tx("system"):
             ch = events.Changes()
             tasks.move(core, ch, t, "queued")
             events.emit(core, "task.released", task_id=t["id"], changes=ch, data={"why": "lease_expired"},
                         log=("status", "Fuzz's run stopped partway, so this went back to the queue."))
-    return len(rows)
+    return len(rows) + len(sends)
 
 
 def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=None):
@@ -99,6 +109,35 @@ def claim_next(core, task_id=None):
             events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core)},
                         log=("status", "Fuzz started on this."))
             return tasks.get(core, t["id"]), None
+
+
+def sends_waiting(core):
+    return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL",
+                    (core.user_id,))["n"]
+
+
+def claim_next_send(core):
+    """Lease the oldest approved draft waiting to go out. Returns (task, draft), or (None, why)."""
+    from . import drafts
+    expire_leases(core)
+    with core.tx("fuzz:sender"):
+        t = core.one("SELECT * FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL "
+                     "ORDER BY state_changed_at, id LIMIT 1", (core.user_id,))
+        if t is None:
+            return None, "Nothing is waiting to be sent"
+        ch = events.Changes()
+        ch.task(t["id"], lease_owner=caller(core), lease_until=lease_until(core))
+        events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core), "to": "send"})
+        return tasks.get(core, t["id"]), drafts.approved_draft(core, t["id"])
+
+
+def require_send_lease(core, task_id):
+    t = tasks.require(core, task_id)
+    if t["state"] != "sending" or t["lease_owner"] != caller(core):
+        raise FuzzError(f"You don't hold task {t['id']}. Call claim_next_send first.", "task_id", 409)
+    if parse_iso(t["lease_until"]) < core.now():
+        raise FuzzError(f"Your lease on task {t['id']} ran out, so it went back to the human.", "task_id", 409)
+    return t
 
 
 def log_step(core, task_id, kind, text):

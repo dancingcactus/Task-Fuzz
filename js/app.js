@@ -102,10 +102,13 @@
   function paintUndo() {
     var btn = document.getElementById('undobtn'), pop = document.getElementById('undopop'), cnt = document.getElementById('undocount'); if (!btn) return;
     var list = Say.undoList();
-    btn.disabled = !list.length; cnt.textContent = list.length ? String(list.length) : '';
+    var n = list.filter(function (u) { return !u.blocked(); }).length;   /* blocked ones stay listed with the reason, uncounted */
+    btn.disabled = !list.length; cnt.textContent = n ? String(n) : '';
     if (!list.length) { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); pop.innerHTML = ''; return; }
+    /* Each one undoes on its own. One that can't any more stays listed, dimmed, with the reason. */
     pop.innerHTML = '<h2>Recent actions</h2><ul class="undolist">' + list.map(function (u, i) {
-      return '<li><button type="button" data-undo="' + i + '"><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + ago(u.at) + (i > 0 ? ' · also undoes ' + i + ' newer' : '') + '</span></button></li>';
+      var why = u.blocked();
+      return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
   function paintPopover() {

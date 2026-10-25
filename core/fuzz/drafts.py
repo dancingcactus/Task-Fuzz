@@ -1,7 +1,10 @@
 """The approval gate: drafts wait for your OK, and permissions decide what Fuzz may read or use.
 
-Version 1 has no outbound actuators. Approving marks the draft approved (task.approved) and the
-UI offers "copy and open in Mail/Slack". An actuator would write task.sent with the link.
+Approving a draft that goes somewhere moves the task to `sending`. Fuzz's sender role (its own
+short run, with only the connector tools you allowed for sending) claims it, sends exactly the
+approved body with its client's connector, and calls mark_sent, which writes task.sent. Until
+then Undo takes the approval back; after task.sent nothing can. A note goes nowhere, so approving
+one just files it.
 """
 
 from . import cards, events, tasks
@@ -45,15 +48,61 @@ def _draft(core, card):
 def approve(core, card):
     d = _draft(core, card)
     t = tasks.require(core, d["task_id"])
-    nudge = card["kind"] == "nudge"
     with core.tx("human"):
         ch = events.Changes()
         ch.draft(d["id"], status="approved", approved_by="human", approved_at=core.now_iso())
-        tasks.move(core, ch, t, "waiting" if nudge else "done", card=card, question=None)
+        if d["kind"] == "note":
+            tasks.move(core, ch, t, "done", card=card, question=None)
+            log = "You approved this."
+        else:
+            tasks.move(core, ch, t, "sending", card=card, question=None)
+            log = f"You approved the draft. Fuzz will send it in {_where(d['kind'])}."
         cards.mark_answered(core, ch, card, "approve")
         events.emit(core, "task.approved", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "kind": d["kind"]},
-                    log=("status", "You approved the draft. Copy it into " + _where(d["kind"]) + " to send it."))
+                    log=("status", log))
         cards.sync(core, t["id"])
+
+
+def approved_draft(core, task_id):
+    return core.one("SELECT * FROM drafts WHERE task_id=? AND user_id=? AND status='approved' ORDER BY id DESC LIMIT 1",
+                    (task_id, core.user_id))
+
+
+def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
+    """The sender sent the approved draft. Writes task.sent, which no Undo reverses."""
+    if not (where or "").strip():
+        raise FuzzError("where says how it went out, like “Slack, #offsite-planning”", "where")
+    t = tasks.require(core, task_id)
+    d = approved_draft(core, t["id"])
+    if d is None or d["id"] != draft_id:
+        raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    with core.tx(actor):
+        ch = events.Changes()
+        ch.draft(d["id"], status="sent")
+        tasks.move(core, ch, t, "waiting" if d["kind"].startswith("nudge") else "done")
+        to = f" to {d['target']}" if d.get("target") else ""
+        events.emit(core, "task.sent", task_id=t["id"], changes=ch,
+                    data={"draft_id": d["id"], "kind": d["kind"], "where": where.strip(), "link": link},
+                    log=("sent", f"Sent{to} ({where.strip()}) after you approved it."))
+    return {"state": "waiting" if d["kind"].startswith("nudge") else "done"}
+
+
+def send_failed(core, task_id, draft_id, why, actor="fuzz:sender", log=None):
+    """It couldn't go out. The draft comes back to review with the reason as the question."""
+    if not (why or "").strip():
+        raise FuzzError("why says what stopped it, in one line", "why")
+    t = tasks.require(core, task_id)
+    d = approved_draft(core, t["id"])
+    if d is None or d["id"] != draft_id:
+        raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    with core.tx(actor):
+        ch = events.Changes()
+        ch.draft(d["id"], status="pending")
+        tasks.move(core, ch, t, "review", question=f"{why.strip()[:300]} Send it again?")
+        events.emit(core, "task.send_failed", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "why": why.strip()},
+                    log=("blocked", log or f"Couldn't send it: {why.strip()}"))
+        cards.sync(core, t["id"])
+    return {"state": "review"}
 
 
 def _where(kind):

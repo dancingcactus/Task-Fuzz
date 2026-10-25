@@ -5,10 +5,10 @@ import unittest
 
 from helpers import CoreCase
 
-from fuzz import answers, cards, drafts, events, scheduler, tasks, tools
+from fuzz import answers, cards, checkins, drafts, events, scheduler, tasks, tools
 from fuzz.db import FuzzError
 
-IGNORED = {"card.created", "checkin.due"}   # bookkeeping that rides along with an answer
+IGNORED = {"card.created"}   # bookkeeping that rides along with an answer
 
 
 ASKS = ["Order the conference badges", "Fix the flaky nightly build", "Renew the design tool licences",
@@ -62,12 +62,6 @@ class CardTable(CoreCase):
         with self.core.tx("fuzz:extractor"):
             cid = cards.create(self.core, kind, tid, payload=payload)
         return tid, cards.get(self.core, cid)
-
-    def checkin(self):
-        tasks.capture(self.core, "Something to sort")
-        with self.core.tx("system"):
-            cid = cards.create(self.core, "checkin", where="front")
-        return None, cards.get(self.core, cid)
 
     # ---- the check
     def check(self, made, option, want_events, want_state=None, value=None):
@@ -142,14 +136,15 @@ class CardTable(CoreCase):
         self.card_for(tid, "task")
 
     def test_draft(self):
-        self.check(self.draft(), "approve", ["task.approved"], "done")
+        self.check(self.draft(), "approve", ["task.approved"], "sending")
+        self.check(self.draft("note"), "approve", ["task.approved"], "done")
         self.check(self.draft(), "edit", ["task.draft_edited"], "review", value="Hi Elena, new text.")
         self.check(self.draft(), "send_back", ["task.sent_back"], "queued", value="Warmer, please")
 
     def test_nudge(self):
         made = self.draft("nudge.email")
         self.assertEqual(made[1]["kind"], "nudge")
-        self.check(made, "approve", ["task.approved"], "waiting")
+        self.check(made, "approve", ["task.approved"], "sending")
         self.check(self.draft("nudge.slack"), "not_yet", ["card.answered"], "waiting")
 
     def test_permission(self):
@@ -161,22 +156,6 @@ class CardTable(CoreCase):
         tid2 = self.claimed("Another task needing the folder")
         self.assertEqual(drafts.request_permission(self.core, tid2, "source", "Support training folder", "again"),
                          {"granted": True}, "Always allow isn't asked twice")
-
-    def test_checkin(self):
-        for opt in ("good", "okay", "tired", "overloaded"):
-            self.check(self.checkin(), opt, ["checkin.answered"])
-        _, card = self.checkin()
-        answers.answer(self.core, card["id"], "tired")
-        self.assertEqual(cards.moment(self.core), "low")
-
-    def test_hold_the_rest_until_tomorrow(self):
-        _, card = self.checkin()
-        n = len([c for c in self.open_cards() if c["kind"] == "task"])
-        before = self.last_event_id()
-        answers.answer(self.core, card["id"], "overloaded", {"follow_up": "hold_rest"})
-        got = [t for t in self.types_since(before) if t not in IGNORED]
-        self.assertEqual(got, ["checkin.answered"] + ["task.scheduled"] * n)
-        self.assertEqual([c for c in self.open_cards() if c["kind"] == "task"], [])
 
     def test_bad_answers_name_the_field(self):
         tid, card = self.routing()
@@ -209,26 +188,6 @@ class QueueRules(CoreCase):
         tid = extract(self.core, "Someone should order the badges", "unclear")
         self.assertEqual([c["kind"] for c in cards.open_cards(self.core, tid)], ["is_task"])
 
-    def test_checkins_come_often_then_less_often(self):
-        ids = [tasks.capture(self.core, f"Task {i}") for i in range(40)]
-        cleared, seen = 0, []
-        for tid in ids:
-            card = next((c for c in self.open_cards() if c["kind"] == "checkin"), None)
-            if card:
-                seen.append(cleared)
-                answers.answer(self.core, card["id"], "good")
-            answers.answer(self.core, self.card_for(tid, "task")["id"], "done")
-            cleared += 1
-        self.assertEqual(seen[:4], [2, 6, 14, 30])
-
-    def test_no_checkin_while_time_sensitive_cards_wait(self):
-        tasks.capture(self.core, "Confirm headcount", due="2026-10-20T12:00:00Z")
-        scheduler.tick(self.core)
-        for i in range(3):
-            tid = tasks.capture(self.core, f"Task {i}")
-            answers.answer(self.core, self.card_for(tid, "task")["id"], "done")
-        self.assertFalse([c for c in self.open_cards() if c["kind"] == "checkin"])
-
     def test_triage_order(self):
         plain = tasks.capture(self.core, "Plain")
         urgent = tasks.capture(self.core, "Urgent", due="2026-10-20T11:00:00Z")
@@ -239,8 +198,7 @@ class QueueRules(CoreCase):
         order = [c["task_id"] for c in self.open_cards()]
         self.assertEqual(order[0], urgent, "time-sensitive first")
         self.assertEqual(order[-1], back, "handbacks last")
-        _, card = self.checkin_card()
-        answers.answer(self.core, card["id"], "overloaded")
+        checkins.record(self.core, "overloaded")
         order = [c["task_id"] for c in self.open_cards()]
         self.assertEqual(order[:2], [urgent, quick], "overloaded brings quick ones first")
         self.assertLess(order.index(quick), order.index(plain))
@@ -252,10 +210,6 @@ class QueueRules(CoreCase):
         scheduler.hand_back(self.core, tid, "Which room?", ["Room 3", "Room 5"])
         return tid
 
-    def checkin_card(self):
-        with self.core.tx("system"):
-            cid = cards.create(self.core, "checkin", where="front")
-        return None, cards.get(self.core, cid)
 
 
 class Brief(CoreCase):
@@ -297,3 +251,121 @@ class Brief(CoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckIns(CoreCase):
+    """The UI decides when to ask; the core records the answer and what it means for the queue."""
+
+    def test_answers_set_the_moment(self):
+        for answer, moment in (("good", "any"), ("okay", "any"), ("tired", "low"), ("overloaded", "quick")):
+            before = self.last_event_id()
+            self.assertEqual(checkins.record(self.core, answer)["moment"], moment)
+            self.assertEqual(self.types_since(before), ["checkin.answered"])
+            self.assertEqual(cards.moment(self.core), moment)
+        checkins.record(self.core, "tired", "quick_first")
+        self.assertEqual(cards.moment(self.core), "quick")
+
+    def test_the_core_never_raises_a_checkin_card(self):
+        for i in range(10):
+            tid = tasks.capture(self.core, f"Task {i}")
+            answers.answer(self.core, self.card_for(tid, "task")["id"], "done")
+        self.assertEqual({c["kind"] for c in self.core.all("SELECT kind FROM cards")}, {"task"})
+
+    def test_hold_the_rest_until_tomorrow_and_undo_it_in_one_go(self):
+        urgent = tasks.capture(self.core, "Confirm headcount", due="2026-10-20T12:00:00Z")
+        rest = [tasks.capture(self.core, f"Task {i}") for i in range(3)]
+        scheduler.tick(self.core)
+        before = self.last_event_id()
+        self.assertEqual(checkins.record(self.core, "overloaded", "hold_rest")["held"], 3)
+        self.assertEqual(self.types_since(before), ["checkin.answered"] + ["task.scheduled"] * 3)
+        self.assertEqual([c["task_id"] for c in self.open_cards()], [urgent])
+        events.undo(self.core)
+        self.assertEqual({self.task(t)["state"] for t in rest}, {"triage"})
+        self.assertEqual(cards.moment(self.core), "any")
+
+    def test_bad_answers_name_the_field(self):
+        with self.assertRaises(FuzzError) as e:
+            checkins.record(self.core, "meh")
+        self.assertEqual(e.exception.field, "answer")
+        with self.assertRaises(FuzzError) as e:
+            checkins.record(self.core, "good", "nap")
+        self.assertEqual(e.exception.field, "follow_up")
+
+
+class Sending(CoreCase):
+    """Approving hands the draft to Fuzz's sender, which sends it with its own connector."""
+
+    def approved(self, kind="email.reply"):
+        tid = tasks.capture(self.core, "Reply to Elena")
+        tasks.assign(self.core, tid)
+        scheduler.claim_next(self.core, tid)
+        did = drafts.save_draft(self.core, tid, kind, "Elena Park, email thread", "Hi Elena, the later date works.")
+        answers.answer(self.core, self.card_for(tid)["id"], "approve")
+        return tid, did
+
+    def test_sent_once_and_never_undone(self):
+        tid, did = self.approved()
+        s = tools.claim_next_send(self.core)["send"]
+        self.assertEqual((s["task_id"], s["draft_id"], s["body"]), (tid, did, "Hi Elena, the later date works."))
+        tools.mark_sent(self.core, tid, did, "Email reply", "https://mail/123")
+        self.assertEqual(self.task(tid)["state"], "done")
+        self.assertEqual(events.task_log(self.core, tid, 1)[0]["kind"], "sent")
+        self.assertEqual(tools.claim_next_send(self.core)["send"], None)
+        self.assertNotIn("task.approved", [g["type"] for g in events.undo_list(self.core) if not g["blocked"]])
+        with self.assertRaises(FuzzError):
+            events.undo(self.core)
+        self.assertEqual(self.task(tid)["state"], "done")
+
+    def test_a_nudge_goes_back_to_waiting(self):
+        tid, did = self.approved("nudge.slack")
+        tools.claim_next_send(self.core)
+        tools.mark_sent(self.core, tid, did, "Slack thread")
+        self.assertEqual(self.task(tid)["state"], "waiting")
+
+    def test_undo_takes_the_approval_back_until_fuzz_claims_it(self):
+        tid, did = self.approved()
+        events.undo(self.core)
+        self.assertEqual(self.task(tid)["state"], "review")
+        self.assertEqual([c["kind"] for c in self.open_cards()], ["draft"])
+        answers.answer(self.core, self.card_for(tid)["id"], "approve")
+        tools.claim_next_send(self.core)
+        with self.assertRaises(FuzzError) as e:
+            events.undo(self.core)
+        self.assertEqual(e.exception.status, 409)
+
+    def test_send_failed_comes_back_to_review(self):
+        tid, did = self.approved()
+        tools.claim_next_send(self.core)
+        tools.send_failed(self.core, tid, did, "There's no email tool connected.")
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["question"]), ("review", "There's no email tool connected. Send it again?"))
+        card = cards.view(self.core, self.card_for(tid))
+        self.assertEqual((card["kind"], card["prompt"]), ("draft", t["question"]))
+        answers.answer(self.core, card["id"], "approve")
+        self.assertEqual(self.task(tid)["state"], "sending")
+
+    def test_a_send_run_that_stops_partway_is_never_retried(self):
+        tid, did = self.approved()
+        tools.claim_next_send(self.core)
+        self.clock.advance(minutes=30)
+        self.assertEqual(tools.claim_next_send(self.core)["send"], None)
+        t = self.task(tid)
+        self.assertEqual(t["state"], "review")
+        self.assertIn("may or may not have gone out", t["question"])
+
+    def test_only_the_approved_draft_and_only_with_the_lease(self):
+        tid, did = self.approved()
+        with self.assertRaises(FuzzError):
+            tools.mark_sent(self.core, tid, did, "Email reply")   # not claimed
+        tools.claim_next_send(self.core)
+        with self.assertRaises(FuzzError) as e:
+            tools.mark_sent(self.core, tid, did + 1, "Email reply")
+        self.assertEqual(e.exception.field, "draft_id")
+
+    def test_scripted_sender_and_nothing_to_do(self):
+        from fuzz import runner
+        self.assertEqual(runner.run_role(self.core, "sender", scripted_=True, say=lambda s: None)["run_id"], None)
+        tid, _ = self.approved()
+        res = runner.run_role(self.core, "sender", scripted_=True, say=lambda s: None)
+        self.assertEqual((res["outcome"], self.task(tid)["state"]), ("ok", "done"))
+        self.assertEqual(events.check_replay(self.core), [])

@@ -75,7 +75,7 @@ class Install(FakeHome):
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
         self.assertIn("prompt_version: executor-0.4", skill.read_text())
         reg = self.stub_registry()
-        self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor"])
+        self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor", "fuzz-sender"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])
         self.assertEqual(reg["fuzz-executor"]["env"]["FUZZ_HOME"], self.home)
 
@@ -94,7 +94,7 @@ class Install(FakeHome):
         self.assertEqual((out["skills"], out["skills_via"]), ([], "claude-code"))
         self.assertFalse(Path(self.fake, ".copilot", "skills").exists(), "Copilot reads ~/.claude/skills/")
         cfg = json.loads(Path(self.fake, ".copilot", "mcp-config.json").read_text())
-        self.assertEqual(sorted(cfg["mcpServers"]), ["fuzz-executor", "fuzz-extractor", "github"])
+        self.assertEqual(sorted(cfg["mcpServers"]), ["fuzz-executor", "fuzz-extractor", "fuzz-sender", "github"])
         self.assertTrue(cfg["trusted"])
         self.assertEqual(cfg["mcpServers"]["fuzz-executor"]["type"], "local")
         installer.uninstall(self.core, "copilot")
@@ -126,7 +126,7 @@ class Doctor(FakeHome):
         st = {c["client"]: c for c in doctor.status(self.core, refresh=True)["clients"]}
         c = st["claude-code"]
         self.assertEqual(c["summary"], "ready", c["fixes"])
-        self.assertEqual([m["tools"] for m in c["mcp"]], [13, 5], "each role's server starts with its tools")
+        self.assertEqual([m["tools"] for m in c["mcp"]], [13, 5, 4], "each role's server starts with its tools")
         skill = Path(self.fake, ".claude", "skills", "fuzz-extract", "SKILL.md")
         skill.write_text(skill.read_text().replace("extract-0.2", "extract-0.0"))
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]

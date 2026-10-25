@@ -28,7 +28,8 @@ fuzz cards                                 # the triage queue
 fuzz answer 1 assign --value '{"instructions": "Keep it short"}'
 fuzz run executor --scripted --verbose     # claims, logs steps, writes a draft
 fuzz cards                                 # a draft card is waiting
-fuzz answer <draft card> approve
+fuzz answer <draft card> approve           # a note is filed; a message moves to `sending`
+fuzz run sender --scripted --verbose       # claims approved drafts and marks them sent (sends nothing)
 fuzz undo                                  # a compensating event, never a delete
 fuzz rebuild --check                       # replaying the log gives the same tables
 ```
@@ -40,30 +41,32 @@ fuzz install --client claude-code          # skills to ~/.claude/skills/, `claud
 fuzz install --client copilot              # MCP entries in ~/.copilot/mcp-config.json; skills already shared
 fuzz doctor                                # Ready / Needs attention / Not installed, per client
 fuzz run executor [--client copilot] [--model …] [--task 14] [--verbose]
+fuzz run sender                            # sends what you approved; exits at once if nothing waits
 fuzz uninstall --client claude-code        # removes exactly what install added
 ```
 
 `--link` symlinks the skills instead of copying them, for development. On a Mac, install also
-writes launchd jobs for `fuzz serve` and the two roles.
+writes launchd jobs for `fuzz serve` and the three roles.
 
 A headless run gets its own MCP config that starts `fuzz mcp --role <role> --run <id>`, so it sees
 only Fuzz's server, and every event it writes carries the run, model and `prompt_version`. Claude
 Code runs with `--strict-mcp-config --tools "" --allowedTools "mcp__fuzz-<role>__*"`: no shell and no
-file writes. The executor also gets read-only access to the attachments folder (see Attachments). Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`.
+file writes. The executor also gets read-only access to the attachments folder (see Attachments). Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`. The sender is the
+exception (see Sending).
 
 ## Interfaces
 
 All three are thin layers over the same library, so they can't drift apart.
 
-**MCP** (`fuzz mcp --role executor|extractor`, stdio). Each role sees only its own tools.
+**MCP** (`fuzz mcp --role executor|extractor|sender`, stdio). Each role sees only its own tools.
 
-| Executor (13 tools) | Extractor (5 tools) |
-| --- | --- |
-| `whoami`, `claim_next_task`, `get_task`, `read_source`, `log_step`, `save_notes`, `save_draft`, `hand_back`, `create_task`, `request_permission`, `suggest_schedule`, `update_brief`, `release` | `whoami`, `get_cursors`, `submit_signals`, `get_pending_judgments`, `submit_verdicts` |
+| Executor (13 tools) | Extractor (5 tools) | Sender (4 tools) |
+| --- | --- | --- |
+| `whoami`, `claim_next_task`, `get_task`, `read_source`, `log_step`, `save_notes`, `save_draft`, `hand_back`, `create_task`, `request_permission`, `suggest_schedule`, `update_brief`, `release` | `whoami`, `get_cursors`, `submit_signals`, `get_pending_judgments`, `submit_verdicts` | `whoami`, `claim_next_send`, `mark_sent`, `send_failed` |
 
 `suggest_schedule` also takes a moment (see Calendar times).
 
-There is no send, post or delete tool. `update_brief` writes the task's `context_md` (a Markdown
+No role has a Fuzz tool that sends, posts or deletes. The sender sends with its client's own connector. `update_brief` writes the task's `context_md` (a Markdown
 brief for tasks with no draft) and `question` (the one thing Fuzz is asking you now).
 
 **HTTP** (`fuzz serve`, `127.0.0.1` only, `Authorization: Bearer <token>` from `tokens.json`):
@@ -74,11 +77,12 @@ POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
 POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
-GET  /undo                     POST /undo {group?}
+GET  /undo                     POST /undo {group?}       (each command undoes on its own; see Undo)
+POST /checkin {answer, follow_up?}
 GET  /events?after=N           GET  /events/stream       (server-sent events; ?token= for EventSource)
 POST /signals/at_desk          POST /tick
 GET  /engine                   PUT  /engine {client, model}
-POST /engine/check             POST /engine/run {role, task_id?, scripted?}
+POST /engine/check             POST /engine/run {role: executor|extractor|sender, task_id?, scripted?}
 POST /engine/clients/{client}/install|update|repair|uninstall
 ```
 
@@ -96,11 +100,12 @@ fuzz/states.py      task states and allowed moves
 fuzz/tasks.py       task commands, including update_brief
 fuzz/cards.py       card kinds, one-card-per-task bookkeeping, queue order, the card view
 fuzz/answers.py     answer(card, option, value): the "what each answer writes" table
+fuzz/checkins.py    check-in answers (the UI decides when to ask)
 fuzz/timeres.py     anchors, labels and the Schedule options
 fuzz/scheduler.py   claim, leases, step budget, handbacks, moments, the minute tick, wake
 fuzz/presence.py    back-at-desk detection on a Mac
 fuzz/files.py       attachments, in a folder per task
-fuzz/drafts.py      the approval gate: drafts and permissions
+fuzz/drafts.py      the approval gate: drafts, sending and permissions
 fuzz/matching/      the spike's matcher, moved in: entities, vectors, stages 1–4
 fuzz/signals.py     signal and verdict schemas
 fuzz/tools.py       the AI roles' tools as plain functions
@@ -111,7 +116,7 @@ fuzz/adapters/      one adapter per client: Claude Code, Copilot
 fuzz/installer.py   install / uninstall with a manifest; fuzz/doctor.py; fuzz/engine.py
 fuzz/http_api.py    the HTTP API, event stream and static UI
 fuzz/cli.py         the `fuzz` command
-skills/             fuzz-executor and fuzz-extract (instructions only, versioned)
+skills/             fuzz-executor, fuzz-extract and fuzz-send (instructions only, versioned)
 tests/              unittest suites
 ```
 
@@ -127,6 +132,40 @@ and expiry, check-in spacing, the brief fields, the time resolver on a fixed clo
 the spike's two-day scenario through the extractor tools, the HTTP API and event stream, two-user
 isolation, and the installer and adapters against a fake home folder with stub `claude` and
 `copilot` executables.
+
+## Undo
+
+Every human command is one undo group. `POST /undo` reverses the newest, or the one named by
+`group`, on its own: commands aren't a stack, so undoing a park leaves a later done on another task
+alone. It's refused (409, with the reason in `error`) once a later event changed a field that decides
+what the command did: Fuzz claimed the task you assigned, the draft you approved went out, or you moved
+the task again (undo that first). `GET /undo` lists recent commands with `blocked` set to that reason.
+
+## Check-ins
+
+The UI decides when to ask how you're doing (it knows how long you've been at it) and keeps the
+follow-ups. The core keeps the answer: `POST /checkin {"answer": "overloaded", "follow_up": "hold_rest"}`
+writes `checkin.answered`, sets the queue's moment, and for `hold_rest` schedules every card that isn't
+time-sensitive for tomorrow morning in the same undo group. `fuzz checkin tired` does the same.
+
+## Sending
+
+Approving a draft moves the task to `sending` (a note is just filed). The **sender** role then sends
+the approved body, word for word, with its client's own connector and calls `mark_sent`, which writes
+`task.sent`; nothing undoes that. If it can't, `send_failed` brings the draft back to review with the
+reason. If a send run stops partway, the task comes back to you to check rather than being retried.
+
+The sender is the one headless run that loads your own MCP servers and connectors (no
+`--strict-mcp-config`), and it may call only Fuzz's sender tools plus the tools you list for sending:
+
+```bash
+fuzz config set send.tools.claude-code '["mcp__claude_ai_Gmail__send_message", "mcp__claude_ai_Slack__slack_send_message"]'
+```
+
+With none listed, `fuzz doctor` says so and every approved draft comes back unsent. Copilot's syntax for
+allowing one MCP tool is still to confirm (`fuzz/adapters/copilot.py`). `fuzz serve` starts the sender
+within a couple of minutes of an approval, and launchd runs it every two minutes; it exits without
+starting a client when nothing waits.
 
 ## Calendar times
 
@@ -175,9 +214,10 @@ the client's own tool aren't in it.
 
 ## Not built yet
 
-- Pointing the demo UI at the core (its `tick` is still simulated), and the Settings > Engine page.
+- Pointing the demo UI at the core (its `tick` is still simulated), and the Settings > Engine page. The
+  demo already works the core's way: per-command Undo, the core's Schedule options, check-in answers
+  recorded once, approved drafts going through `sending`.
 - "Later today" is 4 PM, not "after your last meeting", since the core doesn't read the calendar.
-- Actuators. Approving a draft marks it approved; you copy it into Mail or Slack.
 - Waking the executor on `task.assigned` instead of on a timer.
 - Automatic entity cards. The answers exist; the matcher doesn't raise them yet.
 - Copilot's MCP config file and per-run flag are still marked "to confirm" (`fuzz/adapters/copilot.py`).

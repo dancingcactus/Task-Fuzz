@@ -36,6 +36,11 @@ def client_status(core, name, check_start=True):
            "connectors": {"status": "unknown",
                           "note": f"Fuzz can't see {adapter.label}'s connectors. Check that an email and a Slack tool "
                                   f"are connected there for the extractor."}}
+    send_tools = list(((core.config.get("send") or {}).get("tools") or {}).get(name) or [])
+    out["send"] = {"tools": send_tools, "status": "set" if send_tools else "none",
+                   "note": None if send_tools else
+                   f"No connector tools are allowed for sending, so approved drafts come back to you unsent. "
+                   f"List them in send.tools.{name}, as {adapter.label} names them."}
     fixes = []
     if not found["found"]:
         fixes.append(f"Install {adapter.label} (no `{adapter.exe}` on PATH)")

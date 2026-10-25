@@ -2,13 +2,13 @@
 
 from .db import FuzzError
 
-STATES = ("triage", "queued", "working", "review", "session", "scheduled", "waiting", "parked",
+STATES = ("triage", "queued", "working", "review", "sending", "session", "scheduled", "waiting", "parked",
           "done", "letgo", "merged")
 
 CLOSED = ("done", "letgo")
-LIVE = ("triage", "queued", "working", "review", "session", "scheduled", "waiting", "parked")
+LIVE = ("triage", "queued", "working", "review", "sending", "session", "scheduled", "waiting", "parked")
 
-ASSIGNEE = {"triage": "human", "queued": "fuzz", "working": "fuzz", "review": "human",
+ASSIGNEE = {"triage": "human", "queued": "fuzz", "working": "fuzz", "review": "human", "sending": "fuzz",
             "session": "session", "scheduled": "human", "waiting": None, "parked": None,
             "done": None, "letgo": None, "merged": None}
 
@@ -18,7 +18,9 @@ MOVES = {
     "triage": _ANY_HUMAN,
     "queued": {"working", "triage", "done", "letgo", "parked", "merged", "session", "scheduled", "waiting"},
     "working": {"queued", "review", "triage", "done", "letgo", "merged"},
-    "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged"},
+    "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged", "sending"},
+    # approved: Fuzz's sender sends it with its own connectors, or it comes back to review if it can't
+    "sending": {"done", "waiting", "review", "triage", "letgo", "merged"},
     "session": {"done", "triage", "queued", "parked", "letgo", "scheduled", "waiting", "merged"},
     "scheduled": {"triage", "done", "letgo", "merged", "queued", "parked"},
     "waiting": {"triage", "done", "letgo", "queued", "review", "parked", "merged"},

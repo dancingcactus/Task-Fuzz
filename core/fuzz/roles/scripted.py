@@ -59,6 +59,24 @@ async def _executor(core, task_id, say):
     return {"tasks": done}
 
 
+async def _sender(core, say):
+    """Claims each approved draft and reports it sent, without sending anything."""
+    sent = []
+    async with Client(mcp_server.build(core, "sender")) as c:
+        await _call(c, "whoami", {"prompt_version": PROMPT_VERSION, "client": "scripted"})
+        while True:
+            r = await _call(c, "claim_next_send")
+            s = r.get("send")
+            if not s:
+                say(f"Nothing to send: {r.get('why')}")
+                break
+            await _call(c, "mark_sent", {"task_id": s["task_id"], "draft_id": s["draft_id"],
+                                         "where": "scripted run, nothing really sent"})
+            say(f"Sent #{s['task_id']} (scripted)")
+            sent.append(s["task_id"])
+    return {"tasks": sent}
+
+
 def _scripted_verdict(item):
     """Deterministic stand-in for the judge: anchors and strong shared entities mean the same task."""
     for s in item["shortlist"]:
@@ -98,3 +116,7 @@ def run_executor(core, task_id=None, say=lambda s: None):
 
 def run_extractor(core, signals=None, say=lambda s: None):
     return asyncio.run(_extractor(core, signals or [], say))
+
+
+def run_sender(core, say=lambda s: None):
+    return asyncio.run(_sender(core, say))

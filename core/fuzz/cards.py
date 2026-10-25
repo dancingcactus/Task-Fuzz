@@ -8,8 +8,7 @@ from . import events, timeres
 from .db import FuzzError
 
 FAMILY = {"task": "routing", "duplicate": "question", "entity_person": "question", "entity_term": "question",
-          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval",
-          "checkin": "about_you"}
+          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval"}
 
 OPTIONS = {
     "duplicate": ["merge", "keep_separate", "not_sure"],
@@ -19,12 +18,11 @@ OPTIONS = {
     "draft": ["approve", "edit", "send_back"],
     "nudge": ["approve", "edit", "not_yet"],
     "permission": ["allow_once", "always_allow", "deny"],
-    "checkin": ["good", "okay", "tired", "overloaded"],
 }
 TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "drop"]
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
-             "draft": "approve", "nudge": "approve", "permission": "allow_once", "checkin": "good"}
+             "draft": "approve", "nudge": "approve", "permission": "allow_once"}
 
 PROMPTS = {
     "task": "What should happen to this?",
@@ -35,7 +33,6 @@ PROMPTS = {
     "draft": "Is this draft okay?",
     "nudge": "Can Fuzz chase this reply?",
     "permission": "Can Fuzz use {resource}?",
-    "checkin": "How are you doing?",
 }
 
 # Variant tags that only make sense while the task sits in triage.
@@ -155,17 +152,14 @@ def queue(core):
     for c in cards:
         t = tasks.get(core, c["task_id"]) if c["task_id"] else None
         tags = (t or {}).get("variant_tags") or []
-        if c["kind"] == "checkin":
-            k = (1, 0, 0, c["order_key"])
-        else:
-            urgent = 0 if t and t.get("deadline_level", 0) >= 1 else 1
-            back = 1 if ("handed_back" in tags or c["postponed"]) else 0
-            fits = 0
-            if m == "quick":
-                fits = 0 if (t and (t.get("effort_mins") or 99) <= 5) else 1
-            elif m == "low":
-                fits = 0 if (t and t.get("energy") == "low") else 1
-            k = (urgent, back, fits, c["order_key"] or 0)
+        urgent = 0 if t and t.get("deadline_level", 0) >= 1 else 1
+        back = 1 if ("handed_back" in tags or c["postponed"]) else 0
+        fits = 0
+        if m == "quick":
+            fits = 0 if (t and (t.get("effort_mins") or 99) <= 5) else 1
+        elif m == "low":
+            fits = 0 if (t and t.get("energy") == "low") else 1
+        k = (urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
     keyed.sort(key=lambda x: x[0])
     return [(c, t) for _, c, t in keyed]
