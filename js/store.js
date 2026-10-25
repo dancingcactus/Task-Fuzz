@@ -1,14 +1,17 @@
-/* One in-memory store shared by Triage, All tasks and New task.
+/* One in-memory store shared by Triage, Lineup and New task.
    Principles it enforces:
    - assigned work runs in the background, five at a time (6, 1)
    - a handback is a normal state and goes to the end of the queue (2)
    - every change writes a line to the task's "done so far" log (3)
    - nothing is sent until the human approves the draft (6)
-   - every triage change can be undone (6, 11) */
+   - every triage change can be undone (6, 11), and sending, which can't, survives any undo */
 (function () {
   var MAX_RUNNING = 5;
   var STEP_MS = 6500;
   var state, subs = [], timer = 0, captureN = 0;
+  /* What has actually gone out, as each item looked right after sending. Kept outside the undo
+     snapshots, so undoing an earlier change never brings a sent message back. */
+  var sent = {};
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function clock() { return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -23,7 +26,9 @@
       state.moment = 'any';
       state.maxOrder = state.items.length;
       state.minOrder = 0;
-      captureN = 0;
+      captureN = 0; sent = {};
+      /* drafts already waiting for your OK start out in the queue too */
+      S.inState('review').forEach(function (it) { S.queueUp(it, 'back'); });
       S.sortQueue();
       emit({ type: 'reset' });
     },
@@ -32,6 +37,9 @@
     emit: emit,
 
     item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0]; },
+    sentCount: function () { return Object.keys(sent).length; },
+    /* Steps Fuzz has done out of those planned, for the progress dots in Lineup */
+    progress: function (it) { var sc = it.script || generic(it); return { done: Math.min(it.workStep || 0, sc.steps.length), total: sc.steps.length }; },
     inState: function () {
       var want = Array.prototype.slice.call(arguments);
       return state.items.filter(function (i) { return want.indexOf(i.state) > -1; });
@@ -54,6 +62,10 @@
     restore: function (snap) {
       var s = clone(snap);
       Object.keys(s).forEach(function (k) { state[k] = s[k]; });
+      Object.keys(sent).forEach(function (id) {
+        for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) state.items[i] = clone(sent[id]);
+        S.leave(id);
+      });
       emit({ type: 'restore' });
     },
 
@@ -63,7 +75,7 @@
     sortQueue: function () {
       var m = state.moment;
       function fits(it) {
-        if (m === 'quick') return it.mins <= 5;
+        if (m === 'quick') return (it.mins || 1) <= 5; /* entity, duplicate and review cards take seconds */
         if (m === 'low') return it.energy === 'low';
         return true;
       }
@@ -77,12 +89,14 @@
     },
     setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
     toBack: function (id) { var it = S.item(id); it.order = ++state.maxOrder; S.sortQueue(); },
-    enqueue: function (it, where) {
-      it.state = 'triage';
+    enqueue: function (it, where) { it.state = 'triage'; S.queueUp(it, where); },
+    /* Into the triage queue without changing state: a draft waiting for your OK stays "review". */
+    queueUp: function (it, where) {
       it.order = where === 'front' ? --state.minOrder : ++state.maxOrder;
       if (state.queue.indexOf(it.id) < 0) { state.queue.push(it.id); state.totalEver++; }
       S.sortQueue();
     },
+    inQueue: function (id) { return state.queue.indexOf(id) > -1; },
     leave: function (id) { state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
@@ -101,6 +115,13 @@
       it.queuedAt = Date.now();
       S.log(it, 'status', wait ? 'You assigned this to Fuzz. Five tasks are already running, so it is next up.' : 'You assigned this to Fuzz.');
       return wait;
+    },
+    /* You take it yourself (a handback answered "I'll find it"): it leaves triage and waits with you, under Yours in Lineup. */
+    mine: function (id, note) {
+      var it = S.item(id); S.leave(id);
+      it.handedBack = false; it.askBack = null; it.state = 'mine'; it.now = 'Sources kept ready for you';
+      S.log(it, 'guidance', 'You said: ' + note);
+      S.log(it, 'status', 'You took this one yourself. Fuzz keeps the sources ready.');
     },
     done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
     session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
@@ -125,10 +146,41 @@
       it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
       S.log(it, 'status', 'You handed this to Fuzz.');
     },
-    approve: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK'; S.log(it, 'sent', 'Sent after you approved the draft.'); },
+    /* Who a draft goes to and how. A draft for you alone (a finding, a parked thought) has no recipient. */
+    recipient: function (it) {
+      if (it.sendTo) return it.sendTo;
+      if (!it.who || it.who === 'You' || ['Email', 'Slack'].indexOf(it.source) < 0) return null;
+      return { to: it.who, via: it.source };
+    },
+    editDraft: function (it, text) {
+      if (text == null || text === it.draft) return;
+      it.draft = text; S.log(it, 'guidance', 'You edited the draft.');
+    },
+    approve: function (id, text) {
+      var it = S.item(id), r = S.recipient(it);
+      S.leave(id); S.editDraft(it, text);
+      it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK';
+      S.log(it, 'sent', r ? 'Sent to ' + r.to + ' (' + r.via + ') after you approved it.' : 'Sent after you approved the draft.');
+      sent[id] = clone(it);
+    },
+    /* A draft that goes nowhere: approving it just files it, so it can be undone. */
+    accept: function (id, text) {
+      var it = S.item(id);
+      S.leave(id); S.editDraft(it, text);
+      it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Approved by you';
+      S.log(it, 'status', 'You approved this.');
+    },
+    revise: function (id, note, text) {
+      var it = S.item(id);
+      S.leave(id); S.editDraft(it, text);
+      S.log(it, 'guidance', 'You asked for changes: ' + note); it.revisedNote = note;
+      it.script = { steps: [['action', 'Reworked the draft: ' + note.replace(/[.!\s]*$/, '') + '.']], ending: { type: 'review' } };
+      it.workStep = 0; it.nextAt = Date.now() + 4500; it.now = 'Changing the draft';
+      it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
+    },
     markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
     replied: function (id) { var it = S.item(id); S.log(it, 'status', 'A reply came in. Back in triage with the reply attached.'); it.updated = true; S.enqueue(it, 'front'); },
-    nudgeSent: function (id) { var it = S.item(id); it.nextCheck = 'Nudge sent, checking tomorrow'; it.nudge = false; S.log(it, 'sent', 'Sent the follow-up nudge after you approved it.'); },
+    nudgeSent: function (id, text) { var it = S.item(id); S.editDraft(it, text); it.nextCheck = 'Nudge sent, checking tomorrow'; it.nudge = false; S.log(it, 'sent', 'Sent the follow-up nudge after you approved it.'); sent[id] = clone(it); },
     reopen: function (id) { var it = S.item(id); S.log(it, 'status', 'You brought this back.'); S.enqueue(it, 'front'); },
 
     /* ---- capture ---- */
@@ -191,6 +243,8 @@
     end = end || { type: 'review' };
     if (end.type === 'handback') {
       it.askBack = end.ask; it.quick = end.quick || null; it.handedBack = true;
+      /* the earlier instructions may have guessed the answer; show the neutral version while you decide */
+      if (end.hint) it.instr = end.hint;
       it.meta = (it.source || 'Task') + ' · handed back just now';
       S.log(it, 'blocked', end.log || 'Could not go further without you.');
       S.log(it, 'status', 'Handed back to you. It joined the end of your queue.');
@@ -198,8 +252,12 @@
       emit({ type: 'handback', item: it });
     } else {
       it.state = 'review'; it.now = 'Draft ready to review';
+      /* the in-progress note would freeze here; say what was done instead */
+      it.aiHeading = 'What Fuzz did'; it.aiNote = it.doneNote || 'Worked through it from your instructions. Every step is under Done so far.';
       if (!it.draft) it.draft = 'Draft for “' + it.title + '”, based on your instructions: ' + (it.instr || it.hint || '') ;
       S.log(it, 'action', 'The draft is ready. Nothing is sent until you approve it.');
+      /* It joins the triage queue as its own card, at the back, like a handback. */
+      S.queueUp(it, 'back');
       emit({ type: 'review', item: it });
     }
   }

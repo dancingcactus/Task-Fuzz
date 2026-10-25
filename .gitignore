@@ -1,0 +1,3 @@
+# Impeccable: per-machine consent and the design hook cache
+.impeccable/config.local.json
+.impeccable/hook.cache.json

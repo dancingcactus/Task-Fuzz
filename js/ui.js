@@ -32,7 +32,7 @@
     return '<ol class="log">' + entries.map(function (d) {
       var k = KINDS[d.kind] || KINDS.action;
       return '<li><span class="badge k-' + d.kind + '" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="' + k.icon + '"/></svg></span>' +
-        '<span class="log-body"><span class="log-meta"><span class="log-kind k-' + d.kind + '">' + k.label + '</span><span aria-hidden="true">&middot;</span><span>' + esc(d.time) + '</span></span><span class="log-text">' + text(d.text) + '</span></span></li>';
+        '<span class="log-body"><span class="log-meta"><span class="log-kind k-' + d.kind + '">' + k.label + '</span><span aria-hidden="true">&middot;</span><span>' + esc(/^\d{1,2}:\d{2}\s?[AP]M$/i.test(d.time) ? 'Today, ' + d.time : d.time) + '</span></span><span class="log-text">' + text(d.text) + '</span></span></li>';
     }).join('') + '</ol>';
   }
 

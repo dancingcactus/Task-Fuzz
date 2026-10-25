@@ -15,6 +15,11 @@
 .pwrap{position:relative;z-index:2;width:112px;flex:none;cursor:pointer;touch-action:manipulation;border-radius:12px}
 #bot{display:block;width:112px;height:auto;overflow:visible}
 .bubble{position:relative;background:var(--surface);border:var(--bw) solid var(--line);border-radius:16px 16px 16px 4px;padding:9px 13px;font-size:14px;min-height:3.1em;max-width:340px;box-shadow:var(--shadow);margin-bottom:30px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+/* Fuzz's spot is a fixed size so the card never moves: two lines, with any buttons beside them.
+   Lines are written to fit; a long task title is trimmed rather than growing the bubble. */
+.perch .bubble{min-width:0;height:calc(2.7em + 18px + 2 * var(--bw));min-height:0;flex-wrap:nowrap;line-height:1.35;overflow:hidden}
+.perch .bubble .line{flex:1 1 auto;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.perch .bubble button{flex:none}
 .bubble.pop{animation:bpop .35s cubic-bezier(.3,1.6,.5,1)}
 .bubble.sign{transform:rotate(-2deg);border-color:var(--terra);border-width:2px;font-family:var(--font-display);font-weight:800;color:var(--terra)}
 @keyframes bpop{0%{transform:scale(.8);opacity:.2}100%{transform:none;opacity:1}}
@@ -142,14 +147,14 @@
 /* Card stack */
 .stack{position:relative;margin-top:22px}
 .ghost{position:absolute;inset:0;background:var(--surface-2);border:var(--bw) solid var(--line);border-radius:20px;z-index:1;transition:transform .45s cubic-bezier(.3,1.3,.5,1)}
-.ghost .tag{position:absolute;top:-1px;right:16px;transform:translateY(-100%)}
+.stacktags{position:absolute;top:0;right:16px;transform:translateY(-50%);z-index:4;display:flex;gap:6px;pointer-events:none}
 .ghost.arrive{animation:ghostin .8s cubic-bezier(.3,1.2,.5,1) backwards}
 @keyframes ghostin{0%{transform:translate(110%,-8px) rotate(-4deg)}}
 .card{position:relative;z-index:3;background:var(--surface);border:var(--bw) solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:18px 18px 20px;display:flex;flex-direction:column;gap:12px}
 .card.shake{animation:shake .3s ease-in-out}
 @keyframes shake{20%{transform:translate(-5px,3px)}45%{transform:translate(5px,-2px)}70%{transform:translate(-2px,1px)}}
-.card.enter{animation:rise .6s cubic-bezier(.3,1.3,.5,1) backwards}
-.card.enter .decide,.card.enter h2{animation:fadeup .4s ease-out .12s backwards}
+.card.enter{animation:rise .45s cubic-bezier(.3,1.3,.5,1) backwards}
+.card.enter h2,.card.enter .title-block{animation:fadeup .3s ease-out .08s backwards}
 .card.enter-tilt{animation:tilt .75s cubic-bezier(.3,1.4,.5,1) backwards}
 @keyframes rise{0%{transform:translateY(18px) scale(.95);opacity:0}70%{transform:translateY(-6px) scale(1.012);opacity:1}100%{transform:none}}
 @keyframes tilt{0%{transform:translateX(70%) rotate(-5deg);opacity:0}60%{transform:translateX(-2%) rotate(1.6deg);opacity:1}100%{transform:none}}
@@ -169,11 +174,10 @@ textarea{width:100%;resize:none;background:var(--surface-2);border:var(--bw) sol
 .sched{display:none;flex-wrap:wrap;gap:8px}
 .sched.open{display:flex}
 .chip{display:inline-flex;gap:6px;align-items:center;border:var(--bw) solid var(--line);background:var(--surface-2);border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:500;cursor:pointer;animation:chipin .45s cubic-bezier(.3,1.7,.5,1) backwards;animation-delay:calc(var(--i,0)*60ms)}
-.chip.picked{background:var(--amber);border-color:var(--amber);color:#3B2B23}
+.chip.picked{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 @keyframes chipin{0%{transform:translateY(8px) scale(.6);opacity:0}}
 .chip svg{width:14px;height:14px}
 hr{border:0;border-top:var(--bw) solid var(--line);margin:2px 0}
-.decide{margin:0;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--terra)}
 h2{margin:0;font-family:var(--font-display);font-size:22px;line-height:1.2;font-weight:800;text-wrap:balance}
 .meta{margin:0;color:var(--ink-2);font-size:13.5px}
 .quick{display:flex;flex-wrap:wrap;gap:8px}
@@ -302,8 +306,6 @@ html.calm #bot .body-wrap{animation:none!important}
 #bot[data-mood="rushed"][data-urgency="3"] .led,#bot[data-mood="rushed"][data-urgency="3"] .ledhalo{fill:var(--terra);animation:ledblink .25s steps(2) infinite}
 .tag.due{font-variant-numeric:tabular-nums}
 .tag.due.t1{background:var(--amber);color:#3B2B23}
-.tag.due.t3{animation:duepulse .8s ease-in-out infinite}
-@keyframes duepulse{50%{transform:scale(1.08)}}
 .card.urgent{border-color:var(--terra);box-shadow:var(--shadow),0 0 0 3px color-mix(in srgb,var(--terra) 20%,transparent)}
 html.calm .speed{display:none!important}
 html.calm #bot[data-mood="rushed"] .eyes{animation:none!important}
@@ -340,7 +342,7 @@ html.calm .tag.due{animation:none}
 .moods{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .mood{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border:var(--bw) solid var(--line);background:var(--surface);border-radius:14px;cursor:pointer;font-weight:600;font-size:13.5px;transition:transform .15s cubic-bezier(.3,1.6,.5,1),background .15s;animation:chipin .45s cubic-bezier(.3,1.7,.5,1) backwards;animation-delay:calc(var(--i,0)*70ms)}
 .mood:hover{transform:translateY(-2px)}
-.mood[aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:#3B2B23}
+.mood[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .mood svg.fz{width:54px;height:47px;fill:none;stroke:none;transition:transform .2s}
 .mood:hover svg.fz{transform:rotate(-4deg) translateY(-1px)}
 .mood[aria-pressed="true"] svg.fz{transform:translateY(-2px)}
@@ -348,9 +350,10 @@ html.calm .tag.due{animation:none}
 .ci-follow{display:flex;flex-direction:column;gap:8px}
 .ci-follow:empty{display:none}
 .ci-follow .btn{animation:chipin .4s cubic-bezier(.3,1.7,.5,1) backwards}
+.ci-said{display:flex;align-items:center;gap:12px;margin:0;font-size:15px;line-height:1.45;color:var(--ink-2)}
+.ci-said svg.fz{flex:none;width:46px;height:40px}
 .ci-foot{display:flex;justify-content:flex-end}
-.ci-foot .btn{border-color:transparent;color:var(--ink-2);font-weight:500}
-.ci-break[hidden],.moods[hidden],.ci-foot[hidden],.ci-foot .btn[hidden]{display:none!important}
+.ci-break[hidden],.moods[hidden],.ci-foot[hidden],.ci-foot .linkbtn[hidden]{display:none!important}
 .ci-break{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:6px 0}
 .breath{width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 40% 35%,var(--amber),var(--terra));animation:breath 8s ease-in-out infinite;opacity:.9}
 @keyframes breath{0%,100%{transform:scale(.7)}50%{transform:scale(1)}}
