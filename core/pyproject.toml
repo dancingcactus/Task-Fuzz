@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzz-core"
+version = "0.1.0"
+description = "The Fuzz core: store, event log, rules, HTTP API, MCP server and CLI"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=2.3,<3",
+  "jsonschema>=4",
+]
+
+[project.optional-dependencies]
+vec = ["sqlite-vec==0.1.6"]   # vector search in SQL; Python cosine is used without it
+
+[project.scripts]
+fuzz = "fuzz.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fuzz*"]

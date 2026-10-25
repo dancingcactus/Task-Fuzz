@@ -1,0 +1,150 @@
+"""The spike's two-day scenario, now through the extractor's tools: the same outcomes, as events and cards."""
+
+import unittest
+
+from helpers import CoreCase, fixture
+
+from fuzz import answers, cards, tasks, tools
+
+# What a judge says about each day-2 ask (the spike's table): ask keyword -> (target title keyword, verdict, conf, new_ask, new_title)
+JUDGE = {
+    "Comment on the pricing deck": ("pricing", "same", 0.93, False, None),
+    "Finish the pricing deck review": ("pricing", "same", 0.75, False, None),
+    "travel request": ("PTO", "same", 0.80, True, None),
+    "venue deposit": ("venue", "same", 0.90, False, "Book the November offsite venue (deposit due Friday)"),
+}
+
+
+def judge(items):
+    out = []
+    for item in items:
+        for key, (want, verdict, conf, new_ask, new_title) in JUDGE.items():
+            if key in item["ask"]:
+                target = next(s["task_id"] for s in item["shortlist"] if want.lower() in s["title"].lower())
+                out.append({"candidate_id": item["candidate_id"], "task_id": target, "verdict": verdict,
+                            "confidence": conf, "new_ask": new_ask, "new_title": new_title, "reason": "test"})
+    return out
+
+
+class TwoDays(CoreCase):
+    def day(self, name):
+        out = tools.submit_signals(self.core, fixture(name))
+        items = tools.get_pending_judgments(self.core)["items"]
+        if items:
+            out["verdicts"] = tools.submit_verdicts(self.core, judge(items))
+        return out
+
+    def by_title(self, words):
+        rows = [t for t in tasks.list_tasks(self.core) if words.lower() in t["title"].lower()]
+        self.assertEqual(len(rows), 1, f"expected one task matching {words!r}: {[r['title'] for r in rows]}")
+        return rows[0]
+
+    def sources(self, tid):
+        return self.core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND role!='ignored'", (tid,))["n"]
+
+    def test_day1(self):
+        out = self.day("day1.json")
+        self.assertEqual(out["signals"], 5)
+        self.by_title("vendor contract")
+        self.by_title("offsite")
+        self.assertFalse([t for t in tasks.list_tasks(self.core) if "dashboard" in t["title"]], "someone else's ask")
+        retro = self.by_title("incident retro")
+        self.assertEqual(retro["owner"], "unclear")
+        self.card_for(retro["id"], "is_task")
+        for t in tasks.list_tasks(self.core):
+            self.assertIn(t["id"], [c["task_id"] for c in self.open_cards()])
+
+    def test_day2_merge_duplicate_card_and_reopen(self):
+        self.day("day1.json")
+        pto = self.by_title("PTO")
+        answers.answer(self.core, self.card_for(pto["id"], "task")["id"], "done")
+        out = self.day("day2.json")
+        self.assertEqual(out["skipped"], 0)
+
+        deck = self.by_title("Review the Q4 pricing deck")
+        self.assertEqual(self.sources(deck["id"]), 3, "email origin + Slack nudge + forward")
+        dup = self.by_title("Finish the pricing deck review")
+        card = self.card_for(dup["id"])
+        self.assertEqual((card["kind"], card["other_id"]), ("duplicate", deck["id"]), "a question before routing")
+        self.assertIn("Same as", cards.view(self.core, card)["prompt"])
+
+        pto = self.task(pto["id"])
+        self.assertEqual(pto["state"], "triage")
+        self.assertIn("reopened", pto["variant_tags"])
+        self.assertIn("asked something new", pto["reason"])
+
+        venue = self.by_title("offsite venue")
+        self.assertEqual(venue["title"], "Book the November offsite venue (deposit due Friday)")
+        self.assertEqual(venue["due"], "2026-10-17")
+
+    def test_answering_the_duplicate_merges(self):
+        self.day("day1.json")
+        self.day("day2.json")
+        deck = self.by_title("Review the Q4 pricing deck")
+        dup = self.by_title("Finish the pricing deck review")
+        before = self.sources(deck["id"])
+        answers.answer(self.core, self.card_for(dup["id"], "duplicate")["id"], "merge")
+        self.assertEqual(self.sources(deck["id"]), before + 1)
+        self.assertEqual(tasks.live(self.core, dup["id"])["id"], deck["id"])
+
+    def test_ingest_is_idempotent(self):
+        self.day("day1.json")
+        n = len(tasks.list_tasks(self.core))
+        out = self.day("day1.json")
+        self.assertEqual((out["signals"], out["skipped"]), (0, 5))
+        self.assertEqual(len(tasks.list_tasks(self.core)), n)
+
+    def test_let_go_stays_let_go(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "drop")
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": "msg-b9", "anchor": "email:conv-B", "ts": "2000-01-01T00:00:00Z",
+            "from": {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": "Did the contract go to legal?",
+            "candidates": [{"ask": "Send the vendor contract to legal", "owner": "me"}]}])
+        item = tools.get_pending_judgments(self.core)["items"][0]
+        tools.submit_verdicts(self.core, [{"candidate_id": item["candidate_id"], "task_id": contract["id"],
+                                           "verdict": "same", "confidence": 0.95, "new_ask": True, "reason": "t"}])
+        self.assertEqual(self.task(contract["id"])["state"], "letgo")
+
+    def test_a_reply_from_the_person_you_wait_on_comes_back(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "wait", "Marco Diaz")
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": "msg-b10", "anchor": "email:conv-B", "ts": "2026-10-20T08:30:00Z",
+            "from": {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": "Signed copy attached.",
+            "candidates": []}])
+        t = self.task(contract["id"])
+        self.assertEqual(t["state"], "triage")
+        self.assertIn("Reply came in", t["reason"])
+        self.assertEqual(self.open_cards()[0]["task_id"], contract["id"], "a reply comes in at the front")
+
+    def test_parked_wakes_quietly_on_an_fyi(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "park")
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": "msg-b11", "anchor": "email:conv-B", "ts": "2026-10-20T08:30:00Z",
+            "from": {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": "FYI legal is out Friday.",
+            "candidates": []}])
+        t = self.task(contract["id"])
+        self.assertEqual(t["state"], "parked")
+        self.assertIn("woke", t["variant_tags"])
+        self.assertFalse(self.open_cards() and [c for c in self.open_cards() if c["task_id"] == contract["id"]])
+
+    def test_a_candidate_can_carry_a_brief(self):
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": "hr-1", "anchor": "email:hr", "ts": "2026-10-20T08:00:00Z",
+            "from": {"name": "HR"}, "quote": "Complete the annual compliance training by Oct 31.",
+            "candidates": [{"ask": "Do the corporate compliance video", "due": "2026-10-31",
+                            "context_md": "**Annual compliance**\n\n45 minutes. [Start](https://learn.example)",
+                            "question": "When should I block time for it?", "effort_mins": 45}]}])
+        t = self.by_title("compliance video")
+        self.assertIn("45 minutes", t["context_md"])
+        card = self.card_for(t["id"], "task")
+        self.assertEqual(cards.view(self.core, card)["prompt"], "When should I block time for it?")
+
+
+if __name__ == "__main__":
+    unittest.main()

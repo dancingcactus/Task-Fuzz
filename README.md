@@ -89,6 +89,10 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 - Source linking and matching (the Task matching doc) is represented by the duplicate and entity cards only.
   A working spike of the matcher itself, as a GitHub Copilot skill, is in [`spikes/task-matching/`](spikes/task-matching/README.md).
 
+The real backend is in [`core/`](core/README.md): the store and event log, cards, the scheduler,
+the MCP server for the AI roles, the HTTP API and the installer for Claude Code and Copilot. `fuzz serve`
+also serves this demo, but the demo doesn't call the core yet.
+
 ## Layout of the code
 
 ```
