@@ -51,7 +51,11 @@ The demo queue has every card type from the mockups and the matching doc:
 - **Stale**: asks whether it still matters ("Quiet for 9 days. Nothing new has come up.") with Yes, keep it / Let it go.
 - **Handed back**: sits at the end of the queue, Fuzz looks sheepish and asks a quick either/or. Each answer has its own outcome: it replaces Fuzz's suggested instructions (anything you typed stays, after it), can change the draft and who it goes to, and "I'll find it" keeps the task with you, under Yours in Lineup, instead of handing it back to Fuzz.
 - **Entity check** (person and term): Same person / Different people, Save definition.
-- **Possible duplicate**: Merge / Keep separate, with the reason shown.
+- **Possible duplicate**: Same goal, separate tasks / Merge / Keep separate, with the reason shown. On the Priya card, **Same goal** turns the Slack ask into its own task and puts both under a new project, *Q4 readout for Priya*.
+
+## Projects
+
+Fuzz groups tasks that share a goal into a project, and you never have to make one (see "Tasks, steps and projects" in `docs/fuzz-core-design.md`). A project is only a **"Part of …" line**: on a Triage card (with "1 of 4 done"), on Lineup rows and in task detail. Tap it for the **project sheet**: the goal's done-when, the soonest deadline, each task with its state and done-when, the latest steps from all of them, and Rename, Take out and It's wrapped up, each with Undo. Taking a task out of a two-task project leaves the other on its own. When the last task is done, the project closes and Fuzz celebrates. Try *Team offsite next week* on the first card (headcount), or the duplicate card to make *Q4 readout for Priya*. Every task's detail also shows its **Done when** line.
 - **Check-in**: comes back through the session, often at first and then less often (after 2 cleared cards, then after at least 2 more and 5 minutes, then 10, then 20), and never while time-sensitive cards are waiting. Good or Okay keeps the usual order, Tired brings gentle cards first (with an optional 5-minute break), Overloaded brings quick cards first (or holds the rest until tomorrow). Once you answer, the other moods step aside and only one or two next steps remain. The spacing is `CI_FIRST` and `CI_GAP_MIN` in `js/view-triage.js`.
 
 Fuzz also works in the background: tasks you assign move through research and drafting on their own, finish as

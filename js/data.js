@@ -38,7 +38,7 @@
     var items = [
 
       /* ---------- Triage queue, in order ---------- */
-      { id: 'headcount', kind: 'task', state: 'triage', title: 'Confirm headcount for tomorrow’s offsite booking', source: 'Slack', who: 'Marcus',
+      { id: 'headcount', kind: 'task', doneWhen: 'Marcus has one final number for the venue', project: 'offsite', state: 'triage', title: 'Confirm headcount for tomorrow’s offsite booking', source: 'Slack', who: 'Marcus',
         age: '35 minutes', stage: 'fresh', mins: 3, energy: 'low', dueMin: 95,
         incoming: 'Marcus needs a final number so the venue can lock the booking. The venue wants it before the end of the day.',
         ask: 'Is it 14 or 16 people?',
@@ -50,7 +50,7 @@
         sendTo: { to: 'Marcus', via: 'Slack, #offsite-planning' },
         draft: 'Hi Marcus, final count for the offsite is 14 confirmed. I will send an update only if one of the two maybes changes. Thanks!' },
 
-      { id: 'room', kind: 'task', state: 'triage', title: 'Book the room for Thursday’s workshop', source: 'Meeting', who: 'Staff sync',
+      { id: 'room', kind: 'task', doneWhen: 'a room for eight is booked and the invite is out', state: 'triage', title: 'Book the room for Thursday’s workshop', source: 'Meeting', who: 'Staff sync',
         age: '1 day', stage: 'settling', mins: 2, energy: 'low', dueMin: 250,
         incoming: 'In the staff sync you said you would book a room for the Thursday workshop. Eight people are coming.',
         ask: 'Should I take the big room on 3 or the quiet one on 5?',
@@ -62,7 +62,7 @@
         sendTo: { to: 'the eight workshop attendees', via: 'Calendar invite' },
         draft: 'Booked Room 3 for Thursday 2:00 to 4:00 PM. Invite sent to the eight attendees with the workshop agenda attached.' },
 
-      { id: 'launch', kind: 'task', state: 'triage', title: 'Decide the launch date for the report builder', source: 'Email', who: 'Elena Park',
+      { id: 'launch', kind: 'task', doneWhen: 'a launch date is picked and Elena knows it', state: 'triage', title: 'Decide the launch date for the report builder', source: 'Email', who: 'Elena Park',
         age: '4 hours', stage: 'fresh', mins: 10, energy: 'high',
         due: { label: 'Elena needs a date by Monday', left: 'About 2 days left', frac: 0.3 },
         incoming: 'Elena needs a launch date by Monday so support, docs and marketing can plan around it. Engineering says the date depends on one open performance issue.',
@@ -85,7 +85,7 @@
         sendTo: { to: 'Elena Park', via: 'Email reply' },
         draft: 'Hi Elena, I recommend we commit to the later date, with a fallback of two weeks after if the performance fix slips. Support gets their two weeks of notice, and docs finish with final screenshots. I will confirm Monday morning.' },
 
-      { id: 'readout', kind: 'task', state: 'triage', title: 'Reply to Priya about the Q4 experiment readout', source: 'Email', who: 'Priya Raman',
+      { id: 'readout', kind: 'task', doneWhen: 'Priya has a clear ship or don’t-ship call', state: 'triage', title: 'Reply to Priya about the Q4 experiment readout', source: 'Email', who: 'Priya Raman',
         age: '2 hours', stage: 'fresh', mins: 5, energy: 'normal',
         due: { label: 'Priya needs a call before Tuesday', left: 'About 3 days left', frac: 0.45 },
         incoming: 'Priya wants a clear call on whether the winning variant ships, before Tuesday, so she can brief her team.',
@@ -110,7 +110,7 @@
         profiles: [{ where: 'Slack', name: 'Dana', detail: 'Display name only, active in #offsite-planning.', seen: '3 mentions this week' }, { where: 'Email', name: 'Dana Reyes', detail: 'Finance team, on the offsite budget thread.', seen: '1 thread this week' }],
         answers: { primary: 'Merged the two profiles. Next one.', secondary: 'Kept them separate. Next one.' } },
 
-      { id: 'naming', kind: 'task', state: 'triage', title: 'Update the experiment naming guide', source: 'Meeting', who: 'Team retro',
+      { id: 'naming', kind: 'task', doneWhen: 'the guide has the three rules and the team has seen it', state: 'triage', title: 'Update the experiment naming guide', source: 'Meeting', who: 'Team retro',
         age: '9 days', stage: 'stale', mins: 20, energy: 'normal',
         incoming: 'In the team retro you said you would refresh the naming guide so new experiments follow one pattern.',
         ask: 'Does this still matter, or can it go?',
@@ -120,7 +120,7 @@
         log: [L('action', '9 days ago', 'Pulled this task out of the retro notes.')],
         sources: [{ type: 'Doc', title: 'Retro notes' }, { type: 'Doc', title: 'Current naming guide' }] },
 
-      { id: 'owner', kind: 'task', state: 'triage', title: 'Confirm who owns the dashboard filter bug', source: 'Slack', who: 'Jules',
+      { id: 'owner', kind: 'task', doneWhen: 'someone has said the filter bug is theirs', state: 'triage', title: 'Confirm who owns the dashboard filter bug', source: 'Slack', who: 'Jules',
         age: '3 hours', stage: 'fresh', mins: 2, energy: 'low',
         incoming: 'Two people reported that saved filters reset after a refresh, and nobody has said who is picking it up.',
         ask: 'Should this go to the team lead or to the last contributor?',
@@ -137,11 +137,22 @@
         meta: '',
         incoming: 'In Slack, Priya asked for the Q4 summary deck so she can brief her team. It looks close to the email you already have in this queue.',
         ask: 'Is this the same task as “Reply to Priya about the Q4 experiment readout”?',
-        aiHeading: 'Why Fuzz thinks so', aiNote: 'Same person, same Q4 results doc, two hours apart. The judge said same task with medium confidence, so I kept both and linked them instead of merging.',
-        effect: 'If merged, the Slack message attaches as another source on the email task and nothing is lost. You can split them again anytime.',
+        aiHeading: 'Why Fuzz thinks so', aiNote: 'Same person, same Q4 results, two hours apart, and both are for briefing her team before Tuesday. But a reply doesn’t deliver a deck, so I think these are two tasks with one goal.',
+        effect: 'Same goal keeps both tasks and puts them together under “Q4 readout for Priya”, sharing her Tuesday deadline. Merge makes the Slack message a source on the email task. Keep separate leaves them unlinked.',
         boxLabel: 'Anything that helps?', placeholder: 'Optional note.',
-        primary: 'Merge', secondary: 'Keep separate',
-        answers: { primary: 'Merged. The Slack message is now a source on the Priya task.', secondary: 'Kept separate, and linked so Fuzz won’t ask again.' } },
+        primary: 'Same goal, separate tasks', secondary: 'Merge', third: 'Keep separate',
+        goal: { title: 'Q4 readout for Priya', doneWhen: 'Priya can brief her team on the Q4 results before Tuesday' },
+        /* What the Slack ask becomes if it's its own task */
+        asTask: { doneWhen: 'Priya has the Q4 summary deck', mins: 5, energy: 'low',
+          incoming: 'In Slack, Priya asked for the Q4 summary deck so she can brief her team.',
+          ask: 'Send the deck as it is, or add the guardrail slide first?',
+          hint: 'Add one slide with the guardrail metrics, then send me the deck before it goes to Priya.',
+          aiHeading: 'What Fuzz did', aiNote: 'I found the Q4 summary deck. It has the results but not the guardrail metrics, which your reply to Priya leans on.',
+          firstStep: 'Open the deck and look at the last slide.',
+          sources: [{ type: 'Slack', title: 'Priya: Q4 summary deck request' }, { type: 'Doc', title: 'Q4 summary deck' }],
+          sendTo: { to: 'Priya Raman', via: 'Slack' },
+          draft: 'Hi Priya, here’s the Q4 summary deck. I added a slide with the guardrail metrics so it matches my email. Happy to walk your team through it.' },
+        answers: { primary: 'Two tasks, one goal. I put them together under Q4 readout for Priya.', secondary: 'Merged. The Slack message is now a source on the Priya task.', third: 'Kept separate, and linked so Fuzz won’t ask again.' } },
 
       { id: 'lantern', kind: 'entity', entity: 'term', state: 'triage', title: 'Project Lantern', source: 'Entity check', who: '',
         age: '3 days', stage: 'settling', mins: 1, energy: 'low',
@@ -155,7 +166,7 @@
         mentions: [{ where: 'Slack', text: '“Lantern slips if the performance fix slips.”' }, { where: 'Meeting', text: '“Lantern review moves to the 28th.”' }, { where: 'Email', text: '“Can you share the Lantern one-pager?”' }],
         answers: { primary: 'Saved to your notes. Next one.', secondary: 'Linked to an existing project. Next one.' } },
 
-      { id: 'quotes', kind: 'task', state: 'triage', title: 'Collect customer quotes for the board update', source: 'Slack', who: 'Marcus',
+      { id: 'quotes', kind: 'task', doneWhen: 'Marcus has three linked quotes for the board', state: 'triage', title: 'Collect customer quotes for the board update', source: 'Slack', who: 'Marcus',
         age: '1 day', stage: 'settling', mins: 15, energy: 'high',
         incoming: 'A long thread of customer comments about the new report builder. Marcus asked for three quotes that tell the story for the board.',
         ask: 'Which themes should the quotes lead with?',
@@ -165,7 +176,7 @@
         log: [L('research', 'Yesterday', 'Grouped 48 comments into five draft themes.')],
         sources: [{ type: 'Slack', title: '#report-builder customer thread' }] },
 
-      { id: 'agenda', kind: 'task', state: 'triage', handedBack: true, title: 'Draft the agenda for the roadmap sync', source: 'Meeting', who: 'Roadmap kickoff',
+      { id: 'agenda', kind: 'task', doneWhen: 'the right people have a 45-minute agenda', state: 'triage', handedBack: true, title: 'Draft the agenda for the roadmap sync', source: 'Meeting', who: 'Roadmap kickoff',
         age: '2 days', stage: 'settling', mins: 10, energy: 'normal',
         due: { label: 'The sync is next Wednesday', left: 'Plenty of time', frac: 0.75 },
         meta: 'Meeting · handed back 20 min ago',
@@ -196,7 +207,7 @@
         sendTo: { to: 'the roadmap leads', via: 'Email' },
         draft: 'Roadmap sync agenda, leads only, 45 minutes: 1) Q1 priorities (10 min), 2) Report builder launch (10 min), 3) Staffing (10 min), 4) Risks (10 min), 5) Decisions and owners (5 min).' },
 
-      { id: 'renewal', kind: 'task', state: 'triage', handedBack: true, title: 'Follow up on the vendor contract renewal', source: 'Email', who: 'Vendor account team',
+      { id: 'renewal', kind: 'task', doneWhen: 'you know the renewal date and terms', state: 'triage', handedBack: true, title: 'Follow up on the vendor contract renewal', source: 'Email', who: 'Vendor account team',
         age: '3 days', stage: 'settling', mins: 5, energy: 'normal',
         meta: 'Email · handed back 1 hour ago',
         incoming: 'The vendor asked whether you plan to renew, and mentioned a deadline without giving the date.',
@@ -210,7 +221,7 @@
         sources: [{ type: 'Email', title: 'Vendor: are you planning to renew?' }] },
 
       /* ---------- Current (already in motion) ---------- */
-      { id: 'retro', kind: 'task', state: 'review', title: 'Send the Q3 retro summary to the team', source: 'Email', who: 'Team retro', age: '2 hours', stage: 'fresh', mins: 3,
+      { id: 'retro', kind: 'task', doneWhen: 'the team has the summary and the three actions', state: 'review', title: 'Send the Q3 retro summary to the team', source: 'Email', who: 'Team retro', age: '2 hours', stage: 'fresh', mins: 3,
         now: 'Draft ready to review',
         incoming: 'You said you would send the team a short summary of the Q3 retro by end of week.',
         aiNote: 'The draft is written. It will not send until you approve it.',
@@ -218,7 +229,7 @@
         sources: [{ type: 'Doc', title: 'Q3 retro notes' }],
         sendTo: { to: 'the team', via: 'Email' },
         draft: 'Hi team, thanks for a good retro. Three things we agreed on: 1) shorten the weekly sync to 25 minutes, 2) write down experiment decisions in one doc, 3) rotate who runs the demo. I will follow up on owners Monday.' },
-      { id: 'feedback', kind: 'task', state: 'ai', title: 'Summarize the customer feedback thread', source: 'Slack', who: 'Marcus', age: '1 day', stage: 'settling', mins: 15,
+      { id: 'feedback', kind: 'task', doneWhen: 'Marcus has the three themes, with quotes', state: 'ai', title: 'Summarize the customer feedback thread', source: 'Slack', who: 'Marcus', age: '1 day', stage: 'settling', mins: 15,
         now: 'Grouping 48 comments into themes',
         incoming: 'A long Slack thread of customer comments about the new report builder. Marcus asked for the three themes that matter most.',
         aiNote: 'Grouping 48 comments into themes and keeping a link to every quote so you can check them.',
@@ -228,7 +239,7 @@
         script: { steps: [['action', 'Sorted the remaining 17 comments into themes.'], ['research', 'Matched each theme to the strongest three quotes.']], ending: { type: 'review' } },
         sendTo: { to: 'Marcus', via: 'Slack, #report-builder' },
         draft: 'Top themes: 1) Large tables load slowly, 2) Scheduled exports are confusing, 3) Customers want shareable views. Each has three linked quotes.' },
-      { id: 'spike', kind: 'task', state: 'ai', title: 'Look into the experiment dashboard spike', source: 'Parked thought', who: 'You', age: '10 minutes', stage: 'fresh', mins: 10,
+      { id: 'spike', kind: 'task', doneWhen: 'you know whether the spike is real', state: 'ai', title: 'Look into the experiment dashboard spike', source: 'Parked thought', who: 'You', age: '10 minutes', stage: 'fresh', mins: 10,
         now: 'Checking this morning’s event logs',
         incoming: 'You parked a thought about a weird spike on the experiment dashboard this morning, and handed it to Fuzz.',
         aiNote: 'Checking this morning’s event logs for a tracking change. I found one: `track()` sends `page_view` twice since the 8:02 AM deploy. It will only bother you if the spike is real.',
@@ -237,19 +248,19 @@
         sources: [{ type: 'Doc', title: 'Experiment dashboard' }, { type: 'Doc', title: 'Deploy log' }],
         script: { steps: [['research', 'Confirmed the spike lines up with the tracking deploy.']], ending: { type: 'review' } },
         draft: 'The spike is a tracking artifact. A deploy at 8:02 AM double-counted page views for about 40 minutes. No real traffic change. I suggest no action.' },
-      { id: 'pricing', kind: 'task', state: 'session', title: 'Decide the pricing page copy', source: 'Email', who: 'Nadia', age: '4 hours', stage: 'fresh', mins: 20,
+      { id: 'pricing', kind: 'task', doneWhen: 'Nadia has final pricing page copy', state: 'session', title: 'Decide the pricing page copy', source: 'Email', who: 'Nadia', age: '4 hours', stage: 'fresh', mins: 20,
         now: 'Choosing between two headlines',
         incoming: 'Nadia needs final copy for the pricing page and sent two headline options.',
         aiNote: 'You opened this in Claude. Fuzz keeps the email thread and the style guide open while you work.',
         log: [L('status', '1:10 PM', 'You opened this in a working session with Claude.'), L('research', '1:08 PM', 'Gathered both headline options and the style guide.')],
         sources: [{ type: 'Email', title: 'Nadia: pricing page copy' }, { type: 'Doc', title: 'Style guide' }] },
-      { id: 'sam', kind: 'task', state: 'scheduled', title: 'Find time with Sam for 1:1 prep', source: 'Meeting', who: 'Staff sync', age: '1 day', stage: 'settling', mins: 5,
+      { id: 'sam', kind: 'task', doneWhen: 'a 30-minute slot with Sam is on both calendars', state: 'scheduled', title: 'Find time with Sam for 1:1 prep', source: 'Meeting', who: 'Staff sync', age: '1 day', stage: 'settling', mins: 5,
         scheduledFor: 'tomorrow morning', now: 'Back tomorrow morning',
         incoming: 'In the weekly staff sync you said you would find thirty minutes with Sam before the planning review.',
         aiNote: 'Comes back tomorrow morning. Fuzz already found three open windows on both calendars.',
         log: [L('research', 'Yesterday', 'Found three shared open windows before the review.'), L('status', 'Yesterday', 'You scheduled this for tomorrow morning.')],
         sources: [{ type: 'Doc', title: 'Staff sync notes' }, { type: 'Calendar', title: 'Sam’s calendar' }] },
-      { id: 'registration', kind: 'task', state: 'scheduled', title: 'Renew the car registration', source: 'Captured by you', who: 'You', age: '2 days', stage: 'settling', mins: 10,
+      { id: 'registration', kind: 'task', doneWhen: 'the car registration is renewed', state: 'scheduled', title: 'Renew the car registration', source: 'Captured by you', who: 'You', age: '2 days', stage: 'settling', mins: 10,
         scheduledFor: 'when you’re back at your desk', now: 'Back when you’re at your desk',
         incoming: 'You captured this yourself. The registration renewal notice is due at the end of the month.',
         aiNote: 'Comes back the next time you are at your desk, since it needs the renewal form.',
@@ -280,7 +291,7 @@
         sources: [{ type: 'Note', title: 'Your capture note' }] },
 
       /* ---------- Waiting on others ---------- */
-      { id: 'budget', kind: 'task', state: 'waiting', title: 'Approval of the offsite budget', source: 'Email', who: 'Dana Reyes', waitingOn: 'Dana Reyes', waitedFor: '4 days', age: '4 days', stage: 'settling',
+      { id: 'budget', kind: 'task', doneWhen: 'Dana has approved the offsite budget', project: 'offsite', state: 'waiting', title: 'Approval of the offsite budget', source: 'Email', who: 'Dana Reyes', waitingOn: 'Dana Reyes', waitedFor: '4 days', age: '4 days', stage: 'settling',
         nextCheck: 'Nudge drafted, needs your OK', nudge: true,
         incoming: 'You asked Dana Reyes on Tuesday to approve the offsite budget so you can book the venue.',
         aiNote: 'A short, friendly follow-up is drafted. It will not send until you approve it.',
@@ -288,13 +299,13 @@
         sources: [{ type: 'Email', title: 'Budget email thread' }, { type: 'Doc', title: 'Offsite budget sheet' }],
         sendTo: { to: 'Dana Reyes', via: 'Email' },
         draft: 'Hi Dana, a gentle nudge on the offsite budget. I would like to book the venue by Friday, and your approval is the last step. Thanks!' },
-      { id: 'estimate', kind: 'task', state: 'waiting', title: 'Engineering estimate on the performance fix', source: 'Slack', who: 'Elena', waitingOn: 'Elena', waitedFor: '2 days', age: '2 days', stage: 'settling',
+      { id: 'estimate', kind: 'task', doneWhen: 'you have Elena’s estimate for the fix', state: 'waiting', title: 'Engineering estimate on the performance fix', source: 'Slack', who: 'Elena', waitingOn: 'Elena', waitedFor: '2 days', age: '2 days', stage: 'settling',
         nextCheck: 'Tomorrow morning',
         incoming: 'You asked Elena for the engineering estimate on the performance fix, which decides the launch date.',
         aiNote: 'Fuzz looks at the ticket again tomorrow morning and drafts a nudge if nothing has moved.',
         log: [L('research', 'Today', 'Checked the ticket. No new estimate.'), L('status', '2 days ago', 'You moved this to Waiting on others.')],
         sources: [{ type: 'Slack', title: '#report-builder thread' }, { type: 'Ticket', title: 'Performance ticket' }] },
-      { id: 'catering', kind: 'task', state: 'waiting', title: 'Quote for the offsite catering', source: 'Email', who: 'Caterer', waitingOn: 'The caterer', waitedFor: '1 day', age: '1 day', stage: 'fresh',
+      { id: 'catering', kind: 'task', doneWhen: 'lunch for the offsite is quoted and ordered', project: 'offsite', state: 'waiting', title: 'Quote for the offsite catering', source: 'Email', who: 'Caterer', waitingOn: 'The caterer', waitedFor: '1 day', age: '1 day', stage: 'fresh',
         nextCheck: 'Monday',
         incoming: 'You asked the caterer for a quote and the dietary options for sixteen people.',
         aiNote: 'Fuzz drafts a nudge on Monday if there is no reply.',
@@ -302,7 +313,7 @@
         sources: [{ type: 'Email', title: 'Catering email thread' }] },
 
       /* ---------- Done and let go ---------- */
-      { id: 'venue', kind: 'task', state: 'done', title: 'Send the offsite agenda to the venue', source: 'Email', who: 'Venue', age: '2 days', stage: 'fresh', doneAgo: 'Yesterday', now: 'Sent with your OK',
+      { id: 'venue', kind: 'task', doneWhen: 'the venue has the agenda', project: 'offsite', state: 'done', title: 'Send the offsite agenda to the venue', source: 'Email', who: 'Venue', age: '2 days', stage: 'fresh', doneAgo: 'Yesterday', now: 'Sent with your OK',
         incoming: 'The venue asked for the agenda so they can plan the room layout.',
         aiNote: 'Done. Fuzz sent the agenda after you approved the draft.',
         log: [L('sent', 'Yesterday', 'Sent the agenda to the venue after you approved the draft.'), L('action', 'Yesterday', 'Drafted the cover note.'), L('status', '2 days ago', 'You assigned this to Fuzz.')],
@@ -328,6 +339,10 @@
       items: items,
       queue: items.filter(function (i) { return i.state === 'triage'; }).map(function (i) { return i.id; }),
       totalEver: items.filter(function (i) { return i.state === 'triage'; }).length,
+      /* Made by Fuzz, never by you. A project is a label on its tasks; it closes when they're all finished. */
+      projects: [
+        { id: 'offsite', title: 'Team offsite next week', doneWhen: 'the venue is booked for the final headcount, the budget is approved and lunch is ordered', due: 'The venue needs the headcount today' }
+      ],
       captured: [
         { text: 'Ask Dana about the offsite budget', ref: null, status: 'Waiting in triage', time: '10 minutes ago', tone: 'wait' },
         { text: 'Planning review notes.docx', ref: null, status: 'Three tasks added to triage', time: '2 hours ago', tone: 'fresh', doc: true },

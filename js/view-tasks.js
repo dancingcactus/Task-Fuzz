@@ -35,7 +35,7 @@
 
   function rowHTML(it, status, tone, sub, cls) {
     return '<li><button type="button" class="lrow' + (cls ? ' ' + cls : '') + '" data-open="' + it.id + '">' +
-      '<span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source) + (it.updated ? ' · Updated' : '') + '</span></span>' +
+      '<span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source) + (it.updated ? ' · Updated' : '') + (Store.partOf(it) ? ' · ' + esc(Store.partOf(it)) : '') + '</span></span>' +
       '<span class="lrow-side">' + UI.pill(status, tone) + (sub ? '<span class="lrow-sub">' + esc(sub) + '</span>' : '') + '</span></button></li>';
   }
   function sectionHTML(id, title, rows, empty, extra) {
@@ -196,9 +196,10 @@
     var tab = keyFor(it) || 'current', c = cells(it, tab), acts = actionsFor(it);
     var draft = (it.state === 'review' || (it.state === 'waiting' && it.nudge)) && it.draft;
     var h = '<div class="dlg-top"><div class="dlg-titles"><div class="dlg-chips">' + UI.pill(c.c2, c.tone) + '<span class="meta">' + esc(it.source) + ' · ' + esc(TABS[tab].cols[1]) + ': ' + esc(c.c3) + '</span></div>' +
-      '<h2 id="dlg-title">' + esc(it.title) + '</h2></div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+      '<h2 id="dlg-title">' + esc(it.title) + '</h2>' + (Store.partOf(it) ? '<button type="button" class="partof" data-project="' + it.project + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(Store.partOf(it, true)) + '</button>' : '') + '</div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
       (draft ? draftHTML(it, acts) : '') +
       '<p class="dlg-what">' + esc(it.incoming) + '</p>';
+    if (it.doneWhen) h += '<section class="donewhen"><h3>Done when</h3><p>' + esc(it.doneWhen.charAt(0).toUpperCase() + it.doneWhen.slice(1)) + '</p></section>';
     if (it.aiNote) h += '<section class="ainote"><h3>' + (it.state === 'review' ? 'What Fuzz did' : HEAD[tab]) + '</h3><p>' + UI.text(Store.nowText(it) && tab === 'current' && it.state === 'ai' ? Store.nowText(it).replace(/[.!]+$/, '') + '. ' + it.aiNote : it.aiNote) + '</p></section>';
     if (it.code && it.code.length) h += '<section><h3>Code</h3>' + CodeView.section(it.code, 'dlg:' + it.id) + '</section>';
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
@@ -216,6 +217,8 @@
     d.addEventListener('close', function () { d.remove(); if (dlg === d) { dlg = null; openId = null; } if (trigger && document.body.contains(trigger)) trigger.focus(); });
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }
+      var pj = e.target.closest('[data-project]');
+      if (pj) { openProject(pj.dataset.project, pj); return; }
       var rv = e.target.closest('[data-revise]');
       if (rv) { var f = d.querySelector('#dlg-revise'); f.hidden = !f.hidden; rv.setAttribute('aria-expanded', String(!f.hidden)); if (!f.hidden) d.querySelector('#dlg-revise-text').focus(); return; }
       var b = e.target.closest('[data-do]'); if (!b) return;
@@ -239,6 +242,13 @@
     });
     renderDialog();
     d.showModal();
+  }
+  /* From the project sheet, opening a task swaps the sheet for that task's detail */
+  function openProject(projectId, trigger) {
+    ProjectSheet.open(projectId, { trigger: trigger,
+      onOpenTask: function (id) { if (dlg) dlg.close(); open(id); },
+      canOpen: function (it) { return !!keyFor(it); },
+      onChange: function () { render(); renderDialog(); }, onUndo: function () { render(); renderDialog(); } });
   }
   function renderDialog() {
     if (!dlg) return;

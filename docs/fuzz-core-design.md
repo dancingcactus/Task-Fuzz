@@ -590,7 +590,7 @@ name reads as a goal: "Q4 readout for Priya", not "Q4".
 | Triage card | One line under the tags: "Part of Q4 readout for Priya · 1 of 2 done". No new buttons. Tapping it opens the project sheet |
 | Duplicate card | The third answer, Same goal, separate tasks |
 | Lineup | Still grouped by who has it (Yours, Fuzz's lane, With others, Later). A row in a project gets the same "Part of …" line. The Lineup is never grouped by project, because that would hide what's waiting on you |
-| Task detail | The "Part of …" line, and the other tasks in the project with their states |
+| Task detail | The "Part of …" line, which opens the project sheet, and the task's done-when |
 | Project sheet | A dialog, like task detail: the name, the done-when, the deadline, each task with its state ("2 done, 1 with Fuzz"), and the steps from all its tasks in one log. Actions: Rename, Take a task out, It's wrapped up |
 | Fuzz | Says when he groups tasks, and celebrates when a project wraps up |
 

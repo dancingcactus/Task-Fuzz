@@ -4,7 +4,8 @@
    - a handback is a normal state and goes to the end of the queue (2)
    - every change writes a line to the task's "done so far" log (3)
    - nothing is sent until the human approves the draft (6)
-   - every triage change can be undone (6, 11), and sending, which can't, survives any undo */
+   - every triage change can be undone (6, 11), and sending, which can't, survives any undo
+   - projects are made by Fuzz and are only ever a label on their tasks */
 (function () {
   var MAX_RUNNING = 5;
   var STEP_MS = 6500;
@@ -12,6 +13,8 @@
   /* What has actually gone out, as each item looked right after sending. Kept outside the undo
      snapshots, so undoing an earlier change never brings a sent message back. */
   var sent = {};
+  /* Not part of any project count: cleared cards and dropped tasks */
+  var GONE = ['dropped', 'resolved'];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function clock() { return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -58,7 +61,7 @@
       };
     },
 
-    snapshot: function () { return clone({ items: state.items, queue: state.queue, totalEver: state.totalEver, captured: state.captured, moment: state.moment, maxOrder: state.maxOrder, minOrder: state.minOrder }); },
+    snapshot: function () { return clone({ items: state.items, queue: state.queue, totalEver: state.totalEver, captured: state.captured, projects: state.projects, moment: state.moment, maxOrder: state.maxOrder, minOrder: state.minOrder }); },
     restore: function (snap) {
       var s = clone(snap);
       Object.keys(s).forEach(function (k) { state[k] = s[k]; });
@@ -123,19 +126,68 @@
       S.log(it, 'guidance', 'You said: ' + note);
       S.log(it, 'status', 'You took this one yourself. Fuzz keeps the sources ready.');
     },
-    done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
+    done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); settle(it); },
     session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
     schedule: function (id, label, when) { var it = S.item(id); S.leave(id); it.state = 'scheduled'; it.scheduledFor = when; it.now = 'Back ' + when; S.log(it, 'status', 'You scheduled this for ' + when + '.'); },
     park: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You parked this from triage.'); },
     wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
-    letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); },
-    drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); },
+    letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); settle(it); },
+    drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); settle(it); },
+    /* A duplicate card's answers: primary, Same goal, separate tasks; secondary, Merge; third, Keep separate */
     resolve: function (id, which) {
       var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
-      if (it.kind === 'dup' && which === 'primary') {
-        var t = S.item(it.dupOf);
-        if (t) { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
+      var t = it.kind === 'dup' && S.item(it.dupOf);
+      if (t && which === 'secondary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
+      if (t && which === 'primary') S.group(it, t);
+    },
+
+    /* ---- projects ----
+       Fuzz groups tasks that share a goal. A project has no queue, no card and no progress bar of its own:
+       it shows up as a "Part of …" line on its tasks, and closes on its own when they are all finished. */
+    project: function (id) { return (state.projects || []).filter(function (p) { return p.id === id; })[0] || null; },
+    projectOf: function (it) { return it && it.project ? S.project(it.project) : null; },
+    projectTasks: function (p) { return state.items.filter(function (i) { return i.project === p.id && GONE.indexOf(i.state) < 0; }); },
+    /* Counts what's done, never what's left. Let-go tasks leave the count. */
+    projectCount: function (p) {
+      var all = S.projectTasks(p).filter(function (i) { return i.state !== 'letgo'; });
+      return { done: all.filter(function (i) { return i.state === 'done'; }).length, total: all.length };
+    },
+    projectFinished: function (p) { var c = S.projectCount(p); return p.closed || (c.total > 0 && c.done === c.total); },
+    /* The line a card or row shows: "Part of Q4 readout for Priya · 1 of 2 done" */
+    partOf: function (it, withCount) {
+      var p = S.projectOf(it); if (!p) return '';
+      if (!withCount) return 'Part of ' + p.title;
+      var c = S.projectCount(p);
+      return 'Part of ' + p.title + ' · ' + (S.projectFinished(p) ? 'wrapped up' : c.done ? c.done + ' of ' + c.total + ' done' : c.total + ' tasks');
+    },
+    /* "Same goal, separate tasks": the new ask becomes its own task, and both share one project
+       that takes the sooner deadline. */
+    group: function (dup, t) {
+      var p = S.projectOf(t);
+      if (!p) {
+        p = { id: 'p' + (++captureN), title: dup.goal.title, doneWhen: dup.goal.doneWhen, due: t.due ? t.due.label : '' };
+        state.projects.push(p); t.project = p.id;
       }
+      var it = Object.assign({ id: dup.id + '-task', kind: 'task', state: 'triage', title: dup.title, source: dup.source, who: dup.who, age: dup.age, stage: 'fresh',
+        project: p.id, due: t.due, isNew: false, log: [], context: [], conversation: [], code: [] }, clone(dup.asTask));
+      state.items.push(it);
+      S.log(it, 'status', 'Fuzz made this its own task, part of ' + p.title + '.');
+      S.log(t, 'status', 'Fuzz put this together with “' + it.title + '” under ' + p.title + '.');
+      S.enqueue(it, 'back');
+      return p;
+    },
+    renameProject: function (id, title) { var p = S.project(id); if (p && title && title.trim()) p.title = title.trim(); },
+    /* Take a task out. A project of one isn't a project, so the last task left stands on its own. */
+    takeOut: function (id) {
+      var it = S.item(id), p = S.projectOf(it); if (!p) return;
+      it.project = null; S.log(it, 'status', 'You took this out of ' + p.title + '.');
+      var left = S.projectTasks(p);
+      if (left.length === 1) { left[0].project = null; S.log(left[0], 'status', p.title + ' had only this task left, so it stands on its own now.'); p.closed = true; return 'dissolved'; }
+    },
+    wrapUp: function (id) {
+      var p = S.project(id); if (!p) return;
+      p.closed = true;
+      S.projectTasks(p).forEach(function (i) { S.log(i, 'status', 'You said ' + p.title + ' is wrapped up.'); });
     },
 
     /* ---- movement between lists ---- */
@@ -162,6 +214,7 @@
       it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK';
       S.log(it, 'sent', r ? 'Sent to ' + r.to + ' (' + r.via + ') after you approved it.' : 'Sent after you approved the draft.');
       sent[id] = clone(it);
+      settle(it);
     },
     /* A draft that goes nowhere: approving it just files it, so it can be undone. */
     accept: function (id, text) {
@@ -169,6 +222,7 @@
       S.leave(id); S.editDraft(it, text);
       it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Approved by you';
       S.log(it, 'status', 'You approved this.');
+      settle(it);
     },
     revise: function (id, note, text) {
       var it = S.item(id);
@@ -178,7 +232,7 @@
       it.workStep = 0; it.nextAt = Date.now() + 4500; it.now = 'Changing the draft';
       it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
     },
-    markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); },
+    markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); settle(it); },
     replied: function (id) { var it = S.item(id); S.log(it, 'status', 'A reply came in. Back in triage with the reply attached.'); it.updated = true; S.enqueue(it, 'front'); },
     nudgeSent: function (id, text) { var it = S.item(id); S.editDraft(it, text); it.nextCheck = 'Nudge sent, checking tomorrow'; it.nudge = false; S.log(it, 'sent', 'Sent the follow-up nudge after you approved it.'); sent[id] = clone(it); },
     reopen: function (id) { var it = S.item(id); S.log(it, 'status', 'You brought this back.'); S.enqueue(it, 'front'); },
@@ -227,6 +281,15 @@
       return it.now || '';
     }
   };
+
+  /* When the last open task in a project finishes, the project closes on its own and Fuzz celebrates.
+     The event waits a moment so it lands after the card has left. */
+  function settle(it) {
+    var p = S.projectOf(it);
+    if (!p || p.closed || p.celebrated || !S.projectFinished(p)) return;
+    p.celebrated = true;
+    setTimeout(function () { if (S.project(p.id) && S.projectFinished(S.project(p.id))) emit({ type: 'wrapped', project: S.project(p.id) }); }, 1800);
+  }
 
   function generic(it) {
     return {
