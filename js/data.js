@@ -33,6 +33,10 @@
  ]
 };
 
+  /* A local time some days from today, for the moments the AI found on your calendar */
+  function day(n, h, m) { var d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, m || 0, 0, 0); return d.toISOString(); }
+  function nextWeekday(wd, h, m) { var d = new Date(), n = (wd - d.getDay() + 7) % 7 || 7; return day(n, h, m); }
+
   function build() {
     var now = Date.now();
     var items = [
@@ -70,6 +74,8 @@
         hint: 'Propose the later date with a clear fallback, keep the tone confident, and show me the draft before sending.',
         aiHeading: 'What Fuzz did', aiNote: 'I pulled together the email thread, the spec and the status of the open issue, then drafted a reply that proposes the later date with a fallback.',
         firstStep: 'Read the last two lines of the engineering comment.',
+        /* Moments: described dates the AI looked up with its own calendar connector (suggest_schedule) */
+        moments: [{ key: 'planning-review', label: 'Before the planning review', at: day(1, 13), reason: 'The review is tomorrow at 2 PM. Back an hour before.' }],
         context: ['Support needs two weeks of notice before they can train the team.', 'The open performance issue slows reports built on very large tables.', 'Docs are mostly written. The last pages wait on final screenshots.', 'Marketing is holding a newsletter slot for the later date.', 'Two beta customers asked for the earlier date.'],
         log: [
           L('action', '2:40 PM', 'Drafted a reply that proposes the later date with a fallback.'),
@@ -93,6 +99,7 @@
         hint: 'Recommend shipping, keep it under five sentences, and send me the draft before you reply.',
         aiHeading: 'What Fuzz did', aiNote: 'I pulled the final results and guardrail metrics, and drafted a short reply with a recommendation.',
         firstStep: 'Open the results doc and read the summary table.',
+        moments: [{ key: 'priya-1on1', label: 'Next time I see Priya', at: nextWeekday(4, 9, 30), reason: 'Your 1:1 is Thursday at 10 AM.' }],
         log: [L('action', '10:14 AM', 'Drafted a five-sentence reply recommending the winning variant.'), L('research', '10:08 AM', 'Pulled the final results and the guardrail metrics.')],
         sources: [{ type: 'Email', title: 'Priya: Q4 readout, can you confirm?' }, { type: 'Doc', title: 'Q4 experiment results' }],
         sendTo: { to: 'Priya Raman', via: 'Email reply' },
