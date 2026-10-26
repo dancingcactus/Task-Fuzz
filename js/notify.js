@@ -15,17 +15,22 @@
   function short(t) { t = String(t).replace(/[.!]+$/, ''); return t.length > 100 ? t.slice(0, 97) + '…' : t; }
 
   /* ---------- Undo ---------- */
-  /* A short history, newest first. Each entry restores a snapshot taken before its change, so undoing an
-     older entry also rolls back everything after it; those newer entries leave the list with it. */
+  /* A short history, newest first. Each entry undoes its own change and nothing else, the way the core's
+     Undo works: it isn't a stack. fn returns nothing when it undid the change, or why it can't (something
+     changed the same task since); then Fuzz says why and the entry stays. blocked() says the same
+     without trying, so the list can show it. */
   var MAX_UNDO = 8, UNDO_TTL = 10 * 60 * 1000;
   function prune() { var now = Date.now(); history = history.filter(function (u) { return now - u.at < UNDO_TTL; }); }
   function emitUndo() { listeners.forEach(function (l) { l(); }); }
   function clearUndo() { history = []; clearTimeout(undoTimer); emitUndo(); }
-  function setUndo(label, fn) {
-    var u = { label: short(label), at: Date.now() };
+  function setUndo(label, fn, blocked) {
+    var u = { label: short(label), at: Date.now(), blocked: blocked || function () { return null; } };
     u.run = function () {
-      var i = history.indexOf(u); if (i < 0) return;
-      history = history.slice(i + 1); S.hideDock(); emitUndo(); fn();
+      if (history.indexOf(u) < 0) return;
+      S.hideDock();
+      var why = fn();
+      if (why) { S.tell(why); emitUndo(); return; }
+      history = history.filter(function (x) { return x !== u; }); emitUndo();
     };
     prune(); history.unshift(u); history = history.slice(0, MAX_UNDO);
     clearTimeout(undoTimer); undoTimer = setTimeout(function () { prune(); emitUndo(); }, UNDO_TTL + 1000);
@@ -36,7 +41,7 @@
   S.onUndoChange = function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (l) { return l !== fn; }); }; };
   /* Fuzz has already said something about the change; keep Undo within reach and tell screen readers what changed. */
   /* label: the action as the Undo list names it (“Parked “X””). spoken: the fuller line for screen readers, if different. */
-  S.offerUndo = function (label, fn, spoken) { setUndo(label, fn); S.announce((spoken || label) + ' Undo is in the header.'); };
+  S.offerUndo = function (label, fn, spoken, blocked) { setUndo(label, fn, blocked); S.announce((spoken || label) + ' Undo is in the header.'); };
 
   /* ---------- Screen readers ---------- */
   /* Fuzz's bubble on the perch is visual only, so his quips stay quiet. Outcomes, warnings and his
@@ -73,10 +78,10 @@
     dockTimer = setTimeout(S.hideDock, o.ms || (o.undo ? 12000 : 7000));
   }
 
-  /* o: { undo: fn, label: name in the Undo list (defaults to text), ms } */
+  /* o: { undo: fn, blocked: fn, label: name in the Undo list (defaults to text), ms } */
   S.tell = function (text, o) {
     o = o || {};
-    if (o.undo) setUndo(o.label || text, o.undo);
+    if (o.undo) setUndo(o.label || text, o.undo, o.blocked);
     if (window.Fuzz && Fuzz.mounted()) { onPerch(text, o, 0); S.announce(text); } else onDock(text, o);
   };
 

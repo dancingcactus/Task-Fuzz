@@ -50,9 +50,11 @@
   }
 
   /* Every change can be undone, like everything else */
-  function change(label, msg, fn) {
-    var snap = S().snapshot(), r = fn();
-    Say.tell(msg, { label: label, undo: function () { S().restore(snap); if (opts.onUndo) opts.onUndo(); } });
+  /* tasksToo: the change also writes to the project's tasks, so they undo with it */
+  function change(label, msg, fn, tasksToo) {
+    var r, p = S().project(pid);
+    var ch = S().track(tasksToo ? S().projectTasks(p).map(function (i) { return i.id; }) : [], function () { r = fn(); });
+    Say.tell(msg, { label: label, blocked: ch.blocked, undo: function () { var why = ch.undo(); if (!why && opts.onUndo) opts.onUndo(); return why; } });
     if (opts.onChange) opts.onChange();
     return r;
   }
@@ -77,12 +79,12 @@
       if (t.dataset.psOpen) { var id = t.dataset.psOpen; opts.trigger = null; d.close(); opts.onOpenTask(id); return; }
       if (t.dataset.psOut) {
         var it = S().item(t.dataset.psOut);
-        var gone = change('Took “' + it.title + '” out of ' + p.title + '.', 'Took it out of ' + p.title + '.', function () { return S().takeOut(it.id); });
+        var gone = change('Took “' + it.title + '” out of ' + p.title + '.', 'Took it out of ' + p.title + '.', function () { return S().takeOut(it.id); }, true);
         if (gone) { Say.tell('That left one task, so it stands on its own now. No project needed.'); d.close(); } else paint(true);
         return;
       }
       if (t.dataset.ps === 'wrap') {
-        change('Wrapped up ' + p.title + '.', 'Wrapped up ' + p.title + '. Anything still open keeps going on its own.', function () { S().wrapUp(p.id); });
+        change('Wrapped up ' + p.title + '.', 'Wrapped up ' + p.title + '. Anything still open keeps going on its own.', function () { S().wrapUp(p.id); }, true);
         paint(true);
       } else if (t.dataset.ps === 'rename') {
         renaming = !renaming; paint();

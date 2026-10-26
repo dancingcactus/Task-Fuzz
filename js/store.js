@@ -3,18 +3,20 @@
    - assigned work runs in the background, five at a time (6, 1)
    - a handback is a normal state and goes to the end of the queue (2)
    - every change writes a line to the task's "done so far" log (3)
-   - nothing is sent until the human approves the draft (6)
-   - every triage change can be undone (6, 11), and sending, which can't, survives any undo
+   - nothing is sent until the human approves the draft, and then Fuzz sends it with its own tools (6)
+   - every change undoes on its own, the way the core's Undo works: not a stack. A change can't be
+     undone once something else has changed the same task since (Fuzz started, it was sent, you moved
+     it again), and you're told why (6, 11)
    - projects are made by Fuzz and are only ever a label on their tasks */
 (function () {
   var MAX_RUNNING = 5;
   var STEP_MS = 6500;
-  var state, subs = [], timer = 0, captureN = 0;
-  /* What has actually gone out, as each item looked right after sending. Kept outside the undo
-     snapshots, so undoing an earlier change never brings a sent message back. */
-  var sent = {};
+  var SEND_MS = 3500;
+  var state, subs = [], timer = 0, captureN = 0, sentN = 0;
   /* Not part of any project count: cleared cards and dropped tasks */
   var GONE = ['dropped', 'resolved'];
+  /* Projects Fuzz has already celebrated, so a wrap-up is only cheered once */
+  var celebrated = {};
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function clock() { return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -29,18 +31,19 @@
       state.moment = 'any';
       state.maxOrder = state.items.length;
       state.minOrder = 0;
-      captureN = 0; sent = {};
+      captureN = 0; sentN = 0; celebrated = {}; state.checkins = [];
       /* drafts already waiting for your OK start out in the queue too */
       S.inState('review').forEach(function (it) { S.queueUp(it, 'back'); });
       S.sortQueue();
       emit({ type: 'reset' });
     },
     get: function () { return state; },
+    /* What Fuzz has sent for you this session, for the recap */
+    sentCount: function () { return sentN; },
     on: function (fn) { subs.push(fn); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; },
     emit: emit,
 
     item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0]; },
-    sentCount: function () { return Object.keys(sent).length; },
     /* Steps Fuzz has done out of those planned, for the progress dots in Lineup */
     progress: function (it) { var sc = it.script || generic(it); return { done: Math.min(it.workStep || 0, sc.steps.length), total: sc.steps.length }; },
     inState: function () {
@@ -61,15 +64,66 @@
       };
     },
 
-    snapshot: function () { return clone({ items: state.items, queue: state.queue, totalEver: state.totalEver, captured: state.captured, projects: state.projects, moment: state.moment, maxOrder: state.maxOrder, minOrder: state.minOrder }); },
-    restore: function (snap) {
-      var s = clone(snap);
-      Object.keys(s).forEach(function (k) { state[k] = s[k]; });
-      Object.keys(sent).forEach(function (id) {
-        for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) state.items[i] = clone(sent[id]);
-        S.leave(id);
-      });
-      emit({ type: 'restore' });
+    /* Run fn as one undoable change to these items. Returns { undo(), blocked() }: undo puts back what
+       fn changed and returns null, or returns why it can't (something changed the same items since).
+       Like the core: the log only grows, so undoing adds a line rather than removing fn's. */
+    track: function (ids, fn) {
+      ids = ids.filter(function (id, i) { return S.item(id) && ids.indexOf(id) === i; });
+      var before = ids.map(function (id) { return { item: clone(S.item(id)), queued: S.inQueue(id), logAt: S.item(id).log.length }; });
+      var m0 = state.moment, n0 = state.items.length, p0 = projectsById();
+      fn();
+      var after, logAt, m1 = state.moment;
+      /* Tasks the change made (a duplicate that became its own task) and projects it touched undo with it */
+      var made = state.items.slice(n0).map(function (i) { return i.id; }), madeAt, p1 = projectsById();
+      var pids = Object.keys(Object.assign({}, p0, p1)).filter(function (k) { return p0[k] !== p1[k]; });
+      function settle() {
+        after = ids.map(function (id) { return fingerprint(S.item(id)); });
+        logAt = ids.map(function (id) { return S.item(id).log.length; });
+        madeAt = made.map(function (id) { return fingerprint(S.item(id)); });
+        p1 = projectsById();
+      }
+      settle();
+      var ch = {
+        blocked: function () {
+          for (var i = 0; i < ids.length; i++) {
+            var it = S.item(ids[i]);
+            if (fingerprint(it) === after[i]) continue;
+            var newer = it.log.slice(0, it.log.length - logAt[i]);
+            if (newer.some(function (l) { return l.kind === 'sent'; })) return 'It’s already been sent, so it can’t be undone.';
+            if (['ai', 'sending'].indexOf(it.state) > -1 || newer.some(function (l) { return ['research', 'action', 'blocked'].indexOf(l.kind) > -1; }))
+              return 'Fuzz has already worked on this since, so it can’t be undone. Bring it back from Lineup instead.';
+            return 'You changed this since. Undo that first.';
+          }
+          for (var j = 0; j < made.length; j++) if (S.item(made[j]) && fingerprint(S.item(made[j])) !== madeAt[j]) return 'You changed “' + S.item(made[j]).title + '” since. Undo that first.';
+          var pn = projectsById();
+          if (pids.some(function (k) { return pn[k] !== p1[k]; })) return 'You changed that project since. Undo that first.';
+          if (m1 !== m0 && state.moment !== m1) return 'You answered another check-in since. Undo that first.';
+          return null;
+        },
+        undo: function () {
+          var why = ch.blocked(); if (why) return why;
+          before.forEach(function (b, i) {
+            var cur = S.item(b.item.id), log = cur.log, back = clone(b.item);
+            /* the lines this change wrote stay, marked undone (newest first, so they sit above what came before) */
+            log.slice(log.length - logAt[i], log.length - b.logAt).forEach(function (l) { l.undone = true; });
+            back.log = log; Object.keys(cur).forEach(function (k) { delete cur[k]; }); Object.assign(cur, back);
+            if (b.queued && !S.inQueue(cur.id)) state.queue.push(cur.id);
+            if (!b.queued && S.inQueue(cur.id)) { S.leave(cur.id); state.totalEver--; }
+            S.log(cur, 'status', 'You undid that.'); cur.log[0].undo = true;
+          });
+          made.forEach(function (id) { if (S.inQueue(id)) { S.leave(id); state.totalEver--; } state.items = state.items.filter(function (i) { return i.id !== id; }); });
+          made = [];
+          pids.forEach(function (k) {
+            state.projects = state.projects.filter(function (p) { return p.id !== k; });
+            if (p0[k]) state.projects.push(JSON.parse(p0[k]));
+          });
+          if (m1 !== m0) state.moment = m0;
+          settle();
+          S.sortQueue(); emit({ type: 'restore' });
+          return null;
+        }
+      };
+      return ch;
     },
 
     log: function (item, kind, text) { item.log.unshift({ kind: kind, time: clock(), text: text }); },
@@ -126,13 +180,33 @@
       S.log(it, 'guidance', 'You said: ' + note);
       S.log(it, 'status', 'You took this one yourself. Fuzz keeps the sources ready.');
     },
-    done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); settle(it); },
+    done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); wrapCheck(it); },
     session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
-    schedule: function (id, label, when) { var it = S.item(id); S.leave(id); it.state = 'scheduled'; it.scheduledFor = when; it.now = 'Back ' + when; S.log(it, 'status', 'You scheduled this for ' + when + '.'); },
+    /* opt is one of S.scheduleOptions(it), or an exact time: the core's Schedule options, as the API sends them */
+    schedule: function (id, opt) {
+      var it = S.item(id), when = lowerFirst(opt.label); S.leave(id);
+      it.state = 'scheduled'; it.scheduleAnchor = opt.anchor; it.scheduledFor = when; it.now = 'Back ' + when;
+      S.log(it, 'status', 'You scheduled this: ' + when + '.');
+    },
+    scheduleOptions: function (it) { return Sched.options(it); },
+    /* The UI decides when to ask how you're doing; the answer is kept (POST /checkin in the core) and sets
+       the moment. hold_rest schedules what isn't time-sensitive for tomorrow morning, as one change. */
+    checkin: function (answer, followUp) {
+      var moment = followUp === 'quick_first' ? 'quick' : { good: 'any', okay: 'any', tired: 'low', overloaded: 'quick' }[answer];
+      var held = followUp === 'hold_rest' ? S.queue().filter(function (i) { return i.kind === 'task' && !i.dueAt; }) : [];
+      var ch = S.track(held.map(function (i) { return i.id; }), function () {
+        state.checkins.unshift({ answer: answer, followUp: followUp || null, moment: moment, at: Date.now() });
+        state.moment = moment;
+        held.forEach(function (i) { S.schedule(i.id, Sched.tomorrowMorning()); });
+        S.sortQueue();
+      });
+      emit({ type: 'moment' });
+      return { change: ch, held: held.length };
+    },
     park: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You parked this from triage.'); },
     wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
-    letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); settle(it); },
-    drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); settle(it); },
+    letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
+    drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },
     /* A duplicate card's answers: primary, Same goal, separate tasks; secondary, Merge; third, Keep separate */
     resolve: function (id, which) {
       var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
@@ -208,13 +282,12 @@
       if (text == null || text === it.draft) return;
       it.draft = text; S.log(it, 'guidance', 'You edited the draft.');
     },
+    /* Approved: Fuzz's sender sends it with its own connector tools, in a moment. Until then it can be undone. */
     approve: function (id, text) {
       var it = S.item(id), r = S.recipient(it);
       S.leave(id); S.editDraft(it, text);
-      it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK';
-      S.log(it, 'sent', r ? 'Sent to ' + r.to + ' (' + r.via + ') after you approved it.' : 'Sent after you approved the draft.');
-      sent[id] = clone(it);
-      settle(it);
+      it.state = 'sending'; it.sendKind = 'draft'; it.sendAt = Date.now() + SEND_MS; it.now = 'Sending to ' + (r ? r.to : 'its recipient');
+      S.log(it, 'status', 'You approved the draft. Fuzz will send it' + (r ? ' to ' + r.to + ' (' + r.via + ')' : '') + '.');
     },
     /* A draft that goes nowhere: approving it just files it, so it can be undone. */
     accept: function (id, text) {
@@ -222,7 +295,7 @@
       S.leave(id); S.editDraft(it, text);
       it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Approved by you';
       S.log(it, 'status', 'You approved this.');
-      settle(it);
+      wrapCheck(it);
     },
     revise: function (id, note, text) {
       var it = S.item(id);
@@ -232,9 +305,13 @@
       it.workStep = 0; it.nextAt = Date.now() + 4500; it.now = 'Changing the draft';
       it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
     },
-    markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); settle(it); },
+    markDone: function (id) { var it = S.item(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); wrapCheck(it); },
     replied: function (id) { var it = S.item(id); S.log(it, 'status', 'A reply came in. Back in triage with the reply attached.'); it.updated = true; S.enqueue(it, 'front'); },
-    nudgeSent: function (id, text) { var it = S.item(id); S.editDraft(it, text); it.nextCheck = 'Nudge sent, checking tomorrow'; it.nudge = false; S.log(it, 'sent', 'Sent the follow-up nudge after you approved it.'); sent[id] = clone(it); },
+    nudgeSent: function (id, text) {
+      var it = S.item(id); S.editDraft(it, text);
+      it.state = 'sending'; it.sendKind = 'nudge'; it.sendAt = Date.now() + SEND_MS; it.nudge = false; it.now = 'Sending the nudge';
+      S.log(it, 'status', 'You approved the nudge. Fuzz will send it.');
+    },
     reopen: function (id) { var it = S.item(id); S.log(it, 'status', 'You brought this back.'); S.enqueue(it, 'front'); },
 
     /* ---- capture ---- */
@@ -277,6 +354,7 @@
     startWork: function () { if (!timer) timer = setInterval(tick, 1000); },
     nowText: function (it) {
       if (it.state === 'ai-queued') return 'Next up, waiting for a free slot';
+      if (it.state === 'sending') return it.now || 'Sending';
       if (it.state === 'ai') { var l = it.log[0]; return l && l.kind !== 'status' ? l.text : (it.now || 'Getting started'); }
       return it.now || '';
     }
@@ -284,11 +362,28 @@
 
   /* When the last open task in a project finishes, the project closes on its own and Fuzz celebrates.
      The event waits a moment so it lands after the card has left. */
-  function settle(it) {
+  function wrapCheck(it) {
     var p = S.projectOf(it);
-    if (!p || p.closed || p.celebrated || !S.projectFinished(p)) return;
-    p.celebrated = true;
+    if (!p || p.closed || celebrated[p.id] || !S.projectFinished(p)) return;
+    celebrated[p.id] = true;
     setTimeout(function () { if (S.project(p.id) && S.projectFinished(S.project(p.id))) emit({ type: 'wrapped', project: S.project(p.id) }); }, 1800);
+  }
+  /* Each project as JSON, by id, so a change can tell which projects it touched */
+  function projectsById() { var o = {}; (state.projects || []).forEach(function (p) { o[p.id] = JSON.stringify(p); }); return o; }
+
+  function lowerFirst(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  /* What decides whether a change still undoes: everything about the item but its log, plus whether it's in the queue. */
+  function fingerprint(it) { var c = clone(it); delete c.log; c.queued = S.inQueue(it.id); return JSON.stringify(c); }
+
+  /* Fuzz's sender: sends what you approved, with its own connector, then says so. Sent can't be undone. */
+  function send(it) {
+    var r = it.sendKind === 'nudge' ? { to: it.waitingOn || 'them', via: it.source } : S.recipient(it);
+    if (it.sendKind === 'nudge') { it.state = 'waiting'; it.nextCheck = 'Nudge sent, checking tomorrow'; it.now = ''; }
+    else { it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Sent with your OK'; }
+    it.sendAt = 0; sentN++;
+    S.log(it, 'sent', (it.sendKind === 'nudge' ? 'Sent the follow-up nudge' : 'Sent') + (r ? ' to ' + r.to + ' (' + r.via + ')' : '') + ' after you approved it.');
+    if (it.state === 'done') wrapCheck(it);
+    emit({ type: 'sent', item: it });
   }
 
   function generic(it) {
@@ -328,6 +423,7 @@
   function tick() {
     if (!state) return;
     var t = Date.now(), moved = false;
+    state.items.forEach(function (it) { if (it.state === 'sending' && it.sendAt && t >= it.sendAt) { send(it); moved = true; } });
     state.items.forEach(function (it) {
       if (it.state !== 'ai' || t < (it.nextAt || 0)) return;
       var sc = it.script || generic(it);

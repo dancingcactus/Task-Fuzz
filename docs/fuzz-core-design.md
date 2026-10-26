@@ -1,6 +1,28 @@
 # Fuzz core: design
 
-Status: draft for discussion. Nothing here is built yet.
+Status: draft for discussion. Build-order steps 1 to 5 are built in [`core/`](../core/README.md), with two
+additions to the task record: `context_md`, a Markdown brief the AI writes for tasks with no draft, and
+`question`, the one question it is asking you now. Both are set with the executor's `update_brief` tool
+(or on an extracted ask) and written as `task.brief_updated` events. Calendar times (step 7) are built
+more simply than below: the core never reads a calendar. A task carries up to two **moments**, described
+dates the AI looks up with its own calendar connector (or you type), and the four calendar anchors
+collapse into that one. See [Moments](#moments). Files you attach are kept in a folder per task and handed to the
+executor as paths; a headless executor run may read that user's files folder with its client's own
+read tool, and nothing else (see `core/README.md`, Attachments).
+
+Decided before wiring the UI to the core (each is reflected in the sections below):
+
+- **Undo is per command, not a stack.** Each command undoes on its own. It's refused when a later
+  event changed a field that decides what happened (the state, the lease, the draft…), with the
+  reason; bookkeeping fields a later event changed keep their newer value. See
+  [Events are the source of truth](#events-are-the-source-of-truth).
+- **Check-ins belong to the UI.** The UI decides when to ask and keeps the ADHD niceties; the core
+  records the answer (`POST /checkin`, `checkin.answered`) and applies what it means for the queue.
+  There's no `checkin` card kind.
+- **The Schedule panel draws the core's options** (`card.schedule_options`) and keeps no list of its own.
+- **The AI sends approved drafts with its own connectors.** Approving moves the task to `sending`; a
+  narrow **sender** role sends exactly the approved body and writes `task.sent`. There are no
+  actuators in the core. See [Approval gate and sending](#approval-gate-and-sending).
 
 ## Summary
 
@@ -77,7 +99,7 @@ A single local service. It owns the database and is the only thing that writes t
   [Cards and actions](#cards-and-actions)).
 - **Time resolver**: turns human times like "before the planning review" into real ones, and keeps
   them up to date (see [Scheduling with human time](#scheduling-with-human-time)).
-- **Approval gate**: holds drafts until a human approves, then hands them to an actuator.
+- **Approval gate**: holds drafts until a human approves, then hands them to the sender role, which sends them with its own connectors.
 - **Interfaces**: an HTTP API for UIs, an MCP server for AI workers, a CLI for you, and an event
   stream that UIs subscribe to.
 
@@ -131,7 +153,7 @@ and log zones). The new parts are below.
 ```sql
 users        (id, name, created_at)                    -- one row for now
 events       (id, user_id, ts, actor, type, task_id, payload, caused_by, run_id, model, prompt_version)
-tasks        (id, user_id, state, assignee, title, ask, done_when, project_id, due, order_key, notes,
+tasks        (id, user_id, state, assignee, title, ask, done_when, project_id, due, order_key, notes, context_md, question,
               variant_tags, steps_used, attempts, lease_owner, lease_until,
               schedule_anchor, schedule_fire_at, schedule_hints, updated_event_id)
 projects     (id, user_id, title, done_when, state, created_event_id)   -- made by Fuzz, see Projects stay light
@@ -150,12 +172,18 @@ The spike's `signals`, `candidates`, `entities`, `identifiers`, `aliases`, `task
 
 - **Append-only.** `tasks` is a projection: it can be rebuilt by replaying `events`, and every row
   records the last event it reflects.
-- **`actor`** is `human`, `fuzz:extractor`, `fuzz:executor` or `system`.
+- **`actor`** is `human`, `fuzz:extractor`, `fuzz:executor`, `fuzz:sender` or `system`.
 - **`model` and `prompt_version`** are recorded on every AI-made event. This lets you compare models
   on the same tasks and trace any decision back to what made it.
 - **Undo** writes a compensating event (`task.restored`, with the earlier state in its payload). It
-  never deletes. Something already sent outside can't be undone, which is why the approval gate
-  exists.
+  never deletes. Commands aren't a stack: each one undoes on its own, whatever came after it on other
+  tasks. Undo is refused (409, with the reason) when a later event changed a **decisive** field the undo
+  would put back: a task's state, assignee, lease, notes, question, schedule or title, a card's or
+  draft's status, a draft's body. So once Fuzz has claimed an assigned task, or a draft has been sent,
+  that command can't be undone; you pull the task back instead. A later command you undid and its undo
+  cancel out. Bookkeeping fields (tags, order, deadline level) keep whatever later events set them to.
+  `GET /undo` lists recent commands with `blocked` saying why one no longer undoes. Something already
+  sent outside (`task.sent`) can't be undone, which is why the approval gate exists.
 
 ### Task states
 
@@ -167,6 +195,7 @@ These match the demo's states.
 | `queued` | fuzz | Assigned to Fuzz and waiting for a free slot ("Next up"). |
 | `working` | fuzz | An executor holds the lease. |
 | `review` | human | A draft is waiting for your OK. |
+| `sending` | fuzz | You approved it; Fuzz's sender is sending it with its own connector. Undo takes the approval back until the sender claims it. |
 | `session` | human | Open in a working session with Claude. |
 | `scheduled` | human | Comes back at a human time ("when I'm back at my desk"). Stores an anchor, not just a time. |
 | `waiting` | — | Waiting on someone else. The extractor watches for the reply. |
@@ -175,8 +204,8 @@ These match the demo's states.
 | `merged` | — | Redirects to the task it was merged into. |
 
 What you see in Triage is a list of **cards**, not tasks. A routing card is about one task in
-`triage`. Question, approval and check-in cards are their own records that point at a task (or at
-nothing, for a check-in). See [Cards and actions](#cards-and-actions).
+`triage`. Question and approval cards are their own records that point at a task. Check-ins aren't
+cards in the core: the UI asks, and the core records the answer. See [Cards and actions](#cards-and-actions).
 
 ### Event types
 
@@ -188,12 +217,12 @@ task.claimed    task.step        task.draft_ready task.approved    task.sent
 task.handed_back task.scheduled  task.woke        task.parked      task.waiting
 task.done       task.let_go      task.restored    task.stale       task.deadline_level
 task.reopened   task.reply_in    task.came_back   task.anchor_moved task.anchor_lost
-task.confirmed  task.draft_edited task.sent_back
+task.confirmed  task.draft_edited task.sent_back task.send_failed
 project.created project.linked   project.unlinked project.renamed project.closed
 entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
 permission.asked permission.granted permission.denied
-checkin.due     checkin.answered
+checkin.answered
 run.started     run.finished
 engine.installed engine.removed engine.selected
 ```
@@ -233,6 +262,7 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `create_task(ask, done_when, sources, project?)` | Splits off a task or captures a follow-up. A split-off task joins the original's project | Goes through matching like any other ask |
 | `request_permission(id, scope, resource, why)` | Asks to read a new source or use a connector | Creates a permission card. The task waits until you answer |
 | `suggest_schedule(id, anchor, reason)` | Adds a human-time option for this task | Checked by the core. See [AI suggestions](#ai-suggestions) |
+| `update_brief(id, context_md?, question?)` | Writes the Markdown brief and the one question shown to you | The task card's prompt is the question; answering clears it |
 | `release(id)` | Gives up the lease | A lease that runs out releases itself |
 
 Every call checks that the caller holds the lease on that task and that the task belongs to the
@@ -497,16 +527,25 @@ everything else.
 The skills can also be used from a normal chat ("work through my Fuzz queue"). The tools and rules
 are the same, so this costs nothing extra, but headless runs come first.
 
-## Approval gate and actuators
+## Approval gate and sending
 
 - A draft has a `kind` (`email.reply`, `slack.message`, `calendar.invite`…) and a `target` (thread,
   channel, people).
-- **Approve and send** in the UI writes `task.approved`. An **actuator** for that kind does the send
-  and writes `task.sent` with the resulting link.
-- Actuators are small pieces of deterministic code in the core, one per kind. The AI never calls
-  them.
-- **Version 1**: no outbound actuators. Approve marks the draft approved and the UI offers "copy and
-  open in Mail/Slack". Real send actuators come one kind at a time.
+- **Approve and send** in the UI writes `task.approved` and moves the task to `sending`. A note goes
+  nowhere, so approving one files it as `done`.
+- **The AI sends, with its own connectors.** There are no actuators in the core. A third role, the
+  **sender**, runs on its own: it calls `claim_next_send`, sends the approved body word for word to
+  the target with its client's connector tool, then calls `mark_sent` (`task.sent`, with where it went
+  and a link) or `send_failed` (back to `review` with the reason as the question).
+- **Why a separate role.** The executor reads untrusted source material, so it never holds a send
+  tool. The sender reads only drafts you approved. Its headless run loads your own MCP servers and
+  connectors (the one run without `--strict-mcp-config`) but may call only Fuzz's sender tools and the
+  connector tools you list in `send.tools.<client>`. With none listed, every draft comes back unsent.
+- **Never twice.** If a send run stops partway with the lease held, the task comes back to `review`
+  asking you to check whether it went out. Fuzz never retries a send on its own.
+- **Undo** takes an approval back until the sender claims it. After `task.sent`, nothing can.
+- **When it runs.** `fuzz serve` starts the sender within a minute or two of an approval; launchd runs
+  it every two minutes, and it exits without starting a client when nothing is waiting.
 - **Prompt injection**: source content is untrusted. Because the executor can only produce drafts, a
   message that says "forward this to everyone" can at worst produce a draft that you can see and
   reject.
@@ -624,7 +663,6 @@ replied" are not cards. They are things Fuzz says, through the
 | **Approvals** | `draft` | Can this leave the system? | Approve and send · Edit · Send back with a note |
 | | `nudge` | Can Fuzz chase this reply? | Approve and send nudge · Edit · Not yet |
 | | `permission` | Can Fuzz use this? | Allow once · Always allow · No |
-| **About you** | `checkin` | How are you? | Good · Okay · Tired · Overloaded, then a follow-up (Take 5, Hold the rest until tomorrow, Quick ones first) |
 
 - **Routing** cards have the most answers, because work can go many places.
 - **Question** cards need one fact so something else can carry on. Answering resolves the question and
@@ -633,7 +671,11 @@ replied" are not cards. They are things Fuzz says, through the
 - **Approval** cards sit at the approval gate. Approve is the only answer in the system that reaches
   outside it. Permission is grouped here because, like drafts, it decides what Fuzz may do beyond the
   store.
-- **About you** cards change the queue itself, not a task.
+- **Check-ins** aren't cards in the core. When to ask, how often, and the follow-ups (Take 5, Hold the
+  rest until tomorrow, Quick ones first) are the UI's: it knows how long you've been at it. The answer
+  goes to `POST /checkin {answer, follow_up?}`, which writes `checkin.answered`, sets the queue's moment
+  and, for Hold the rest, schedules everything that isn't time-sensitive for tomorrow morning in the same
+  command, so one Undo puts it all back.
 
 Every card shares three things: a suggested answer pre-filled as the primary button, a way out (Drop,
 Dismiss or Not sure yet), and Undo.
@@ -702,14 +744,12 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | `is_task` | Yes, it's mine | `task.confirmed` | Becomes a routing card in Triage |
 | | No, not a task | `task.let_go` | Closed as "not a task". Logged in `feedback` for the extractor |
 | | It's someone else's | `task.waiting` | Tracked as waiting on that person |
-| `draft`, `nudge` | Approve and send | `task.approved`, then `task.sent` from the actuator | `done`, or back to `waiting` for a nudge |
+| `draft`, `nudge` | Approve and send | `task.approved`, then `task.sent` from the sender | `sending`, then `done`, or back to `waiting` for a nudge. `task.send_failed` brings it back to `review` |
 | | Edit `{body}` | `task.draft_edited` | Stays in `review` |
 | | Send back `{note}` | `task.sent_back` | Back to `queued` with the note |
 | `permission` | Allow once | `permission.granted` | The task carries on |
 | | Always allow | `permission.granted` | A row in `grants`. The task carries on |
 | | No | `permission.denied` | The executor works without it, or hands back |
-| `checkin` | Good, Okay, Tired, Overloaded | `checkin.answered` | Sets the queue's moment (gentle first, quick first) |
-| | Hold the rest until tomorrow | `checkin.answered`, `task.scheduled` for each held task | Held tasks come back tomorrow morning |
 | any question | Not sure yet | `card.postponed` | See below |
 
 ### What the AI may and may not do
@@ -748,12 +788,23 @@ A small, fixed vocabulary. Adding a type is a code change in the core.
 | `later_today` | Later today | After your last meeting today |
 | `at_desk` | When I'm back at my desk | Next time the Mac wakes or unlocks |
 | `day_part` | First thing tomorrow, Monday morning | Your first triage session in that part of the day |
-| `lighter_day` | Sometime next week, on a lighter day | The day in that range with the fewest meetings |
 | `before_due` | The day before it's due | Due date minus a lead time. Only offered when there's a due date |
-| `before_event` | Before the planning review | That calendar event minus a lead time |
-| `after_event` | After this meeting, After my 1:1 with Sam | When that event ends |
-| `next_with_person` | Next time I see Sam | The next event that person is invited to |
+| `moment` | Before the leadership meeting, Next time I see Sam | A described date handed in by the AI or you. See [Moments](#moments) |
 | `exact` | Thu 2:00 PM | The time you picked. Always the last option |
+
+### Moments
+
+Built instead of the calendar anchors `before_event`, `after_event`, `next_with_person` and
+`lighter_day`, which needed the core to read and track a calendar.
+
+- A moment is `{"type": "moment", "key", "label", "at"}`: a short description and the time the task
+  should come back. The AI finds it with its own calendar connector and works out the lead time.
+- A task carries at most two. They go first in the Schedule options. The core checks each one is in
+  the future, before the due date and within a year, and drops it quietly otherwise.
+- Handing in the same `key` again with a new `at` moves a task scheduled on it (`task.anchor_moved`).
+  `"cancelled": true` brings it back to triage with the reason (`task.anchor_lost`).
+- The trade-off: the button reads as the moment's label, not a core template (one line, at most
+  60 characters), and a moved meeting is noticed only when a later run hands it in again.
 
 A scheduled task stores the anchor, for example
 `{"type": "before_event", "event_id": "…", "lead": "1d"}`, plus the time it currently works out to
@@ -928,7 +979,7 @@ Not designed yet. Two choices now keep it cheap:
    `fuzz-extract` replacing the spike's flow (cursors, ingest, propose, judge, apply) through the
    extractor tools, including `is_task` cards.
 7. **Calendar anchors and AI schedule suggestions**, once the core can read the calendar.
-8. **First actuator**, probably email reply. Then the rest, one kind at a time.
+8. **The sender in real runs**: list each client's send tools and try one kind at a time, email reply first.
 9. Web hosting and multiple users, when wanted.
 
 ## Open questions
@@ -942,8 +993,8 @@ Not designed yet. Two choices now keep it cheap:
    On the web the core would need its own integrations.
 4. **Step granularity.** Is one claim one step, or does the executor work until it needs a human or
    runs out of budget? This affects cost and how lively the "Done so far" log looks.
-5. **Undo window.** How far back Undo goes, and whether it can reverse a merge after later events
-   touched the merged task (the spike's `split` handles the simple case).
+5. **Undo window.** How far back Undo goes. (Whether it can reverse a command after later events is
+   settled: only if none of them changed a decisive field it would put back.)
 6. **Retention.** How long raw signals and source content are kept, especially once there are
    several users.
 7. **Approval cards in Triage?** Today drafts wait only in All tasks. Putting them in Triage makes it

@@ -52,11 +52,11 @@ The demo queue has every card type from the mockups and the matching doc:
 - **Handed back**: sits at the end of the queue, Fuzz looks sheepish and asks a quick either/or. Each answer has its own outcome: it replaces Fuzz's suggested instructions (anything you typed stays, after it), can change the draft and who it goes to, and "I'll find it" keeps the task with you, under Yours in Lineup, instead of handing it back to Fuzz.
 - **Entity check** (person and term): Same person / Different people, Save definition.
 - **Possible duplicate**: Same goal, separate tasks / Merge / Keep separate, with the reason shown. On the Priya card, **Same goal** turns the Slack ask into its own task and puts both under a new project, *Q4 readout for Priya*.
+- **Check-in**: comes back through the session, often at first and then less often (after 2 cleared cards, then after at least 2 more and 5 minutes, then 10, then 20), and never while time-sensitive cards are waiting. Good or Okay keeps the usual order, Tired brings gentle cards first (with an optional 5-minute break), Overloaded brings quick cards first (or holds the rest until tomorrow, except anything time-sensitive). When to ask is the UI's call; the answer is recorded once, with its follow-up, the way the core keeps it (`POST /checkin`). Once you answer, the other moods step aside and only one or two next steps remain. The spacing is `CI_FIRST` and `CI_GAP_MIN` in `js/view-triage.js`.
 
 ## Projects
 
 Fuzz groups tasks that share a goal into a project, and you never have to make one (see "Tasks, steps and projects" in `docs/fuzz-core-design.md`). A project is only a **"Part of …" line**: on a Triage card (with "1 of 4 done"), on Lineup rows and in task detail. Tap it for the **project sheet**: the goal's done-when, the soonest deadline, each task with its state and done-when, the latest steps from all of them, and Rename, Take out and It's wrapped up, each with Undo. Taking a task out of a two-task project leaves the other on its own. When the last task is done, the project closes and Fuzz celebrates. Try *Team offsite next week* on the first card (headcount), or the duplicate card to make *Q4 readout for Priya*. Every task's detail also shows its **Done when** line.
-- **Check-in**: comes back through the session, often at first and then less often (after 2 cleared cards, then after at least 2 more and 5 minutes, then 10, then 20), and never while time-sensitive cards are waiting. Good or Okay keeps the usual order, Tired brings gentle cards first (with an optional 5-minute break), Overloaded brings quick cards first (or holds the rest until tomorrow). Once you answer, the other moods step aside and only one or two next steps remain. The spacing is `CI_FIRST` and `CI_GAP_MIN` in `js/view-triage.js`.
 
 Fuzz also works in the background: tasks you assign move through research and drafting on their own, finish as
 **Needs your OK** cards at the back of the triage queue (counted in Lineup under To decide; one you set aside with Not now moves to Yours), and one of them (the dashboard filter bug) gets stuck and comes back to your queue.
@@ -70,7 +70,7 @@ Fuzz also works in the background: tasks you assign move through research and dr
 | 3 | Show the work | Every task has a "Done so far" log (research, action, guidance, status, sent, blocked), and every click in the app writes to it |
 | 4 | Thin records | Tasks hold a reference list (Sources) and the extracted ask, never the full message |
 | 5 | Shared entity service | Entity checks (person, term) and merge/keep-separate matching cards |
-| 6 | Humans approve what can't be undone | A finished draft joins the triage queue as a **Needs your OK** card that says who it goes to and how, lets you edit it or **Ask Fuzz to change it**, and sends only on **Approve and send** (never from a single key). Concurrency starts at five (the sixth task shows "Next up"). Every change that can be undone has **Undo** (an Undo button in the header with a list of recent actions); sending can't be, so it never appears there, and undoing an earlier change never brings a sent message back |
+| 6 | Humans approve what can't be undone | A finished draft joins the triage queue as a **Needs your OK** card that says who it goes to and how, lets you edit it or **Ask Fuzz to change it**, and sends only on **Approve and send** (never from a single key); then Fuzz sends it with its own connected tools, shown as **Sending** in Lineup. Concurrency starts at five (the sixth task shows "Next up"). Every change has **Undo** (an Undo button in the header with a list of recent actions), and each one undoes on its own, the way the core's Undo works. Once something else has changed the same task (Fuzz started on it, it was sent, you moved it again), that change stays in the list, dimmed, with the reason it can't be undone |
 | 8 | Capture costs nothing | New task is one field, one key (N), no categories. |
 | 9 | Lower the cost of starting | "Smallest first step, two minutes" on each task card |
 | 10 | Time is human | Schedule offers three likely times ("when I'm back at my desk", "later today", "before it's due"), with "before the planning review", next week and an exact time behind **More times**. Age is a three-segment cue, not a date |
@@ -89,9 +89,13 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 - The AI work: a timer walks assigned tasks through scripted steps (`js/store.js`, `tick`). Step length is `STEP_MS`.
 - Dictation inserts a fixed sentence. Attached files record only their names.
 - "Work in Claude" moves the task to Current instead of opening anything.
-- Sending goes nowhere. **Ask Fuzz to change it** logs your note and brings the draft back as it was, since there is no model to rewrite it.
+- Sending goes nowhere: a few seconds after you approve, the demo marks it sent. **Ask Fuzz to change it** logs your note and brings the draft back as it was, since there is no model to rewrite it.
 - Source linking and matching (the Task matching doc) is represented by the duplicate and entity cards only.
   A working spike of the matcher itself, as a GitHub Copilot skill, is in [`spikes/task-matching/`](spikes/task-matching/README.md).
+
+The real backend is in [`core/`](core/README.md): the store and event log, cards, the scheduler,
+the MCP server for the AI roles, the HTTP API and the installer for Claude Code and Copilot. `fuzz serve`
+also serves this demo, but the demo doesn't call the core yet.
 
 ## Layout of the code
 
@@ -102,7 +106,8 @@ css/app.css         everything else, driven by theme tokens
 js/themes.js        the Warm Theme System: foundation, eight themes, high contrast, code colours and fonts
 js/code.js          code preview
 js/data.js          demo tasks (all invented)
-js/store.js         shared state, undo snapshots, the background work loop
+js/store.js         shared state, per-change undo, the background work and sending loop
+js/schedule.js      the core's Schedule options, as the API sends them (the demo's stand-in)
 js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, Lineup, New task

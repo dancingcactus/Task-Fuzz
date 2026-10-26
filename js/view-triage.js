@@ -13,6 +13,9 @@
 
   var root, card, stack, stage, alive = false, busy = false, epoch = 0, unsub = null;
   var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false;
+  /* Your answer and follow-up, kept by the core (Store.checkin; POST /checkin) once the check-in closes */
+  var ciAnswer = null, ciFollow = null;
+  var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, awayOpen = false;
@@ -237,31 +240,17 @@
     var d = it.due, tone = d.frac < 0.25 ? 'tight' : d.frac < 0.5 ? 'mid' : 'ok';
     return '<div class="duebox"><div class="duebox-top"><strong>' + esc(d.label) + '</strong><span class="due-' + tone + '">' + esc(d.left) + '</span></div><div class="dbar" aria-hidden="true"><div class="dbar-fill due-' + tone + '" style="width:' + Math.round(d.frac * 100) + '%"></div></div></div>';
   }
-  var WHEN = [
-    { id: 'today', label: 'Later today', when: 'After your last meeting', text: 'later today, after your last meeting', glyph: 'moon', osd: 'LATER TODAY', after: 300 },
-    { id: 'desk', label: 'When I’m back at my desk', when: 'Next time your Mac wakes', text: 'when you’re back at your desk', glyph: 'sun', osd: 'AT YOUR DESK', after: 90 },
-    { id: 'monday', label: 'Monday morning', when: 'First thing in triage', text: 'Monday morning', glyph: 'sun', osd: 'MON 8AM', after: 3600 },
-    { id: 'due', label: 'Before it’s due', when: 'With a day to spare', text: 'before it’s due', glyph: 'cal', osd: 'BEFORE DUE', after: 0, needsDue: true },
-    { id: 'review', label: 'Before the planning review', when: 'Ties it to that meeting', text: 'before the planning review', glyph: 'cal', osd: 'BEFORE REVIEW', after: 0 },
-    { id: 'week', label: 'Sometime next week', when: 'On a lighter day', text: 'sometime next week, on a lighter day', glyph: 'cal', osd: 'NEXT WEEK', after: 8640 }
-  ];
-  /* "With a day to spare" only when there is a day to spare */
-  function whenHint(w, it) {
-    if (w.id !== 'due' || !it.dueAt) return w.when;
-    var m = mins(it);
-    return m < 120 ? 'With a little time to spare' : m < 1440 ? 'An hour ahead' : w.when;
-  }
+  /* The Schedule options are the core's (card.schedule_options; Store.scheduleOptions in this demo):
+     moments the AI found come first, then times that fit how long is left. The panel only draws them. */
+  function schedOpts(it) { return Store.scheduleOptions(it).filter(function (o) { return o.anchor.type !== 'exact'; }); }
   /* The visible key hint. Screen readers get aria-keyshortcuts on the button instead. */
   function kbd(k) { return '<kbd aria-hidden="true">' + k + '</kbd>'; }
   function actionsHTML(it) {
     if (scheduling) {
       /* Three likely times first. The rest, and an exact time, wait behind More times. */
-      var opts = WHEN.map(function (w, i) { return { w: w, i: i }; }).filter(function (o) { return !o.w.needsDue || it.due || it.dueAt; });
-      var top = it.due || it.dueAt ? ['due', 'today', 'desk'] : ['today', 'desk', 'monday'];
-      var first = top.map(function (id) { return opts.filter(function (o) { return o.w.id === id; })[0]; });
-      opts = schedMore ? first.concat(opts.filter(function (o) { return first.indexOf(o) < 0; })) : first;
-      var tiles = opts.map(function (o, n) { return '<button type="button" class="when" data-when="' + o.i + '" aria-keyshortcuts="' + (n + 1) + '"><span>' + esc(o.w.label) + kbd(n + 1) + '</span><small>' + esc(whenHint(o.w, it)) + '</small></button>'; });
-      if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>Next week, a meeting, or an exact time</small></button>');
+      var all = schedOpts(it), opts = schedMore ? all : all.slice(0, 3);
+      var tiles = opts.map(function (o, n) { return '<button type="button" class="when" data-when="' + n + '" aria-keyshortcuts="' + (n + 1) + '"><span>' + esc(o.label) + kbd(n + 1) + '</span><small>' + esc(Sched.hint(o)) + '</small></button>'; });
+      if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
       return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">Pick a rough time. Fuzz finds the right moment around your day.</p>' +
         '<div class="when-grid">' + tiles.join('') + '</div>' +
         (schedMore ? '<div class="exact" id="exact" hidden><label for="exact-dt">Exact time</label><input type="datetime-local" id="exact-dt"><button type="button" class="btn small primary" data-sched="exact-go">Schedule for this time</button></div>' : '') +
@@ -334,8 +323,9 @@
   /* shownAbove: the finding already sits above the instructions, so it isn't repeated here */
   function contextHTML(it, isTask, shownAbove) {
     var h = '';
-    if (isTask && (it.handedBack || it.updated || it.log.length >= 3) && it.log.length) {
-      h += '<p class="leftoff"><strong>Where you left off.</strong> ' + esc(it.log[0].text) + '</p>';
+    var last = it.log.filter(function (l) { return !l.undone && !l.undo; })[0];
+    if (isTask && (it.handedBack || it.updated || it.log.length >= 3) && last) {
+      h += '<p class="leftoff"><strong>Where you left off.</strong> ' + esc(last.text) + '</p>';
     }
     if (it.aiNote && !shownAbove) h += '<section class="ainote"><h3>' + esc(it.aiHeading || 'What Fuzz did') + '</h3><p>' + UI.text(it.aiNote) + '</p></section>';
     if (isTask && it.firstStep) h += '<section class="firststep"><h3>Smallest first step · two minutes</h3><p>' + esc(it.firstStep) + '</p></section>';
@@ -395,8 +385,9 @@
     return h;
   }
 
-  /* A draft Fuzz finished, waiting for your OK. Sending can't be undone, so the card says exactly what
-     goes to whom, lets you change it first, and keeps Send off the single-letter keys. */
+  /* A draft Fuzz finished, waiting for your OK. Once you approve it, Fuzz sends exactly these words with
+     its connected tools, so the card says what goes to whom, lets you change it first, and keeps Send off
+     the single-letter keys. */
   function reviewHTML(it) {
     var r = Store.recipient(it), val = edits[it.id] !== undefined ? edits[it.id] : (it.draft || '');
     var h = tagrow(it, '<span class="tag tag--ok">Needs your OK</span>');
@@ -409,10 +400,10 @@
       '<button type="button" class="btn primary" data-act="send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (r ? '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>' : '<path d="M5 12.5l4.5 4.5L19 7.5"/>') + '</svg>' + (r ? 'Approve and send' : 'Looks good') + '</button>' +
       '<button type="button" class="btn" data-act="revise" aria-expanded="false" aria-controls="revise" aria-keyshortcuts="R">Ask Fuzz to change it' + kbd('R') + '</button>' +
       '<button type="button" class="btn" data-act="notnow" aria-keyshortcuts="L">Not now' + kbd('L') + '</button></div>' +
-      (r ? '<p class="sendnote">Sending can’t be undone. Change anything above first.</p>' : '') +
+      (r ? '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>' : '') +
       '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form></div>';
     h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + contextHTML(it, true);
-    h += '<div class="stamp" aria-hidden="true">SENT</div>';
+    h += '<div class="stamp" aria-hidden="true">OK</div>';
     return h;
   }
 
@@ -480,6 +471,8 @@
     return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack;
   }
   function ciDone() {
+    if (ciAnswer && !ciDemo && ciFollow !== 'hold_rest') Store.checkin(ciAnswer, ciFollow);
+    ciAnswer = null; ciFollow = null;
     if (ciDemo) { ciDemo = false; return; }
     ciCount++; ciNextAt = cleared() + 2; ciLastAt = Date.now();
   }
@@ -683,7 +676,7 @@
     if (ciBusy) return;
     var r = CI_REPLY[kind], ci = $('#checkin');
     ci.querySelectorAll('.mood').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.pick === kind)); });
-    Store.setMoment(r.moment);
+    Store.setMoment(r.moment); ciAnswer = CI_ANSWER[kind];
     Fuzz.setMood(r.mood); if (r.mood === 'happy') Fuzz.pAnim('hop');
     var line = r.longLine && longSession() ? r.longLine : r.line;
     Fuzz.say(line, { type: false }); Say.announce(line);
@@ -705,20 +698,22 @@
     try {
       if (a === 'skip') return ciClose('Okay, no pause. Back to it.');
       if (a === 'go') return ciClose('Okay. Gentle ones first.');
-      if (a === 'slow') return ciClose('Okay. Quick ones first, one at a time.');
+      if (a === 'slow') { ciFollow = 'quick_first'; return ciClose('Okay. Quick ones first, one at a time.'); }
       if (a === 'hold') {
-        ciBusy = true; ciDone();
-        var snap = Store.snapshot();
-        Store.queue().forEach(function (it) { Store.schedule(it.id, '', 'tomorrow morning'); });
+        /* Everything without a deadline goes to tomorrow morning, in one change you can undo */
+        ciBusy = true; ciFollow = 'hold_rest';
+        var held = ciDemo ? null : Store.checkin(ciAnswer || 'overloaded', 'hold_rest');
+        ciDone();
         stats(); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Done. They’ll be waiting for you tomorrow morning.', { type: false });
-        Fuzz.schedGlyph('sun', 'TOMORROW 8AM');
-        Say.offerUndo('Held the rest until tomorrow.', function () { Store.restore(snap); V.refresh(); });
+        var tm = Sched.tomorrowMorning(); Fuzz.schedGlyph(Sched.glyph(tm), 'TOMORROW ' + new Date(tm.fire_at).toLocaleTimeString([], { hour: 'numeric' }).replace(/\s/g, '').toUpperCase());
+        if (held) offer('Held the rest until tomorrow.', held.change);
         await sleep(1500);
         Fuzz.clearSched();
         $('#checkin').hidden = true; ciOpen = false; ciBusy = false; lock(busy);
-        return zeroState();
+        return Store.queue().length ? showNext() : zeroState();   /* questions and anything due stay */
       }
       if (a === 'break') {
+        ciFollow = 'take_5';
         $('#ci-moods').hidden = true; $('#ci-follow').innerHTML = ''; $('#ci-skip').hidden = true; $('#ci-break').hidden = false;
         ciSecs = 300; paintBreak(); $('#ci-break [data-ci="back"]').focus({ preventScroll: true });
         Fuzz.setMood(Store.inState('ai').length ? 'working' : 'idle');
@@ -782,10 +777,11 @@
     Fuzz.say(line || V_.inL[r]);
     /* The card heads for Fuzz while his reaction is still playing. */
     await sleep(rush ? 150 : 250);
-    var snap = Store.snapshot(); if (set) Object.assign(it, set);
-    var waited = Store.assign(it.id, instr), title = it.title;
-    /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting. */
-    Say.offerUndo('Assigned “' + title + '” to Fuzz.', function () { Store.restore(snap); V.refresh(); }, waited ? 'Assigned “' + title + '” to Fuzz. It’s next up; five are running.' : null);
+    var waited, title = it.title;
+    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr); });
+    /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting.
+       Once Fuzz starts on it, it can't be undone any more; you'd pull it back from Lineup instead. */
+    offer('Assigned “' + title + '” to Fuzz.', ch, waited ? 'Assigned “' + title + '” to Fuzz. It’s next up; five are running.' : null);
     var shown = null, flown = fly(card, root.querySelector('#bot'), { scale: 0.08, rot: -18, dur: rush ? 340 : 600 }).then(function () { shown = bringNext(); });
     await Promise.all([flown, sleep(Math.max(rush ? 300 : 650, V_.ms * (rush ? 0.55 : 0.8)) * 0.7)]);
     Fuzz.setArm('none');
@@ -816,8 +812,7 @@
     card.classList.add('stamped');
     await sleep(220);
     if (!Fuzz.isCalm()) card.classList.add('shake');
-    var snap = Store.snapshot(); Store.done(it.id);
-    Say.offerUndo('Marked “' + it.title + '” done.', function () { Store.restore(snap); V.refresh(); });
+    offer('Marked “' + it.title + '” done.', Store.track([it.id], function () { Store.done(it.id); }));
     Fuzz.flash(); Fuzz.setMood(V_.mood); Fuzz.setArm('cheer'); V_.fx(card);
     streak++; stats();
     Fuzz.say(rushT ? 'with time to spare.' : (V_.say || STAMPS[Store.stats().done % STAMPS.length]), { cls: 'sign', type: false });
@@ -839,8 +834,7 @@
     streak = 0;
     var b = card.querySelector('[data-act="claude"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
     Fuzz.setMood('stare'); Fuzz.say('Oh. Claude.', { type: false });
-    var snap = Store.snapshot(); Store.session(it.id);
-    Say.offerUndo('Opened “' + it.title + '” in Claude.', function () { Store.restore(snap); V.refresh(); }, 'Opened “' + it.title + '” in Claude. In this demo it just moves to Current.');
+    offer('Opened “' + it.title + '” in Claude.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in Claude. In this demo it just moves to Current.');
     var shown = null, exit = sleep(350).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
       return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 460, easing: 'cubic-bezier(.5,0,.8,.4)' });
@@ -868,19 +862,18 @@
       var sb = card.querySelector('[data-act="schedule"]'); if (sb) { sb.disabled = false; sb.focus(); }
       return;
     }
-    var w = pickedIdx === 99 ? exactOpt : WHEN[pickedIdx];
+    var w = pickedIdx === 99 ? exactOpt : schedOpts(it)[pickedIdx], when = w.label.charAt(0).toLowerCase() + w.label.slice(1);
     var btn = card.querySelector('[data-when="' + pickedIdx + '"]'); if (btn) btn.classList.add('picked');
     card.querySelectorAll('[data-when],[data-sched]').forEach(function (b) { b.disabled = true; });
-    if (it.dueAt && w.after > mins(it)) {
+    if (it.dueAt && w.fire_at && new Date(w.fire_at).getTime() > it.dueAt) {
       Fuzz.setMood('worried'); Fuzz.say('Heads up, that lands after the deadline. Scheduling it anyway.');
       Say.announce('Heads up, that lands after the deadline. Scheduling it anyway.');
       await sleep(2000);
     }
     Fuzz.setMood('happy'); Fuzz.setArm('none'); Fuzz.pAnim('hop');
-    Fuzz.say('Done! I’ll bring it back ' + w.text + '.');
-    Fuzz.schedGlyph(w.glyph, w.osd);
-    var snap = Store.snapshot(); Store.schedule(it.id, w.label, w.text);
-    Say.offerUndo('Scheduled “' + it.title + '” for ' + w.text + '.', function () { Store.restore(snap); V.refresh(); });
+    Fuzz.say('Done! I’ll bring it back ' + when + '.');
+    Fuzz.schedGlyph(Sched.glyph(w), Sched.osd(w));
+    offer('Scheduled “' + it.title + '”: ' + when + '.', Store.track([it.id], function () { Store.schedule(it.id, w); }));
     /* The card flies off while the schedule shows on Fuzz's screen. */
     var shown = null, exit = sleep(400).then(function () { return fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 520 }); }).then(function () { shown = bringNext(); });
     await Promise.all([exit, sleep(1050)]);
@@ -893,20 +886,19 @@
   var schedResolve = null, exactOpt = null;
   function renderCardKeep() { var it = cur(); if (!it) return; $('#actions').innerHTML = actionsHTML(it); var st = card.querySelector('.stale'); if (st && scheduling) st.hidden = true; else if (st) st.hidden = false; }
 
-  /* Approve a draft. Sending can't be taken back, so it never joins the Undo list; a draft just for you
-     is only filed, and that can be undone. */
+  /* Approve a draft. Fuzz then sends it with its own connected tools; Undo takes the approval back
+     until it has gone out, and not after. A draft just for you is only filed. */
   async function sendDraft() {
     var it = cur(); if (!it || it.state !== 'review') return;
     var r = Store.recipient(it), text = $('#draft') ? $('#draft').value : it.draft, title = it.title;
-    var st = card.querySelector('.stamp'); st.className = 'stamp s4'; st.textContent = r ? 'SENT' : 'OK';
+    var st = card.querySelector('.stamp'); st.className = 'stamp s4'; st.textContent = 'OK';
     card.classList.add('stamped');
     await sleep(220);
-    var snap = Store.snapshot();
-    if (r) { Store.approve(it.id, text); Say.announce('Sent to ' + r.to + '.'); }
-    else { Store.accept(it.id, text); Say.offerUndo('Approved “' + title + '”.', function () { Store.restore(snap); V.refresh(); }); }
+    if (r) offer('Approved “' + title + '” to send.', Store.track([it.id], function () { Store.approve(it.id, text); }), 'Approved. Fuzz is sending it to ' + r.to + '.');
+    else offer('Approved “' + title + '”.', Store.track([it.id], function () { Store.accept(it.id, text); }));
     delete edits[it.id];
     Fuzz.flash(); Fuzz.setMood('proud'); Fuzz.setArm('salute'); Fuzz.pAnim('bow');
-    Fuzz.say(r ? 'Sent to ' + r.to + '.' : 'Filed. Thanks for checking.', { cls: 'sign', type: false });
+    Fuzz.say(r ? 'On its way to ' + r.to + '.' : 'Filed. Thanks for checking.', { cls: 'sign', type: false });
     stats();
     var shown = null, exit = sleep(260).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
@@ -919,9 +911,10 @@
   async function reviseDraft() {
     var it = cur(); if (!it || it.state !== 'review') return;
     var note = $('#revise-text').value.trim(), title = it.title;
-    var snap = Store.snapshot(); Store.revise(it.id, note, $('#draft') ? $('#draft').value : null);
+    var draft = $('#draft') ? $('#draft').value : null;
+    var ch = Store.track([it.id], function () { Store.revise(it.id, note, draft); });
     delete edits[it.id];
-    Say.offerUndo('Sent “' + title + '” back to Fuzz to change.', function () { Store.restore(snap); V.refresh(); });
+    offer('Sent “' + title + '” back to Fuzz to change.', ch);
     Fuzz.setMood('eager'); Fuzz.setArm('salute'); Fuzz.say('Got it. I’ll bring it back changed.', { type: false });
     var shown = null, flown = fly(card, root.querySelector('#bot'), { scale: 0.08, rot: -18, dur: 600 }).then(function () { shown = bringNext(); });
     await Promise.all([flown, sleep(700)]);
@@ -931,12 +924,17 @@
     await showNext(shown);
   }
 
+  /* Each change undoes on its own (the core's model, not a stack). Undo refuses, with Fuzz saying why,
+     once something else has changed the same task since. */
+  function offer(label, ch, spoken) {
+    Say.offerUndo(label, function () { var why = ch.undo(); if (!why) V.refresh(); return why; }, spoken, ch.blocked);
+  }
+
   /* Clear a card quickly without a full ceremony: park, wait, let go, drop. */
   async function quickClear(label, message, change, line, mood) {
     var it = cur(); if (!it) return;
     streak = 0;
-    var snap = Store.snapshot(); change(it);
-    Say.offerUndo(label + ' “' + it.title + '”.', function () { Store.restore(snap); V.refresh(); }, message);
+    offer(label + ' “' + it.title + '”.', Store.track([it.id], function () { change(it); }), message);
     Fuzz.setMood(mood || 'happy'); Fuzz.say(line, { type: false }); if (mood !== 'sheepish') Fuzz.pAnim('hop');
     if (Fuzz.isCalm()) await fadeOut();
     else await exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateX(-110%) rotate(-8deg)', opacity: 0 }], { duration: 260, easing: 'ease-in' });
@@ -954,9 +952,9 @@
   }
   async function answerEntity(which) {
     var it = cur(); if (!it || it.kind === 'task') return;
-    var snap = Store.snapshot(); Store.resolve(it.id, which);
+    var ch = Store.track([it.id, it.dupOf], function () { Store.resolve(it.id, which); });
     var msg = it.answers[which];
-    Say.offerUndo('Answered “' + it[which] + '”: ' + it.title + '.', function () { Store.restore(snap); V.refresh(); }, msg);
+    offer('Answered “' + it[which] + '”: ' + it.title + '.', ch, msg);
     var shown = null, exit = sleep(250).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
       return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px) scale(.96)', opacity: 0 }], { duration: 300, easing: 'ease-in' });
@@ -1023,8 +1021,9 @@
         else if (t.dataset.sched === 'exact') { var ex = $('#exact'); ex.hidden = !ex.hidden; var dt = $('#exact-dt'); if (!dt.value) { var d = new Date(Date.now() + 3600000); d.setMinutes(0, 0, 0); dt.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); } }
         else if (t.dataset.sched === 'exact-go') {
           var v = $('#exact-dt').value; if (!v) return;
-          var when = new Date(v), txt = when.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-          exactOpt = { label: txt, text: 'on ' + txt, glyph: 'cal', osd: txt.toUpperCase().slice(0, 14), after: (when.getTime() - Date.now()) / 60000 };
+          var when = new Date(v);
+          if (when.getTime() <= Date.now()) { Fuzz.say('That time has already gone by. Pick a later one?', { type: false }); return; }
+          exactOpt = Sched.exact(when);
           if (schedResolve) schedResolve(99);
         }
         return;
