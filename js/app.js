@@ -138,7 +138,7 @@
     var main = document.getElementById('view');
     main.innerHTML = '';
     main.className = 'view view--' + name;
-    if (name === 'triage') Say.hideDock(); /* Fuzz speaks from the perch there */
+    if (name === 'triage' || name === 'capture') Say.hideDock(); /* Fuzz speaks from the perch there */
     currentName = name; current = ROUTES[name].view;
     document.getElementById('hprog').hidden = name !== 'triage';
     document.body.dataset.view = name;
