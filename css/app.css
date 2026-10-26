@@ -611,3 +611,23 @@ html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
 
 .selectrow select { width: 100%; min-height: 44px; padding: 0 12px; border: var(--bw) solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font-size: 14px; }
 .palettes .pal .pal-sw i:nth-child(2) { opacity: .95; }
+
+/* Projects: a "Part of …" line on cards and tasks, and the project sheet. Never a screen of its own. */
+.partof { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 13px; font-weight: 600; text-align: left; }
+.partof svg { flex: none; color: var(--link); }
+.partof:hover { color: var(--ink); border-color: var(--accent); }
+.ps-goal p { margin: 0; line-height: 1.5; font-size: 16px; }
+.ps-goal .ps-due { font-size: 13px; color: var(--muted); }
+.donewhen p { margin: 0; line-height: 1.5; }
+.ps-tasks { list-style: none; margin: 0; padding: 0; border: var(--bw) solid var(--line); border-radius: 16px; overflow: hidden; }
+.ps-tasks > li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.ps-tasks > li + li { border-top: var(--bw) solid var(--line); }
+.ps-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ps-name, .ps-open { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.ps-open { padding: 0; border: 0; background: none; color: var(--link); text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.ps-dw { font-size: 12.5px; color: var(--muted); }
+.ps-side { flex: none; display: flex; align-items: center; gap: 8px; }
+@media (max-width: 560px) {
+  .ps-tasks > li { flex-wrap: wrap; }
+  .ps-side { width: 100%; justify-content: space-between; }
+}
