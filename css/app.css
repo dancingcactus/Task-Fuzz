@@ -462,11 +462,7 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 
 /* ---------- New task ---------- */
 .capture { display: flex; flex-direction: column; gap: 24px; }
-/* Matches Triage: Fuzz perched on the card's top edge, the card itself is .card */
-.cap-stage { padding-top: 6px; }
-.cap-perch { position: relative; z-index: 4; display: flex; align-items: flex-end; gap: 10px; margin-bottom: -14px; padding-left: 6px; }
-.cap-fuzz { width: 88px; flex: none; }
-.cap-perch .bubble { margin-bottom: 34px; }
+/* Matches Triage: the same .stage and .perch (css/fuzz.css), the card itself is .card */
 .cap-card { padding-top: 26px; }
 .cap-title { font-family: var(--font-display); font-size: 27px; line-height: 1.2; font-weight: 800; text-wrap: balance; }
 .cap-title:focus { outline: none; }
@@ -536,7 +532,6 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
   .appbar-right .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .appbar-right .themebtn { justify-content: center; width: 44px; padding: 0; position: relative; }
   .undobtn .navcount { position: absolute; top: -4px; right: -4px; min-width: 18px; padding: 0 5px; line-height: 18px; font-size: 11px; }
-  .cap-fuzz { width: 60px; }
   .fuzz-dock { right: 8px; bottom: calc(84px + env(safe-area-inset-bottom)); } /* above the floating button */
   .fab[hidden] ~ .fuzz-dock { bottom: calc(8px + env(safe-area-inset-bottom)); }
   /* the status drops under the title; Fuzz's lane keeps its small step dots beside it */

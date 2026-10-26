@@ -3,7 +3,8 @@
 (function () {
   var V = {};
   var esc = UI.esc;
-  var root, unsub = null, timer = 0, listenTimer = 0, listening = false, attached = [], confirm = '', draft = '', escKey = null;
+  var root, unsub = null, timer = 0, listenTimer = 0, moodTimer = 0, boredTimer = 0, listening = false, attached = [], confirm = '', draft = '', escKey = null;
+  var IDLE_LINE = 'Get it out of your head. I’ll sort it later.';
 
   function statusFor(c) {
     var it = c.ref ? Store.item(c.ref) : null;
@@ -34,9 +35,11 @@
 
   V.mount = function (container) {
     root = container; listening = false; confirm = '';
-    /* Same shape as Triage: Fuzz on a perch with his speech bubble, then one card. */
-    root.innerHTML = '<section class="capture" aria-labelledby="cap-h"><div class="cap-stage">' +
-      '<div class="cap-perch">' + Fuzz.mini('good', { cls: 'cap-fuzz' }) + '<div class="bubble" id="say" role="status" aria-live="polite"></div></div>' +
+    /* Same shape as Triage: the full Fuzz on a perch with his speech bubble, then one card.
+       He's for looking at; the capture confirmation reaches screen readers through Say.announce. */
+    root.innerHTML = '<section class="capture" aria-labelledby="cap-h"><div class="stage cap-stage" id="stage">' +
+      '<div class="fx" id="fx"></div>' +
+      '<div class="perch" id="perch"><div class="pwrap" id="pwrap" aria-hidden="true">' + window.FUZZ_SVG + '</div><div class="bubble" id="bubble"></div></div>' +
       '<div class="card cap-card">' +
         '<h1 id="cap-h" class="cap-title">What is on your mind?</h1>' +
         '<div class="drop" id="drop"><button type="button" class="dropbtn" id="dropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
@@ -57,18 +60,30 @@
     function paintList() { $('#cap-list').innerHTML = listHTML(); }
     /* What you've typed survives leaving the page, so Esc never costs you a half-written thought. */
     ta.value = draft;
-    ta.addEventListener('input', function () { draft = ta.value; sync(); if (confirm) { confirm = ''; paintSay(); } });
+    ta.addEventListener('input', function () { draft = ta.value; sync(); nudge(); if (confirm) { confirm = ''; paintSay(); } });
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } });
-    function paintSay() {
-      var b = $('#say');
-      b.textContent = confirm || 'Get it out of your head. I’ll sort it later.';
-      b.classList.remove('pop'); if (confirm) { void b.offsetWidth; b.classList.add('pop'); }
+    function paintSay() { Fuzz.say(confirm || IDLE_LINE, { type: false }); }
+    /* Mood for a moment, then back to idle (unless something else has changed it since). */
+    function moodFor(m, ms) {
+      clearTimeout(moodTimer); Fuzz.setMood(m);
+      moodTimer = setTimeout(function () { if (Fuzz.mood() === m) Fuzz.setMood('idle'); }, ms);
     }
-    function addFiles(list) { Array.prototype.forEach.call(list, function (f) { attached.push(f.name); }); paintFiles(); }
+    /* Left alone with an empty field, he goes back to surfing channels. Any activity wakes him. */
+    function nudge() {
+      clearTimeout(boredTimer);
+      if (Fuzz.mood() === 'bored') { Fuzz.setMood('idle'); paintSay(); }
+      boredTimer = setTimeout(function () { if (Fuzz.mood() === 'idle' && !ta.value.trim() && !attached.length && !listening) Fuzz.startBored(); }, 30000);
+    }
+    function addFiles(list) {
+      if (!list || !list.length) return;
+      Array.prototype.forEach.call(list, function (f) { attached.push(f.name); }); paintFiles();
+      nudge(); Fuzz.pAnim('gulp'); moodFor('eager', 1400);
+      Fuzz.say(list.length === 1 ? 'Ooh, reading material. I’ll look at it with your task.' : 'A whole stack. I’ll read them with your task.', { type: false });
+    }
     $('#dropbtn').addEventListener('click', function () { $('#file').click(); });
     $('#file').addEventListener('change', function (e) { addFiles(e.target.files); e.target.value = ''; });
     var drop = $('#drop');
-    ['dragenter', 'dragover'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+    ['dragenter', 'dragover'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); if (!drop.classList.contains('over')) { nudge(); Fuzz.setMood('eager'); } drop.classList.add('over'); }); });
     ['dragleave', 'drop'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
     drop.addEventListener('drop', function (e) { if (e.dataTransfer) addFiles(e.dataTransfer.files); });
     $('#files').addEventListener('click', function (e) { var b = e.target.closest('[data-rm]'); if (!b) return; attached.splice(parseInt(b.dataset.rm, 10), 1); paintFiles(); });
@@ -76,12 +91,15 @@
     /* Dictation is simulated in this demo. */
     var mic = $('#cap-mic');
     mic.addEventListener('click', function () {
-      listening = !listening; clearTimeout(listenTimer);
+      listening = !listening; clearTimeout(listenTimer); nudge();
       mic.setAttribute('aria-pressed', String(listening)); $('#mic-l').textContent = listening ? 'Listening…' : 'Dictate';
+      if (listening) { clearTimeout(moodTimer); Fuzz.setMood('eager'); Fuzz.pAnim('lean'); Fuzz.say('I’m all antennas. Go ahead.', { type: false }); }
+      else { Fuzz.setMood('idle'); paintSay(); }
       if (listening) listenTimer = setTimeout(function () {
         var said = 'Check in with Dana about the offsite budget';
         ta.value = (ta.value ? ta.value.replace(/\s+$/, '') + ' ' : '') + said; draft = ta.value; listening = false;
         mic.setAttribute('aria-pressed', 'false'); $('#mic-l').textContent = 'Dictate'; sync(); ta.focus();
+        Fuzz.setMood('idle'); Fuzz.say('Got all of that. Capture it when you’re ready.', { type: false });
       }, 2200);
     });
 
@@ -93,10 +111,15 @@
       ta.value = ''; draft = ''; attached = []; paintFiles(); listening = false; clearTimeout(listenTimer);
       mic.setAttribute('aria-pressed', 'false'); $('#mic-l').textContent = 'Dictate';
       confirm = docs.length ? 'Captured. I’m reading your ' + (docs.length === 1 ? 'document' : 'documents') + ' now.' : 'Captured. It’s waiting in your triage queue.';
-      paintSay(); paintList(); ta.focus();
+      paintSay(); paintList(); ta.focus(); nudge();
+      Say.announce(confirm);
+      /* Same little celebration as a triage win: a hop, a check on his screen, a bit of confetti. */
+      Fuzz.pAnim('hop'); Fuzz.checkGlyph(1300); Fuzz.confetti(go);
+      moodFor(docs.length ? 'thinking' : 'happy', docs.length ? 2600 : 1400);
     }
     go.addEventListener('click', submit);
-    paintFiles(); paintList(); paintSay();
+    Fuzz.mount(root, {});
+    paintFiles(); paintList(); paintSay(); nudge();
     unsub = Store.on(function () { paintList(); });
     timer = setInterval(paintList, 2000);
     /* Esc goes back to Triage (an open popover takes Escape first, in app.js). */
@@ -106,7 +129,8 @@
   };
   V.unmount = function () {
     document.removeEventListener('keydown', escKey);
-    if (unsub) unsub(); unsub = null; clearInterval(timer); clearTimeout(listenTimer); root = null;
+    if (unsub) unsub(); unsub = null; clearInterval(timer); clearTimeout(listenTimer); clearTimeout(moodTimer); clearTimeout(boredTimer);
+    Fuzz.unmount(); root = null;
   };
 
   window.CaptureView = V;
