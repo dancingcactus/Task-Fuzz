@@ -40,21 +40,22 @@ class ClaudeCode(Adapter):
         return path
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
-                         send_tools=None):
+                         send_tools=None, read_tools=None):
         """Only Fuzz's server and its tools, nothing else allowed, nobody to ask. With files_dir, Read is the
         one built-in tool, allowed only inside that folder (`//` makes the rule's path absolute).
 
-        The sender is the one run that loads your own MCP servers and connectors (no --strict-mcp-config),
-        since it sends with them. It may still call only Fuzz's sender tools and the send_tools you listed."""
+        The sender loads your own MCP servers and connectors (no --strict-mcp-config), since it sends with
+        them. It may still call only Fuzz's sender tools and the send_tools you listed. The executor loads
+        them too when you listed read_tools, and may call only those."""
         allowed = [f"mcp__{self.mcp_name(role)}__*"]
-        if role == "sender":
-            allowed += list(send_tools or [])
+        extra = list((send_tools if role == "sender" else read_tools if role == "executor" else None) or [])
+        allowed += extra
         tools = ""
         if files_dir:
             tools = "Read"
             allowed.append(f"Read(/{str(files_dir).rstrip('/')}/**)")
         argv = [self.exe, "-p", self.prompt(role, task_id),
-                "--mcp-config", str(config_path), *(["--strict-mcp-config"] if role != "sender" else []),
+                "--mcp-config", str(config_path), *([] if extra or role == "sender" else ["--strict-mcp-config"]),
                 "--tools", tools,
                 "--allowedTools", *allowed,
                 "--permission-mode", "dontAsk",

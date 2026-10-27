@@ -41,6 +41,11 @@ def client_status(core, name, check_start=True):
                    "note": None if send_tools else
                    f"No connector tools are allowed for sending, so approved drafts come back to you unsent. "
                    f"List them in send.tools.{name}, as {adapter.label} names them."}
+    read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(name) or [])
+    out["read"] = {"tools": read_tools, "status": "set" if read_tools else "none",
+                   "note": None if read_tools else
+                   f"The executor has only Fuzz's tools, so it can't search or check your calendar. To let it, "
+                   f"list read-only connector tools in read.tools.{name}, as {adapter.label} names them."}
     fixes = []
     if not found["found"]:
         fixes.append(f"Install {adapter.label} (no `{adapter.exe}` on PATH)")

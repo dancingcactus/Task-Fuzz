@@ -145,6 +145,18 @@ class HeadlessRuns(CoreCase):
         cp = adapters.get("copilot").headless_command("sender", "/tmp/run.json", send_tools=["slack(send_message)"])
         self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"], ["fuzz-sender", "slack(send_message)"])
 
+    def test_the_executor_may_call_only_the_lookup_tools_you_listed(self):
+        read = ["mcp__claude_ai_Glean__search"]
+        argv = adapters.get("claude-code").headless_command("executor", "/tmp/run.json", read_tools=read)
+        self.assertNotIn("--strict-mcp-config", argv, "it looks things up with your own connectors")
+        i = argv.index("--allowedTools")
+        self.assertEqual(argv[i + 1:i + 3], ["mcp__fuzz-executor__*"] + read)
+        se = adapters.get("claude-code").headless_command("sender", "/tmp/run.json", read_tools=read)
+        self.assertNotIn(read[0], se, "only the executor gets lookup tools")
+        cp = adapters.get("copilot").headless_command("executor", "/tmp/run.json", read_tools=["Glean"])
+        self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"], ["fuzz-executor", "Glean"])
+        self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--deny-tool"], ["shell", "write"])
+
     def test_the_extractor_gets_no_files(self):
         argv = adapters.get("claude-code").headless_command("extractor", "/tmp/run.json")
         self.assertEqual(argv[argv.index("--tools") + 1], "")

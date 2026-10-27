@@ -10,7 +10,7 @@ Python 3.11+, SQLite, the official MCP Python SDK (v2) and `jsonschema`. Nothing
 ```bash
 pip install -e core            # gives you the `fuzz` command (or: python3 -m fuzz, with core/ on PYTHONPATH)
 fuzz init --me-name Justin --me-email you@example.com --me-slack W123
-fuzz serve                     # http://127.0.0.1:8765/ — the API, the event stream and the demo UI
+fuzz serve                     # the API, the event stream and the UI; open the ?token= link it prints
 ```
 
 The store lives in `~/Library/Application Support/Fuzz/` on a Mac (`~/.local/share/fuzz` elsewhere).
@@ -167,6 +167,20 @@ allowing one MCP tool is still to confirm (`fuzz/adapters/copilot.py`). `fuzz se
 within a couple of minutes of an approval, and launchd runs it every two minutes; it exits without
 starting a client when nothing waits.
 
+## Lookup tools for the executor
+
+The executor has only Fuzz's own tools (and read access to your attachments) unless you allow it
+connector tools for looking things up, such as a search or a calendar. List only tools that read:
+whatever is listed runs without asking.
+
+```bash
+fuzz config set read.tools.copilot '["Glean"]'      # every tool of Copilot's Glean server
+fuzz config set read.tools.claude-code '["mcp__claude_ai_Google_Calendar__list_events"]'
+```
+
+With any listed, a Claude Code executor run also loads your own MCP servers (no `--strict-mcp-config`),
+and may call only Fuzz's executor tools plus those.
+
 ## Calendar times
 
 The core never reads your calendar. Instead a task carries up to two **moments**: described dates
@@ -214,9 +228,8 @@ the client's own tool aren't in it.
 
 ## Not built yet
 
-- Pointing the demo UI at the core (its `tick` is still simulated), and the Settings > Engine page. The
-  demo already works the core's way: per-command Undo, the core's Schedule options, check-in answers
-  recorded once, approved drafts going through `sending`.
+- The Settings > Engine page. (The UI itself runs on the core: open the link `fuzz serve` prints. See
+  `js/live.js`.)
 - "Later today" is 4 PM, not "after your last meeting", since the core doesn't read the calendar.
 - Waking the executor on `task.assigned` instead of on a timer.
 - Automatic entity cards. The answers exist; the matcher doesn't raise them yet.
