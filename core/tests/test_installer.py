@@ -50,6 +50,11 @@ class FakeHome(CoreCase):
             with open(p, "w") as f:
                 f.write(f"#!{sys.executable}\n" + open(os.path.join(HERE, "stub_client.py")).read())
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
+        # launchd labels are global: the real launchctl would swap your running com.fuzz.* jobs for these
+        p = os.path.join(self.bin, "launchctl")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         env = mock.patch.dict(os.environ, {"HOME": self.fake, "PATH": self.bin + os.pathsep + os.environ["PATH"]})
         env.start()
         self.addCleanup(env.stop)
@@ -73,7 +78,7 @@ class Install(FakeHome):
         self.assertTrue(out["engine_set"], "the first client installed becomes the engine")
         self.assertEqual(self.core.config["engine"]["client"], "claude-code")
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
-        self.assertIn("prompt_version: executor-0.9", skill.read_text())
+        self.assertIn("prompt_version: executor-0.11", skill.read_text())
         reg = self.stub_registry()
         self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor", "fuzz-sender"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])

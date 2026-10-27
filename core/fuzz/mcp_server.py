@@ -81,16 +81,19 @@ def build(core, role):
 
         @srv.tool()
         def save_draft(task_id: int, kind: str, target: str, body: str, final: bool = True,
-                       attach: list[str] | None = None) -> dict:
+                       attach: list[str] | None = None, reply_to: int | None = None) -> dict:
             """Store a draft for the human to approve. The task moves to review. kind: email.reply, email.new,
-            slack.message, calendar.invite, nudge.email, nudge.slack or note. target: who and where, specific enough
-            to send to ("Marcus, Slack #offsite-planning"). This is the only way toward anything outside the system:
+            slack.message, calendar.invite, nudge.email, nudge.slack or note. target: only who it's to, as the
+            person would say it on the card ("Stefano Marinoni <smarinoni@adobe.com>", "Slack #offsite-planning").
+            No thread, source number or explanation: it's shown as "Send this to …".
+            reply_to: the id of the task's source whose thread it goes in. Required for email.reply; for a
+            slack.message or nudge.* in a source's thread. This is the only way toward anything outside the system:
             once the human approves it, Fuzz's sender sends exactly this body. A note is only filed.
             final: false for a note that prepares a step still ahead ("send the update next week"). Call
             suggest_schedule (or update_brief with due) first: approving it schedules the task for then
             instead of closing it. attach: file names in the task's output_dir (as output_files lists them) for
             the sender to attach to the message."""
-            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach)
+            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach, reply_to)
 
         @srv.tool()
         def hand_back(task_id: int, question: str | None = None, options: list[str] | None = None,
@@ -143,7 +146,7 @@ def build(core, role):
         @srv.tool()
         def finish_gathering(task_id: int, result: bool = False, options: list[str] | None = None) -> dict:
             """End a gather (claim_next_task returned gathering: true): the task goes to the person's triage
-            with the brief you wrote. Call it once the context is in, or straight away if nothing helps.
+            with the brief you wrote, or, when it says comes_back, waits until then. Call it once the context is in, or straight away if nothing helps.
             result: true when the task was only to look something up and the brief is the finished
             deliverable (a summary, an agenda, an answer); allowed when the task says may_finish. It then
             arrives done, Done first, with at most one follow-up in options. Write the brief first."""
@@ -157,8 +160,9 @@ def build(core, role):
     elif role == "sender":
         @srv.tool()
         def claim_next_send() -> dict:
-            """Lease the oldest approved draft waiting to go out: its kind, target, the exact body to send, and
-            attachments (each a name and a path) to attach to it."""
+            """Lease the oldest approved draft waiting to go out: its kind, target (who it's to), thread (the
+            message it replies in: title, link and the connector's ids, or null for a new one), the exact body to
+            send, and attachments (each a name and a path) to attach to it."""
             return _call(tools.claim_next_send, core)
 
         @srv.tool()

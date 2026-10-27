@@ -12,11 +12,13 @@ from . import cards, events, tasks
 from .db import FuzzError, iso
 
 DRAFT_KINDS = ("email.reply", "email.new", "slack.message", "calendar.invite", "nudge.email", "nudge.slack", "note")
+IN_THREAD = ("email.reply", "slack.message", "nudge.email", "nudge.slack")   # kinds that can go in a source's thread
 BODY_MAX = 32 * 1024
 
 
-def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor", attach=None):
-    """attach: file names in the task's output folder, for the sender to attach when it sends."""
+def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor", attach=None, reply_to=None):
+    """attach: file names in the task's output folder, for the sender to attach when it sends.
+    reply_to: the id of the task's source whose thread it goes in. target is only who it's to."""
     if kind not in DRAFT_KINDS:
         raise FuzzError(f"kind must be one of {', '.join(DRAFT_KINDS)}", "kind")
     if not final and kind != "note":
@@ -27,6 +29,7 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
         raise FuzzError(f"body is over {BODY_MAX // 1024} KB", "body")
     t = tasks.require(core, task_id)
     attach = _attachments(core, t["id"], kind, attach)
+    reply_to = _thread(core, t["id"], kind, reply_to)
     if not final and _comes_back(core, t)[0] is None:
         raise FuzzError("A prep note needs to know when the real step is due. Call suggest_schedule with that "
                         "time (or update_brief with due), then save the note again", "final")
@@ -36,7 +39,8 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
         for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
             ch.draft(d["id"], status="withdrawn")
         ch.draft(did, task_id=t["id"], kind=kind, target=target, body=body, status="pending",
-                 created_at=core.now_iso(), final=1 if final else 0, attachments=attach or None)
+                 created_at=core.now_iso(), final=1 if final else 0, attachments=attach or None,
+                 reply_to=reply_to)
         tasks.move(core, ch, t, "review")
         if not t.get("question"):
             ch.task(t["id"], question="Is this draft okay?")
@@ -44,6 +48,20 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
                     log=("action", "The draft is ready. Nothing is sent until you approve it."))
         cards.sync(core, t["id"])
     return did
+
+
+def _thread(core, task_id, kind, source_id):
+    if source_id is None:
+        if kind == "email.reply":
+            raise FuzzError(f"A {kind} goes in an existing thread: pass reply_to, the id of the source it answers",
+                            "reply_to")
+        return None
+    if kind not in IN_THREAD:
+        raise FuzzError(f"A {kind} doesn't go in an existing thread, so it takes no reply_to", "reply_to")
+    s = core.one("SELECT id FROM sources WHERE id=? AND task_id=? AND user_id=?", (source_id, task_id, core.user_id))
+    if s is None:
+        raise FuzzError(f"Source {source_id} isn't one of this task's sources", "reply_to")
+    return s["id"]
 
 
 def _attachments(core, task_id, kind, names):

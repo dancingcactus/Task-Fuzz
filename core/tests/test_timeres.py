@@ -78,6 +78,13 @@ class Options(CoreCase):
                                                                "Pick an exact time"])
         self.assertEqual(self.labels("2026-11-20"), ["Sometime next week", "A week before it’s due", "Pick an exact time"])
 
+    def test_near_the_end_of_the_day_later_today_becomes_tomorrow(self):
+        self.clock.advance(hours=7)   # 16:00
+        self.assertEqual(self.labels(None), ["First thing tomorrow", "When I’m back at my desk", "Monday morning",
+                                             "Sometime next week", "Pick an exact time"])
+        self.assertEqual(self.labels("2026-10-22T15:00:00Z"), ["First thing tomorrow", "When I’m back at my desk",
+                                                               "A few hours before it’s due", "Pick an exact time"])
+
     def test_nothing_after_the_due_date_and_exact_last(self):
         for due in ("2026-10-20T10:00:00Z", "2026-10-20T20:00:00Z", "2026-10-21T08:00:00Z", "2026-10-22", None):
             opts = timeres.build_options(self.core, {"due": due})

@@ -245,6 +245,14 @@ executor can't draft, hand back, ask for permission or split the task.
 If no run gets to it within `gather.minutes` (10), or a run fails on it `budget.max_attempts` times,
 it comes to triage as captured. Turn it off with `fuzz config set gather.enabled false`.
 
+### Looking into a task you scheduled
+
+Schedule a task with instructions (`schedule` with `{anchor, instructions}`) and Fuzz gathers on it
+the same way, with your request in its notes ("You said: …") and `comes_back` on the claimed task.
+`finish_gathering` then moves it to `scheduled` instead of triage, so it still comes back at the time
+you picked, with the brief (or the result) in. Fuzz has until that time; if no run gets to it, it comes
+back as it was. Without an executor engine the instructions are only kept in the notes.
+
 ## Calendar times
 
 The core never reads your calendar. Instead a task carries up to two **moments**: described dates

@@ -10,7 +10,8 @@ from helpers import CoreCase
 
 from mcp import Client, StdioServerParameters
 
-from fuzz import mcp_server, runner, tasks, tools
+from fuzz import answers, mcp_server, runner, tasks, tools
+from fuzz.db import FuzzError
 
 EXECUTOR = {"whoami", "claim_next_task", "get_task", "read_source", "log_step", "save_notes", "save_draft",
             "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "finish_gathering",
@@ -62,7 +63,7 @@ class RoleScoping(CoreCase):
         async def go():
             async with Client(srv) as c:
                 await c.call_tool("claim_next_task", {})
-                r = await c.call_tool("save_draft", {"task_id": tid, "kind": "email.reply", "target": "elena@acme.com",
+                r = await c.call_tool("save_draft", {"task_id": tid, "kind": "email.new", "target": "elena@acme.com",
                                                      "body": "A long body " * 50})
                 return json.loads(r.content[0].text)
         out = run(go())
@@ -149,6 +150,27 @@ class ExecutorTools(CoreCase):
         src = tools.read_source(self.core, t["sources"][0]["id"])
         self.assertEqual(src["quote"], "Need a final headcount today")
         self.assertEqual(self.core.one("SELECT COUNT(*) n FROM events WHERE type='source.read'")["n"], 1)
+
+    def test_a_reply_names_its_thread_by_source_not_in_the_target(self):
+        tools.submit_signals(self.core, [{"source": "email", "source_id": "m1", "anchor": "email:m1",
+                                          "link": "https://mail/m1", "ts": "2026-10-20T08:00:00Z",
+                                          "from": {"name": "Stefano"}, "quote": "When does the EA UI retire?",
+                                          "candidates": [{"ask": "Confirm the EA UI retirement date"}]}])
+        tid = self.core.one("SELECT id FROM tasks")["id"]
+        tasks.assign(self.core, tid)
+        sid = tools.claim_next_task(self.core)["task"]["sources"][0]["id"]
+        to = "Stefano Marinoni <smarinoni@adobe.com>"
+        for kind, reply_to, field in (("email.reply", None, "reply_to"), ("email.new", sid, "reply_to"),
+                                      ("email.reply", sid + 99, "reply_to")):
+            with self.assertRaises(FuzzError) as e:
+                tools.save_draft(self.core, tid, kind, to, "Hi Stefano", reply_to=reply_to)
+            self.assertEqual(e.exception.field, field, (kind, reply_to))
+        tools.save_draft(self.core, tid, "email.reply", to, "Hi Stefano", reply_to=sid)
+        answers.answer(self.core, self.card_for(tid)["id"], "approve")
+        send = tools.claim_next_send(self.core)["send"]
+        self.assertEqual(send["target"], to)
+        self.assertEqual({k: send["thread"].get(k) for k in ("source_id", "anchor", "link")},
+                         {"source_id": sid, "anchor": "email:m1", "link": "https://mail/m1"})
 
 
 if __name__ == "__main__":

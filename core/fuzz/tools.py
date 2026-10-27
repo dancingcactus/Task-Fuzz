@@ -66,6 +66,7 @@ def _task_brief(core, t):
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"], "gathering": scheduler.gathering(t),
             "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"],
+            "comes_back": timeres.label(core, t["schedule_anchor"]) if scheduler.gathering(t) and t.get("schedule_anchor") else None,
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
             "sources": [_source_ref(s) for s in srcs if not s["withdrawn"] and s["role"] != "output"],
@@ -116,11 +117,11 @@ def save_notes(core, task_id, text):
     return {"ok": True}
 
 
-def save_draft(core, task_id, kind, target, body, final=True, attach=None):
+def save_draft(core, task_id, kind, target, body, final=True, attach=None, reply_to=None):
     with _lease(core, task_id) as t:
         scheduler.refuse_while_gathering(t)
         outputs.record(core, task_id)
-        did = drafts.save_draft(core, task_id, kind, target, body, final, attach=attach)
+        did = drafts.save_draft(core, task_id, kind, target, body, final, attach=attach, reply_to=reply_to)
     return {"draft_id": did, "state": "review"}
 
 
@@ -169,7 +170,7 @@ def finish_gathering(core, task_id, result=False, options=None):
     scheduler.require_lease(core, task_id)
     outputs.record(core, task_id)
     scheduler.finish_gathering(core, task_id, result=result, options=options)
-    return {"state": "triage"}
+    return {"state": tasks.require(core, task_id)["state"]}
 
 
 def release(core, task_id):
@@ -187,8 +188,23 @@ def claim_next_send(core):
         return {"send": None, "why": d}
     files = {f["name"]: f["path"] for f in outputs.listing(core, t["id"])}
     att = [{"name": n, "path": files[n]} for n in d.get("attachments") or [] if n in files]
+    thread = None
+    if d.get("reply_to"):
+        s = core.one("SELECT * FROM sources WHERE id=? AND user_id=?", (d["reply_to"], core.user_id))
+        thread = _thread_ref(core, s) if s else None
     return {"send": {"task_id": t["id"], "draft_id": d["id"], "kind": d["kind"], "target": d["target"],
-                     "body": d["body"], "title": t["title"], "attachments": att}, "lease_until": t["lease_until"]}
+                     "thread": thread, "body": d["body"], "title": t["title"], "attachments": att},
+            "lease_until": t["lease_until"]}
+
+
+def _thread_ref(core, s):
+    """Where a reply goes: the source's title, link and the ids its connector knows it by."""
+    out = {"source_id": s["id"], "title": s["title"]}
+    if s["signal_key"]:
+        sig = core.one("SELECT payload FROM signals WHERE user_id=? AND key=?", (core.user_id, s["signal_key"]))
+        p = json.loads(sig["payload"]) if sig and isinstance(sig["payload"], str) else (sig or {}).get("payload") or {}
+        out.update({k: p[k] for k in ("source", "link", "anchor", "from", "ts") if p.get(k) is not None})
+    return out
 
 
 def mark_sent(core, task_id, draft_id, where, link=None):

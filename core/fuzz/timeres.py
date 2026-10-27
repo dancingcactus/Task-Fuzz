@@ -21,6 +21,7 @@ ANCHOR_TYPES = ("in", "later_today", "at_desk", "day_part", "before_due", "momen
 PARTS = {"morning": 9, "afternoon": 13, "evening": 17}
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 LATER_TODAY_HOUR = 16   # "after your last meeting", without a calendar
+WORKDAY_END_HOUR = 17   # within an hour of this, "Later today" is offered as "First thing tomorrow"
 MAX_OPTIONS = 6
 MAX_AI = 2               # moments per task, and their slots at the top of the options
 LABEL_MAX = 60
@@ -162,16 +163,18 @@ def line(core, anchor):
     return f"I’ll bring it back {lab[0].lower() + lab[1:]}."
 
 
-def timeline(due, now):
-    """The core's options from how much time is left (the design's table)."""
+def timeline(due, now, late=False):
+    """The core's options from how much time is left (the design's table). Near the end of the work day
+    (late), "Later today" gives way to "First thing tomorrow"."""
+    later = {"type": "day_part", "day": "tomorrow", "part": "morning"} if late else {"type": "later_today"}
     if due is None:
-        return [{"type": "later_today"}, {"type": "at_desk"}, {"type": "day_part", "day": "monday", "part": "morning"},
+        return [later, {"type": "at_desk"}, {"type": "day_part", "day": "monday", "part": "morning"},
                 {"type": "day_part", "day": "next_week", "part": "morning"}]
     left = due - now
     if left < timedelta(hours=6):
         return [{"type": "in", "minutes": 30}, {"type": "before_due", "lead": "1h"}]
     if left < timedelta(hours=48):
-        return [{"type": "later_today"}, {"type": "at_desk"}, {"type": "day_part", "day": "tomorrow", "part": "morning"},
+        return [later, {"type": "at_desk"}, {"type": "day_part", "day": "tomorrow", "part": "morning"},
                 {"type": "before_due", "lead": "3h"}]
     if left < timedelta(days=7):
         return [{"type": "day_part", "day": "tomorrow", "part": "morning"}, {"type": "before_due", "lead": "1d"}]
@@ -258,7 +261,8 @@ def build_options(core, task, now=None):
     for h in (task.get("schedule_hints") or [])[:MAX_AI]:
         if not h.get("cancelled"):
             add({k: v for k, v in h.items() if k != "reason"}, "ai", h.get("reason"))
-    for a in timeline(due, now):
+    late = now.astimezone(local_tz(core)).hour >= WORKDAY_END_HOUR - 1
+    for a in timeline(due, now, late):
         add(a, "core")
     out = out[:MAX_OPTIONS]
     out.append({"anchor": {"type": "exact"}, "label": "Pick an exact time", "fire_at": None, "source": "core"})

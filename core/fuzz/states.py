@@ -17,12 +17,14 @@ _ANY_HUMAN = {"triage", "queued", "session", "scheduled", "waiting", "parked", "
 MOVES = {
     "triage": _ANY_HUMAN,
     "queued": {"working", "triage", "done", "letgo", "parked", "merged", "session", "scheduled", "waiting"},
-    "working": {"queued", "review", "triage", "done", "letgo", "merged"},
+    # scheduled: Fuzz looked into one you put off, and it waits until the time you picked
+    "working": {"queued", "review", "triage", "done", "letgo", "merged", "scheduled"},
     "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged", "sending", "scheduled"},
     # approved: Fuzz's sender sends it with its own connectors, or it comes back to review if it can't
     "sending": {"done", "waiting", "review", "triage", "letgo", "merged"},
     "session": {"done", "triage", "queued", "parked", "letgo", "scheduled", "waiting", "merged"},
-    "scheduled": {"triage", "done", "letgo", "merged", "queued", "parked"},
+    # review: a draft you put off comes back for your OK
+    "scheduled": {"triage", "review", "done", "letgo", "merged", "queued", "parked"},
     "waiting": {"triage", "done", "letgo", "queued", "review", "parked", "merged"},
     "parked": {"triage", "done", "letgo", "queued", "merged"},
     "done": {"triage"},

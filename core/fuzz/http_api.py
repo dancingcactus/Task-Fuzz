@@ -58,8 +58,9 @@ def task_view(core, t, full=False):
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
     if full:
         out["log"] = events.task_log(core, t["id"])
-        out["sources"] = core.all("SELECT id, role, title, withdrawn FROM sources WHERE task_id=? AND user_id=?",
-                                  (t["id"], core.user_id))
+        out["sources"] = core.all("SELECT s.id, s.role, s.title, s.withdrawn, g.link, g.quote FROM sources s "
+                                  "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
+                                  "WHERE s.task_id=? AND s.user_id=?", (t["id"], core.user_id))
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
         out["files"] = files.listing(core, t["id"])
@@ -162,7 +163,9 @@ class App:
         elif act == "session":
             tasks.session(core, tid)
         elif act == "schedule":
-            tasks.schedule(core, tid, body.get("anchor"))
+            tasks.schedule(core, tid, body.get("anchor"), instructions=body.get("instructions"),
+                           gather=config.gathers(core.config))
+            kick_executor(self, core)
         elif act == "reopen":
             where = body.get("where", "front")
             if where not in ("front", "back"):
@@ -255,7 +258,10 @@ class App:
     def answer(self, core, m, body, q):
         if "option" not in body:
             raise FuzzError("option is required", "option")
-        return answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
+        out = answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
+        if body["option"] == "schedule":   # you asked Fuzz to look into it meanwhile
+            kick_executor(self, core)
+        return out
 
     def undo_list(self, core, m, body, q):
         return {"recent": events.undo_list(core)}

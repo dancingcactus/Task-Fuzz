@@ -15,11 +15,12 @@ OPTIONS = {
     "entity_person": ["same", "different", "not_sure"],
     "entity_term": ["define", "same_as", "not_sure"],
     "is_task": ["mine", "not_task", "someone_else", "not_sure"],
-    "draft": ["approve", "edit", "send_back"],
-    "nudge": ["approve", "edit", "not_yet"],
+    "draft": ["approve", "edit", "send_back", "schedule"],
+    "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
 }
 TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "drop"]
+SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
              "draft": "approve", "nudge": "approve", "permission": "allow_once"}
@@ -82,9 +83,8 @@ def create(core, kind, task_id=None, other_id=None, prompt=None, reason=None, su
                   created_at=core.now_iso())
     if kind != "task":
         fields["options"] = OPTIONS[kind]
-    else:
-        t = tasks.get(core, task_id)
-        fields["schedule_options"] = timeres.build_options(core, t)
+    if kind in SCHEDULED:
+        fields["schedule_options"] = timeres.build_options(core, tasks.get(core, task_id))
     ch.card(cid, **fields)
     events.emit(core, "card.created", task_id=task_id, changes=ch, data={"kind": kind, "card_id": cid})
     return cid
@@ -119,7 +119,7 @@ def refresh_schedule_options(core, ch, task_id):
     t = dict(tasks.get(core, task_id))
     t.update(ch.pending("tasks", task_id))
     for c in open_cards(core, task_id):
-        if c["kind"] == "task":
+        if c["kind"] in SCHEDULED:
             ch.card(c["id"], schedule_options=timeres.build_options(core, t))
 
 
@@ -134,7 +134,11 @@ def task_options(task):
 
 
 def options(card, task):
-    return task_options(task) if card["kind"] == "task" else (card.get("options") or OPTIONS[card["kind"]])
+    if card["kind"] == "task":
+        return task_options(task)
+    if card["kind"] in ("draft", "nudge"):   # the kind's options now, so a card made before Schedule can use it
+        return OPTIONS[card["kind"]]
+    return card.get("options") or OPTIONS[card["kind"]]
 
 
 # ---------------------------------------------------------------- the queue
@@ -195,6 +199,8 @@ def view(core, card, task=None):
            "created_at": card.get("created_at")}
     if card["kind"] == "task":
         out["schedule_options"] = card.get("schedule_options") or []
+    elif card["kind"] in SCHEDULED:   # a draft card made before it had Schedule options works them out now
+        out["schedule_options"] = card.get("schedule_options") or (timeres.build_options(core, task) if task else [])
     if other:
         out["other"] = task_summary(other)
     if payload.get("draft_id"):
