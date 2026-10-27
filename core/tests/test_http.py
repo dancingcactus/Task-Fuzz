@@ -109,6 +109,14 @@ class Api(Server):
             self.assertTrue(http_api.kick_sender(app, core, now=1200))
         self.assertEqual([c.args[1] for c in run.call_args_list], ["sender", "sender"])
 
+    def test_settings_edit_who_you_are(self):
+        self.assertEqual(self.req("GET", "/me")[1]["emails"], ["jgrover@adobe.com"])
+        status, body = self.req("PUT", "/me", {"emails": ["jgrover@adobe.com", "Justin@Home.example"]})
+        self.assertEqual((status, body["emails"], body["names"]), (200, ["jgrover@adobe.com", "justin@home.example"],
+                                                                   ["Justin"]))
+        self.assertEqual(self.req("PUT", "/me", {"emails": []})[1]["field"], "emails")
+        self.assertEqual(self.req("PUT", "/me", {"phones": ["1"]})[1]["field"], "phones")
+
     def test_errors_name_the_field(self):
         status, body = self.req("POST", "/tasks", {})
         self.assertEqual((status, body["field"]), (400, "text"))

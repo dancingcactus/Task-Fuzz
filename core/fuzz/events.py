@@ -232,6 +232,8 @@ def check_replay(core, user_id=None):
 
 # ---------------------------------------------------------------- undo
 
+# The AI's own changes you can take back, like a rename.
+AI_UNDOABLE = {"task.retitled"}
 NOT_UNDOABLE = {"task.restored", "run.started", "run.finished", "engine.installed", "engine.removed",
                 "task.sent", "source.read", "task.file_attached"}
 
@@ -256,7 +258,7 @@ def _groups(core, limit=200):
     out = []
     for root in order:
         evs = groups[root]
-        if root in undone or evs[0]["actor"] != "human":
+        if root in undone or (evs[0]["actor"] != "human" and evs[0]["type"] not in AI_UNDOABLE):
             continue
         if any(e["type"] in NOT_UNDOABLE for e in evs):
             continue
@@ -322,6 +324,7 @@ def undo_list(core, limit=10):
         log = next((e["payload"]["log"]["text"] for e in evs if e["payload"].get("log")), None)
         b = _blocker(_restore_plan(evs), _later(core, evs))
         out.append({"group": root, "ts": first["ts"], "type": first["type"], "task_id": first["task_id"],
+                    "by": first["actor"],
                     "text": log or first["type"], "blocked": _why_blocked(b) if b else None})
     return out
 

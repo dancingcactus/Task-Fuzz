@@ -82,6 +82,8 @@
       else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
       else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
     });
+    document.getElementById('themepop').addEventListener('input', function (e) { if (e.target.dataset.me) meDraft[e.target.dataset.me] = e.target.value; });
+    document.getElementById('themepop').addEventListener('submit', function (e) { if (e.target.id === 'meform') { e.preventDefault(); saveMe(); } });
     document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); if (e.target.id === 'codefont') App.setCodeFont(e.target.value); });
     Progress.mount(document.getElementById('prog'));
     paintPopover();
@@ -115,6 +117,21 @@
       return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
+  /* Who you are, for the core: work and personal addresses alike, so Fuzz never has to ask which one is yours */
+  var me = null, meDraft = {};
+  var ME = [['emails', 'Email addresses', 'you@work.example, you@home.example'], ['names', 'Names', 'Justin, Justin G.'], ['slack_ids', 'Slack IDs', 'W123ABC']];
+  function meHTML() {
+    if (!me) { me = {}; Live.me().then(function (r) { me = r; paintPopover(); }, function () { me = null; }); }
+    return '<h2>You</h2><form class="meform" id="meform"><p class="meta">Fuzz treats an account signed in as any of these as yours. Separate them with commas.</p>' +
+      ME.map(function (f) { var v = meDraft[f[0]] !== undefined ? meDraft[f[0]] : (me[f[0]] || []).join(', '); return '<label for="me-' + f[0] + '">' + f[1] + '</label><input id="me-' + f[0] + '" data-me="' + f[0] + '" type="text" autocomplete="off" spellcheck="false" placeholder="' + esc(f[2]) + '" value="' + esc(v) + '">'; }).join('') +
+      '<button type="submit" class="btn small">Save</button></form>';
+  }
+  function saveMe() {
+    var body = {};
+    ME.forEach(function (f) { var el = document.getElementById('me-' + f[0]); if (el) body[f[0]] = el.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); });
+    Live.saveMe(body).then(function (r) { me = r; meDraft = {}; paintPopover(); Say.tell('Saved. Fuzz knows these are all you.'); }, function (e) { Say.tell('Couldn’t save that: ' + e.message); });
+  }
+
   function paintPopover() {
     var pop = document.getElementById('themepop'); if (!pop) return;
     var mode = Themes.resolveMode(prefs.mode);
@@ -128,6 +145,7 @@
       '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
+      (Live.on() ? meHTML() : '') +
       (Live.on()
         ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Use demo data</button></div>'
         : '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>');

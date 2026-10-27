@@ -157,6 +157,23 @@ class HeadlessRuns(CoreCase):
         self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"], ["fuzz-executor", "Glean"])
         self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--deny-tool"], ["shell", "write"])
 
+    def test_copilot_shows_the_model_only_the_tools_you_listed(self):
+        def available(argv):
+            i = argv.index("--available-tools")
+            return argv[i + 1:argv.index("--add-dir")] if "--add-dir" in argv else argv[i + 1:]
+
+        cp = adapters.get("copilot")
+        ex = cp.headless_command("executor", "/tmp/run.json", files_dir="/x/files/u1",
+                                 read_tools=["Glean", "Ember MCP(ask_ember)"])
+        self.assertEqual(available(ex), ["fuzz-executor", "Glean", "Ember-MCP-ask_ember", "view"])
+        self.assertEqual([ex[i + 1] for i, x in enumerate(ex) if x == "--allow-tool"],
+                         ["fuzz-executor", "Glean", "Ember MCP(ask_ember)"], "--allow-tool keeps your spelling")
+        self.assertEqual(available(cp.headless_command("executor", "/tmp/run.json")), ["fuzz-executor"])
+        se = cp.headless_command("sender", "/tmp/run.json", send_tools=["slack(send_message)"], read_tools=["Glean"])
+        self.assertEqual(available(se), ["fuzz-sender", "slack-send_message"], "no lookup tools, no files")
+        self.assertNotIn("--available-tools", cp.headless_command("extractor", "/tmp/run.json"),
+                         "the extractor reads your sources with your own connectors")
+
     def test_the_extractor_gets_no_files(self):
         argv = adapters.get("claude-code").headless_command("extractor", "/tmp/run.json")
         self.assertEqual(argv[argv.index("--tools") + 1], "")

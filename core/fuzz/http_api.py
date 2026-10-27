@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import answers, cards, engine, events, scheduler, tasks
+from . import answers, cards, config, engine, events, scheduler, tasks
 from .db import Core, FuzzError
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -114,6 +114,8 @@ class App:
             ("POST", r"/checkin", self.checkin),
             ("POST", r"/signals/at_desk", self.at_desk),
             ("POST", r"/tick", self.tick),
+            ("GET", r"/me", self.me_get),
+            ("PUT", r"/me", self.me_put),
             ("GET", r"/engine", self.engine_get),
             ("PUT", r"/engine", self.engine_put),
             ("POST", r"/engine/check", self.engine_check),
@@ -205,6 +207,21 @@ class App:
 
     def tick(self, core, m, body, q):
         return scheduler.tick(core)
+
+    def me_get(self, core, m, body, q):
+        return {k: core.config["me"].get(k, []) for k in config.ME_KEYS}
+
+    def me_put(self, core, m, body, q):
+        """{names?, emails?, slack_ids?}: each list given replaces what is there."""
+        for k, v in body.items():
+            if k not in config.ME_KEYS or not isinstance(v, list):
+                raise FuzzError("Send names, emails and slack_ids, each a list", k)
+        if not body.get("emails", True):
+            raise FuzzError("Keep at least one email address", "emails")
+        cfg = core.config
+        config.update_me(cfg, replace=body)
+        core.save_config(cfg)
+        return self.me_get(core, m, body, q)
 
     def engine_get(self, core, m, body, q):
         return engine.get(core)
