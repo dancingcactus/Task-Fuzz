@@ -7,7 +7,7 @@
    - never one that's already past or lands after the due time; "Pick an exact time" always last
    The rest here (the hint under a button, the glyph and the words on Fuzz's screen) is the UI's. */
 (function () {
-  var LATER_TODAY_HOUR = 16, PARTS = { morning: 9, afternoon: 13, evening: 17 }, MAX_OPTIONS = 6, MAX_AI = 2;
+  var LATER_TODAY_HOUR = 16, WORKDAY_END_HOUR = 17, PARTS = { morning: 9, afternoon: 13, evening: 17 }, MAX_OPTIONS = 6, MAX_AI = 2;
   var DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   var H = 3600000;
 
@@ -53,12 +53,14 @@
     if (a.type === 'exact') return a.at ? fmt(new Date(a.at)) : 'Pick an exact time';
   }
 
-  /* The core's times, from how long is left (the design's table). */
+  /* The core's times, from how long is left (the design's table). Within an hour of the end of the
+     work day, "Later today" gives way to "First thing tomorrow". */
   function timeline(it, now) {
-    if (!it.dueAt) return [{ type: 'later_today' }, { type: 'at_desk' }, { type: 'day_part', day: 'monday', part: 'morning' }, { type: 'day_part', day: 'next_week', part: 'morning' }];
+    var later = new Date(now).getHours() >= WORKDAY_END_HOUR - 1 ? { type: 'day_part', day: 'tomorrow', part: 'morning' } : { type: 'later_today' };
+    if (!it.dueAt) return [later, { type: 'at_desk' }, { type: 'day_part', day: 'monday', part: 'morning' }, { type: 'day_part', day: 'next_week', part: 'morning' }];
     var left = it.dueAt - now;
     if (left < 6 * H) return [{ type: 'in', minutes: 30 }, { type: 'before_due', lead: '1h' }];
-    if (left < 48 * H) return [{ type: 'later_today' }, { type: 'at_desk' }, { type: 'day_part', day: 'tomorrow', part: 'morning' }, { type: 'before_due', lead: '3h' }];
+    if (left < 48 * H) return [later, { type: 'at_desk' }, { type: 'day_part', day: 'tomorrow', part: 'morning' }, { type: 'before_due', lead: '3h' }];
     if (left < 168 * H) return [{ type: 'day_part', day: 'tomorrow', part: 'morning' }, { type: 'before_due', lead: '1d' }];
     return [{ type: 'day_part', day: 'next_week', part: 'morning' }, { type: 'before_due', lead: '1w' }];
   }
