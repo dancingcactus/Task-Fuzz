@@ -55,7 +55,7 @@ def _task_brief(core, t):
                     "AND role!='ignored'", (t["id"], core.user_id))
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
-            "created_at": t["created_at"],
+            "created_at": t["created_at"], "gathering": scheduler.gathering(t),
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
             "sources": [_source_ref(s) for s in srcs if not s["withdrawn"]],
@@ -105,13 +105,15 @@ def save_notes(core, task_id, text):
 
 
 def save_draft(core, task_id, kind, target, body, final=True):
-    with _lease(core, task_id):
+    with _lease(core, task_id) as t:
+        scheduler.refuse_while_gathering(t)
         did = drafts.save_draft(core, task_id, kind, target, body, final)
     return {"draft_id": did, "state": "review"}
 
 
 def hand_back(core, task_id, question=None, options=None, result=False):
-    with _lease(core, task_id):
+    with _lease(core, task_id) as t:
+        scheduler.refuse_while_gathering(t)
         scheduler.hand_back(core, task_id, question, options, result=result)
     return {"state": "triage"}
 
@@ -120,14 +122,15 @@ def create_task(core, ask, parent_task_id=None, due=None, links=None):
     if not (ask or "").strip():
         raise FuzzError("ask is a short imperative, like “Book the room for Thursday”", "ask")
     if parent_task_id is not None:
-        scheduler.require_lease(core, parent_task_id)
+        scheduler.refuse_while_gathering(scheduler.require_lease(core, parent_task_id))
     with core.tx("fuzz:executor"):
         return matching.create_from_ask(matching.Context(core), ask.strip(), parent_id=parent_task_id, due=due,
                                         links=links)
 
 
 def request_permission(core, task_id, scope, resource, why):
-    with _lease(core, task_id):
+    with _lease(core, task_id) as t:
+        scheduler.refuse_while_gathering(t)
         return drafts.request_permission(core, task_id, scope, resource, why)
 
 
@@ -146,6 +149,12 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
         with _lease(core, task_id):
             updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due, summary)
     return {"updated": sorted(updated)}
+
+
+def finish_gathering(core, task_id):
+    scheduler.require_lease(core, task_id)
+    scheduler.finish_gathering(core, task_id)
+    return {"state": "triage"}
 
 
 def release(core, task_id):
@@ -207,7 +216,8 @@ def submit_verdicts(core, verdicts):
 
 
 EXECUTOR = ("whoami", "claim_next_task", "get_task", "read_source", "log_step", "save_notes", "save_draft",
-            "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "release")
+            "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "finish_gathering",
+            "release")
 EXTRACTOR = ("whoami", "get_cursors", "submit_signals", "get_pending_judgments", "submit_verdicts")
 SENDER = ("whoami", "claim_next_send", "mark_sent", "send_failed")
 ROLES = {"executor": EXECUTOR, "extractor": EXTRACTOR, "sender": SENDER}

@@ -50,7 +50,8 @@ def build(core, role):
         @srv.tool()
         def claim_next_task(task_id: int | None = None) -> dict:
             """Lease the next task the scheduler picks for you (or the one named), for 10 minutes.
-            Any write renews the lease. Returns the task, or why there is nothing to do."""
+            Any write renews the lease. Returns the task, or why there is nothing to do. gathering: true means
+            it was just captured: gather context for the person's triage card, then call finish_gathering."""
             return _call(tools.claim_next_task, core, task_id)
 
         @srv.tool()
@@ -134,6 +135,12 @@ def build(core, role):
             Pass only what changes."""
             return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask,
                          summary)
+
+        @srv.tool()
+        def finish_gathering(task_id: int) -> dict:
+            """End a gather (claim_next_task returned gathering: true): the task goes to the person's triage
+            with the brief you wrote. Call it once the context is in, or straight away if nothing helps."""
+            return _call(tools.finish_gathering, core, task_id)
 
         @srv.tool()
         def release(task_id: int) -> dict:

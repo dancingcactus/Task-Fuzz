@@ -7,7 +7,9 @@ now. All are set with the executor's `update_brief` tool
 (or on an extracted ask) and written as `task.brief_updated` events. Calendar times (step 7) are built
 more simply than below: the core never reads a calendar. A task carries up to two **moments**, described
 dates the AI looks up with its own calendar connector (or you type), and the four calendar anchors
-collapse into that one. See [Moments](#moments). Files you attach are kept in a folder per task and handed to the
+collapse into that one. See [Moments](#moments). A task you capture goes to the executor first, to
+gather context with its read-only tools, and reaches triage when it calls `finish_gathering`
+(`task.gathered`); see `core/README.md`, Gathering context on capture. Files you attach are kept in a folder per task and handed to the
 executor as paths; a headless executor run may read that user's files folder with its client's own
 read tool, and nothing else (see `core/README.md`, Attachments).
 

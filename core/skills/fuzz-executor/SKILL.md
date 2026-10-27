@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
-description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, takes the next step on it, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.6
+description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
+prompt_version: executor-0.7
 ---
 
 # Fuzz executor
@@ -15,11 +15,13 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.6`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.7`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
    task, stop and say why in one line.
+   If the task says `gathering: true`, it was just captured: follow **Gathering** below instead of
+   steps 3 to 5, then claim the next task.
 3. Read what you got: the ask, your earlier notes, the brief and the last few log lines. Call
    `read_source` only for the sources you need. If their latest instructions (in the notes, "You
    said: …") changed what the task is, rename it first (see Rules).
@@ -55,6 +57,26 @@ connector, for example) to research a task. Never use any tool to change anythin
    sits above the brief on their card, so it says what the brief adds up to; it doesn't repeat its
    opening or its heading.
 6. Claim the next task, until `claim_next_task` returns no task.
+
+## Gathering
+
+A task you get with `gathering: true` was just captured and hasn't reached the person yet. They
+haven't decided anything about it, so don't do the task: find what they'll want to know when they
+look at it, then pass it on. Be quick; they may be waiting for the card.
+
+1. Read the ask and any attachments. Look it up with the lookup tools you're allowed: the thread or
+   doc it mentions, the people in it, the meeting it hangs on, a date it implies. Skip what no allowed
+   tool can reach; don't ask for permission.
+2. `log_step` (`research`) for each lookup, one line each.
+3. If you found anything worth showing, `update_brief` with `context_md` (what it is, who's
+   involved, when it's due, the links) and `summary` (a sentence on what you found). Add `due`,
+   `effort_mins` and `energy` when you can tell. `save_notes` with what you checked, so the run that
+   works the task later doesn't repeat it.
+4. `finish_gathering`. The task goes to their triage with your brief on the card. Call it even if you
+   found nothing; nothing is still worth knowing.
+
+While gathering you can't draft, hand back, ask for permission or split the task: those wait until
+they assign it to you.
 
 ## Rules
 

@@ -70,6 +70,8 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
         remove |= cards.TRIAGE_TAGS | {"unconfirmed"}
         fields.setdefault("reason", None)
         fields.setdefault("quick_answers", None)
+    if to not in ("queued", "working"):
+        remove.add("gather")   # gathering ends however the task leaves Fuzz's hands
     base = dict(t, **pend)
     f = dict(state=to, variant_tags=_tags(base, add_tags, remove), **fields)
     if "assignee" not in fields:
@@ -101,7 +103,9 @@ def _one(core, actor, type, t, to, log, card=None, option=None, value=None, data
 
 # ---------------------------------------------------------------- capture
 
-def capture(core, text, docs=None, actor="human", due=None):
+def capture(core, text, docs=None, actor="human", due=None, gather=False):
+    """gather: Fuzz looks the task up with its read-only tools before it reaches triage, so the card can
+    show what it found. It waits as queued for Fuzz with the gather tag until then."""
     text = (text or "").strip()
     docs = [d for d in (docs or []) if d]
     if not text and not docs:
@@ -111,8 +115,9 @@ def capture(core, text, docs=None, actor="human", due=None):
         tid = core.new_id("tasks")
         now = core.now_iso()
         ch = events.Changes()
-        ch.task(tid, state="triage", assignee="human", title=title, ask=text or None, owner="me", due=due,
-                order_key=next_order(core), variant_tags=[], created_at=now, state_changed_at=now,
+        ch.task(tid, state="queued" if gather else "triage", assignee="fuzz" if gather else "human", title=title,
+                ask=text or None, owner="me", due=due, order_key=next_order(core),
+                variant_tags=["gather"] if gather else [], created_at=now, state_changed_at=now,
                 title_history=[], steps_used=0, attempts=0, deadline_level=0)
         events.emit(core, "task.captured", task_id=tid, changes=ch, data={"docs": docs},
                     log=("status", "You captured this task." if actor == "human" else "Fuzz captured this task."))

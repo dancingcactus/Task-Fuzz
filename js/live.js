@@ -157,7 +157,7 @@
       askBack: tags.indexOf('handed_back') > -1 ? t.question : null,
       quick: tags.indexOf('handed_back') > -1 && t.quick_answers && t.quick_answers.length ? t.quick_answers : null,
       updated: tags.indexOf('returning') > -1 || tags.indexOf('reopened') > -1 || tags.indexOf('woke') > -1,
-      woke: tags.indexOf('woke') > -1,
+      woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1,
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
       waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
@@ -383,7 +383,7 @@
     S.capture = function (text, docs) {
       var it = capture.apply(S, arguments);
       gen++;
-      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [] }).then(function (r) { rename(it, r.task_id); }); });
+      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [] }).then(function (r) { rename(it, r.task_id); if (r.gathering) gathering(it); }); });
       return it;
     };
     var parkThought = S.parkThought;
@@ -427,6 +427,12 @@
     };
   }
 
+  /* Fuzz looks it up before it reaches triage, so the card waits until the brief is in */
+  function gathering(it) {
+    var st = Store.get();
+    it.state = 'ai-queued'; it.gathering = true;
+    st.queue = st.queue.filter(function (q) { return q !== it.id; });
+  }
   function rename(it, coreId) {
     var st = Store.get(), old = it.id, id = 't' + coreId;
     if (Store.item(id) && Store.item(id) !== it) { st.items = st.items.filter(function (i) { return i !== it; }); st.queue = st.queue.filter(function (q) { return q !== old; }); return; }

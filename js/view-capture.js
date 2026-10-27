@@ -14,7 +14,7 @@
       ai: ['Fuzz is working on it', 'accent'], 'ai-queued': ['Next up with Fuzz', 'muted'], review: ['Draft ready for your OK', 'warn'], mine: ['With you', 'muted'], session: ['Open in Claude', 'muted'],
       scheduled: ['Scheduled', 'muted'], parked: ['Parked', 'muted'], waiting: ['Waiting on others', 'warn'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'], dropped: ['Dropped', 'muted'], resolved: ['Done', 'ok']
     };
-    var m = map[it.state] || ['Waiting in triage', 'muted'];
+    var m = it.gathering ? ['Fuzz is gathering context', 'accent'] : map[it.state] || ['Waiting in triage', 'muted'];
     if (c.doc && it.state === 'triage') m = ['Added to triage with the document', 'ok'];
     return { text: m[0], tone: m[1] };
   }

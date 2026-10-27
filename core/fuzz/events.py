@@ -19,7 +19,7 @@ EVENT_TYPES = {
     "task.confirmed", "task.draft_edited", "task.sent_back", "task.send_failed",
     # not in the design doc's first list; each is a plain fact the UI can ignore
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
-    "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached",
+    "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached", "task.gathered",
     "entity.merged", "entity.kept_separate", "entity.defined",
     "card.created", "card.answered", "card.postponed", "card.expired",
     "permission.asked", "permission.granted", "permission.denied",

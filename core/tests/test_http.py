@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -108,6 +109,23 @@ class Api(Server):
             self.assertFalse(http_api.kick_sender(app, core, now=1060), "not again within two minutes")
             self.assertTrue(http_api.kick_sender(app, core, now=1200))
         self.assertEqual([c.args[1] for c in run.call_args_list], ["sender", "sender"])
+
+    def test_a_capture_starts_the_executor_to_gather(self):
+        from unittest import mock
+        app, core = self.srv.app, self.srv.app.core(1)
+        self.assertEqual(self.req("POST", "/tasks", {"text": "Book the room"})[1]["gathering"], False)
+        cfg = core.config
+        cfg["engine"]["client"] = "claude-code"
+        core.save_config(cfg)
+        with mock.patch("fuzz.engine.run_now") as run:
+            status, body = self.req("POST", "/tasks", {"text": "Prepare for my 1:1"})
+            self.assertEqual((status, body["gathering"]), (201, True))
+            self.assertEqual(self.task(body["task_id"], core)["state"], "queued")
+            self.assertFalse(http_api.kick_executor(app, core), "not twice in a row")
+            from fuzz import runs
+            runs.start(core, "executor", "claude-code")
+            self.assertFalse(http_api.kick_executor(app, core, now=time.time() + 600), "a run is already going")
+        self.assertEqual([c.args[1] for c in run.call_args_list], ["executor"])
 
     def test_settings_edit_who_you_are(self):
         self.assertEqual(self.req("GET", "/me")[1]["emails"], ["jgrover@adobe.com"])

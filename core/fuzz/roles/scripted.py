@@ -46,6 +46,16 @@ async def _executor(core, task_id, say):
                                             "text": f"Opened {f['title']} ({n} bytes)."})
             await _call(c, "log_step", {"task_id": tid, "kind": "research",
                                         "text": "Read the task" + (" and its first source." if t["sources"] else ".")})
+            if t.get("gathering"):   # just captured: look, write the brief, pass it to triage
+                await _call(c, "update_brief", {"task_id": tid, "context_md":
+                            f"**{t['title']}**\n\nA scripted run gathered this. Nothing real was looked up.",
+                            "summary": "A scripted run read the task; there was nothing to look up."})
+                await _call(c, "finish_gathering", {"task_id": tid})
+                say(f"Gathered #{tid}")
+                done.append(tid)
+                if task_id:
+                    break
+                continue
             await _call(c, "log_step", {"task_id": tid, "kind": "action", "text": "Drafted the next step."})
             if not t.get("context_md"):
                 await _call(c, "update_brief", {"task_id": tid, "context_md":

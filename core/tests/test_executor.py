@@ -1,6 +1,7 @@
-"""What the executor gets and can say: the time it works in, renames, results and prep notes."""
+"""What the executor gets and can say: the time it works in, renames, results, prep notes and gathering."""
 
 import unittest
+from unittest import mock
 
 from helpers import CoreCase
 
@@ -141,6 +142,93 @@ class Identities(CoreCase):
         self.assertEqual(me["slack_ids"], ["W2", "W4R5SVCU9"])
         config.update_me(cfg, remove={"slack_ids": ["W2"]}, replace={"names": ["Justin", " "]})
         self.assertEqual((cfg["me"]["slack_ids"], cfg["me"]["names"]), (["W4R5SVCU9"], ["Justin"]))
+
+
+class Gathering(CoreCase):
+    def gathered(self, text="Prepare for my 1:1 with Sydnee"):
+        tid = tasks.capture(self.core, text, gather=True)
+        t, why = scheduler.claim_next(self.core)
+        self.assertEqual((t or {}).get("id"), tid, why)
+        return tid
+
+    def test_a_capture_waits_for_fuzz_before_triage(self):
+        tid = tasks.capture(self.core, "Prepare for my 1:1 with Sydnee", gather=True)
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["assignee"], t["variant_tags"]), ("queued", "fuzz", ["gather"]))
+        self.assertEqual(cards.open_cards(self.core, tid), [], "nothing is asked yet")
+
+    def test_gathering_goes_first(self):
+        old = tasks.capture(self.core, "Book the room")
+        tasks.assign(self.core, old)
+        self.clock.advance(minutes=1)
+        tid = self.gathered()
+        self.assertTrue(tools.get_task(self.core, tid)["gathering"])
+        self.assertEqual(self.task(old)["state"], "queued")
+
+    def test_the_brief_reaches_triage_with_the_card(self):
+        tid = self.gathered()
+        tools.log_step(self.core, tid, "research", "Found three open items with Sydnee in Glean.")
+        tools.update_brief(self.core, tid, context_md="## Open items\n\n1. Estimates", summary="Three open items.")
+        self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "triage"})
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["assignee"], t["variant_tags"]), ("triage", "human", []))
+        self.assertEqual((t["summary"], t["lease_owner"]), ("Three open items.", None))
+        self.assertEqual(self.card_for(tid, "task")["suggested"], "assign")
+        log = events.task_log(self.core, tid)
+        self.assertEqual(log[0]["text"], "Fuzz gathered what it could find.")
+        self.assertEqual(log[-2]["text"], "Fuzz is gathering context.")
+        tasks.assign(self.core, tid)
+        t, _ = scheduler.claim_next(self.core, tid)
+        self.assertFalse(tools.get_task(self.core, tid)["gathering"], "once assigned it's ordinary work")
+
+    def test_gathering_asks_nothing_and_sends_nothing(self):
+        tid = self.gathered()
+        for call in (lambda: tools.hand_back(self.core, tid, "Which Sydnee?"),
+                     lambda: tools.save_draft(self.core, tid, "note", "", "Agenda"),
+                     lambda: tools.request_permission(self.core, tid, "connector", "Glean", "To look her up"),
+                     lambda: tools.create_task(self.core, "Book a room", parent_task_id=tid)):
+            with self.assertRaises(FuzzError) as e:
+                call()
+            self.assertEqual(e.exception.status, 409)
+        self.assertEqual(self.task(tid)["state"], "working")
+        with self.assertRaises(FuzzError):
+            tools.finish_gathering(self.core, tasks.capture(self.core, "Not gathered"))
+
+    def test_a_stuck_gather_comes_to_you_as_captured(self):
+        tid = self.gathered()
+        self.clock.advance(minutes=11)   # the run died: the lease ran out
+        out = scheduler.tick(self.core)
+        self.assertEqual((out["released"], out["gather_timeout"]), (1, 1))
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["variant_tags"]), ("triage", []))
+        self.assertEqual(events.task_log(self.core, tid)[0]["text"],
+                         "Fuzz didn't get to this in time, so it came to you as captured.")
+        self.card_for(tid, "task")
+
+    def test_too_many_tries_comes_to_you_without_a_question(self):
+        tid = tasks.capture(self.core, "Prepare for my 1:1", gather=True)
+        for run in range(self.core.config["budget"]["max_attempts"] + 1):
+            with mock.patch.object(scheduler, "SESSION_OWNER", f"session:run{run}"):   # each try a new run
+                t, _ = scheduler.claim_next(self.core)
+                if t:
+                    tools.release(self.core, tid)
+        self.assertIsNone(t)
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["question"]), ("triage", None))
+        self.assertNotIn("handed_back", t["variant_tags"])
+
+    def test_you_can_take_it_back_while_fuzz_gathers(self):
+        tid = self.gathered()
+        tasks.done(self.core, tid)
+        self.assertEqual(self.task(tid)["variant_tags"], [])
+
+    def test_gathers_only_with_an_executor_to_run_it(self):
+        cfg = self.core.config
+        self.assertFalse(config.gathers(cfg))
+        cfg["engine"]["client"] = "copilot"
+        self.assertTrue(config.gathers(cfg))
+        cfg["gather"]["enabled"] = False
+        self.assertFalse(config.gathers(cfg))
 
 
 if __name__ == "__main__":

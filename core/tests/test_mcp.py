@@ -13,7 +13,8 @@ from mcp import Client, StdioServerParameters
 from fuzz import mcp_server, runner, tasks, tools
 
 EXECUTOR = {"whoami", "claim_next_task", "get_task", "read_source", "log_step", "save_notes", "save_draft",
-            "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "release"}
+            "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "finish_gathering",
+            "release"}
 EXTRACTOR = {"whoami", "get_cursors", "submit_signals", "get_pending_judgments", "submit_verdicts"}
 
 
