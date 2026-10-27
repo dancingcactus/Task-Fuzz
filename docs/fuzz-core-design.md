@@ -399,7 +399,7 @@ an adapter and passing the adapter tests.
 | Register and remove the MCP server | `claude mcp add` / `remove`, user scope | Its MCP config file (to confirm) |
 | Start a headless run | `claude -p <prompt>` | `copilot -p <prompt>` |
 | Give the run only Fuzz's MCP server | `--mcp-config <run file> --strict-mcp-config` | A run-specific MCP config (flag to confirm) |
-| Allow only Fuzz's tools | `--allowedTools "mcp__fuzz-executor__*"`. Anything else is refused, because nobody is there to approve it | `--allow-tool fuzz-executor`, `--deny-tool shell`, `--deny-tool write`. Deny always wins |
+| Allow only Fuzz's tools | `--allowedTools "mcp__fuzz-executor__*"`. Anything else is refused, because nobody is there to approve it | `--allow-tool fuzz-executor`, `--deny-tool shell`, `--deny-tool write`. Deny always wins. `--available-tools fuzz-executor …` hides every other tool, since Copilot loads your own servers too |
 | Choose the model | `--model` | `--model` |
 | Show the transcript for `--verbose` | `--output-format stream-json` | Its log output |
 | Tell whether a run ended cleanly | Exit code and the final result message | Exit code |

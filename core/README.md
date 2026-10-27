@@ -51,7 +51,10 @@ writes launchd jobs for `fuzz serve` and the three roles.
 A headless run gets its own MCP config that starts `fuzz mcp --role <role> --run <id>`, so it sees
 only Fuzz's server, and every event it writes carries the run, model and `prompt_version`. Claude
 Code runs with `--strict-mcp-config --tools "" --allowedTools "mcp__fuzz-<role>__*"`: no shell and no
-file writes. The executor also gets read-only access to the attachments folder (see Attachments). Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`. The sender is the
+file writes. The executor also gets read-only access to the attachments folder (see Attachments). Copilot runs with `--allow-tool fuzz-<role> --deny-tool shell --deny-tool write`. Copilot loads your own MCP servers
+whatever the config says, and `--allow-tool` only skips the prompt, so the executor and sender also get
+`--available-tools`: the model sees Fuzz's server, the tools you listed and, for attachments, `view`, and nothing
+else. The sender is the
 exception (see Sending).
 
 ## Interfaces
