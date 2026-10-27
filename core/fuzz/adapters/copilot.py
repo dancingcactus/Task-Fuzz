@@ -22,8 +22,9 @@ WRITE_FILE_TOOLS = ("apply_patch", "create", "edit")   # its file-writing tools;
 # and some of their tools run without one. --available-tools is what limits the model to the tools listed.
 # The sender's send tools (config send.tools.copilot) and the executor's lookup tools (read.tools.copilot) are
 # written as --allow-tool takes them: "Glean" for a whole server, "slack(send_message)" for one tool.
-# --available-tools names one tool "slack-send_message", and a server's spaces become hyphens
-# ("Ember MCP" is "Ember-MCP"); available_name() converts. Checked against Copilot CLI 1.0.104.
+# --available-tools names one tool "slack-send_message". Neither flag takes a space: a server's spaces
+# become hyphens ("Ember MCP" is "Ember-MCP"), and "Ember MCP(ask_ember)" fails the whole run with
+# "Invalid rule format". allow_rule() and available_name() convert. Checked against Copilot CLI 1.0.104.
 
 
 def available_name(pattern):
@@ -33,6 +34,12 @@ def available_name(pattern):
         return pattern
     server, tool = m.group(1).replace(" ", "-"), m.group(2)
     return f"{server}-{tool}" if tool else server
+
+
+def allow_rule(pattern):
+    """An --allow-tool pattern as Copilot accepts it: "Ember MCP(ask_ember)" -> "Ember-MCP(ask_ember)"."""
+    m = re.fullmatch(r"\s*([^()]+?)\s*(\(.*\))?\s*", pattern)
+    return norm_server(m.group(1)) + (m.group(2) or "") if m else pattern
 
 
 def norm_server(name):
@@ -91,7 +98,7 @@ class Copilot(Adapter):
                 "--allow-tool", self.mcp_name(role), "--deny-tool", "shell"]
         argv += ["--allow-tool", f"write({str(write_dir).rstrip('/')}/**)"] if write_dir else ["--deny-tool", "write"]
         for t in extra:
-            argv += ["--allow-tool", t]
+            argv += ["--allow-tool", allow_rule(t)]
         if role in ("executor", "sender"):
             available = [self.mcp_name(role)] + [available_name(t) for t in extra]
             if files_dir or write_dir:

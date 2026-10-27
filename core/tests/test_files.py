@@ -167,7 +167,7 @@ class HeadlessRuns(CoreCase):
                                  read_tools=["Glean", "Ember MCP(ask_ember)"])
         self.assertEqual(available(ex), ["fuzz-executor", "Glean", "Ember-MCP-ask_ember", "view"])
         self.assertEqual([ex[i + 1] for i, x in enumerate(ex) if x == "--allow-tool"],
-                         ["fuzz-executor", "Glean", "Ember MCP(ask_ember)"], "--allow-tool keeps your spelling")
+                         ["fuzz-executor", "Glean", "Ember-MCP(ask_ember)"], "Copilot rejects a space in a rule")
         self.assertEqual(available(cp.headless_command("executor", "/tmp/run.json")), ["fuzz-executor"])
         se = cp.headless_command("sender", "/tmp/run.json", send_tools=["slack(send_message)"], read_tools=["Glean"])
         self.assertEqual(available(se), ["fuzz-sender", "slack-send_message"], "no lookup tools, no files")
