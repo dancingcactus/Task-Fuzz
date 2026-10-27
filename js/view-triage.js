@@ -254,11 +254,14 @@
       var all = schedOpts(it), opts = schedMore ? all : all.slice(0, 3);
       var tiles = opts.map(function (o, n) { return '<button type="button" class="when" data-when="' + n + '" aria-keyshortcuts="' + (n + 1) + '"><span>' + esc(o.label) + kbd(n + 1) + '</span><small>' + esc(Sched.hint(o)) + '</small></button>'; });
       if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
-      return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">Pick a rough time. Fuzz finds the right moment around your day.</p>' +
+      var meta = it.state === 'review' ? 'Pick a rough time. The draft waits, unsent, and comes back then for your OK.'
+        : 'Pick a rough time. Fuzz finds the right moment around your day. Anything you wrote in the instructions, Fuzz looks into before it comes back.';
+      return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">' + meta + '</p>' +
         '<div class="when-grid">' + tiles.join('') + '</div>' +
         (schedMore ? '<div class="exact" id="exact" hidden><label for="exact-dt">Exact time</label><input type="datetime-local" id="exact-dt"><button type="button" class="btn small primary" data-sched="exact-go">Schedule for this time</button></div>' : '') +
         '<div class="sched-links">' + (schedMore ? '<button type="button" class="linkbtn" data-sched="exact">Pick an exact time instead</button>' : '') + '<button type="button" class="linkbtn" data-sched="cancel" aria-keyshortcuts="Escape">Back to the card</button></div></div>';
     }
+    if (it.state === 'review') return reviewActionsHTML(it);
     /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further */
     var res = !!it.result;
     var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
@@ -328,7 +331,7 @@
     return '<div class="finding"><span class="finding-tag">' + esc(it.aiHeading || 'What Fuzz did') + '</span>' + Fuzz.mini('good', { cls: 'finding-av' }) + '<p>' + UI.text(it.aiNote) + '</p></div>';
   }
   /* shownAbove: the finding already sits above the instructions, so it isn't repeated here */
-  function contextHTML(it, isTask, shownAbove) {
+  function contextHTML(it, isTask, shownAbove, rich) {
     var h = '';
     var last = it.log.filter(function (l) { return !l.undone && !l.undo; })[0];
     if (isTask && (it.handedBack || it.updated || it.log.length >= 3) && last) {
@@ -337,7 +340,7 @@
     if (it.aiNote && !shownAbove) h += '<section class="ainote"><h3>' + esc(it.aiHeading || 'What Fuzz did') + '</h3><p>' + UI.text(it.aiNote) + '</p></section>';
     if (isTask && it.firstStep) h += '<section class="firststep"><h3>Smallest first step · two minutes</h3><p>' + esc(it.firstStep) + '</p></section>';
     if (it.effect) h += '<section class="effect"><h3>What this changes</h3><p>' + esc(it.effect) + '</p></section>';
-    if (isTask) h += '<section id="rich" class="rich">' + richHTML(it) + '</section>';
+    if (isTask || rich) h += '<section id="rich" class="rich">' + richHTML(it) + '</section>';
     return h;
   }
   function evidenceHTML(it) {
@@ -347,6 +350,11 @@
     }
     if (it.kind === 'entity' && it.entity === 'term') {
       h += '<ul class="mentions">' + it.mentions.map(function (m) { return '<li><span class="pill pill--muted">' + esc(m.where) + '</span><span>' + esc(m.text) + '</span></li>'; }).join('') + '</ul>';
+    }
+    /* Is it yours? shows what was actually said, and by whom, before you answer */
+    if (it.kind === 'entity' && it.entity === 'is_task') {
+      var said = it.sources.filter(function (s) { return s.quote; });
+      if (said.length) h += '<ul class="mentions">' + said.map(function (s) { return '<li><span class="pill pill--muted">' + esc(s.title || s.type) + '</span><span>' + esc(s.quote) + '</span></li>'; }).join('') + '</ul>';
     }
     if (it.kind === 'dup') {
       var o = Store.item(it.dupOf);
@@ -387,7 +395,7 @@
     }
 
     if (isTask) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
-    h += contextHTML(it, isTask, isTask && !stale);
+    h += contextHTML(it, isTask, isTask && !stale, it.entity === 'is_task');
     h += '<div class="stamp" aria-hidden="true">DONE</div>';
     return h;
   }
@@ -403,15 +411,20 @@
     if (it.revisedNote) h += '<div class="finding"><span class="finding-tag">Updated from your note</span>' + Fuzz.mini('good', { cls: 'finding-av' }) + '<p>“' + esc(it.revisedNote) + '”</p></div>';
     h += '<section class="draft"><div class="draft-to">' + (r ? '<span>To</span> <strong>' + esc(r.to) + '</strong><span class="via">' + esc(r.via) + '</span>' : '<strong>Just for you</strong><span class="via">Nothing is sent anywhere</span>') + '</div>' +
       '<label class="sr" for="draft">' + (r ? 'Message to ' + esc(r.to) : 'Fuzz’s write-up') + '</label><textarea id="draft" rows="4">' + esc(val) + '</textarea></section>';
-    h += '<div id="actions"><div class="actions review">' +
+    h += '<div id="actions">' + actionsHTML(it) + '</div>';
+    h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + contextHTML(it, true);
+    h += '<div class="stamp" aria-hidden="true">OK</div>';
+    return h;
+  }
+  /* Not now opens the Schedule picker in their place: the draft waits and asks again then */
+  function reviewActionsHTML(it) {
+    var r = Store.recipient(it);
+    return '<div class="actions review">' +
       '<button type="button" class="btn primary" data-act="send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (r ? '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>' : '<path d="M5 12.5l4.5 4.5L19 7.5"/>') + '</svg>' + (r ? 'Approve and send' : 'Looks good') + '</button>' +
       '<button type="button" class="btn" data-act="revise" aria-expanded="false" aria-controls="revise" aria-keyshortcuts="R">Ask Fuzz to change it' + kbd('R') + '</button>' +
       '<button type="button" class="btn" data-act="notnow" aria-keyshortcuts="L">Not now' + kbd('L') + '</button></div>' +
       (r ? '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>' : it.afterApprove ? '<p class="sendnote">' + esc(it.afterApprove) + '</p>' : '') +
-      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form></div>';
-    h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + contextHTML(it, true);
-    h += '<div class="stamp" aria-hidden="true">OK</div>';
-    return h;
+      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form>';
   }
 
   /* Text boxes grow to show all their text, so nothing is cut off on a narrow screen */
@@ -868,14 +881,16 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     if ($('#instr')) edits[it.id + ':instr'] = $('#instr').value;
+    var review = it.state === 'review';
+    if (review && $('#draft')) edits[it.id + ':draft'] = $('#draft').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
-    Fuzz.setMood('eager'); Fuzz.say('Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
+    Fuzz.setMood('eager'); Fuzz.say(review ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
     var pickedIdx = await new Promise(function (resolve) { schedResolve = resolve; });
     schedResolve = null;
     if (pickedIdx === -1) {
       scheduling = false; renderCardKeep(); Fuzz.setMood('idle'); Fuzz.say('Okay, it stays here.', { type: false });
-      var sb = card.querySelector('[data-act="schedule"]'); if (sb) { sb.disabled = false; sb.focus(); }
+      var sb = card.querySelector(review ? '[data-act="notnow"]' : '[data-act="schedule"]'); if (sb) { sb.disabled = false; sb.focus(); }
       return;
     }
     var w = pickedIdx === 99 ? exactOpt : schedOpts(it)[pickedIdx], when = w.label.charAt(0).toLowerCase() + w.label.slice(1);
@@ -886,10 +901,14 @@
       Say.announce('Heads up, that lands after the deadline. Scheduling it anyway.');
       await sleep(2000);
     }
+    /* Instructions you wrote (not Fuzz's suggestion) are what to look into before it comes back */
+    var typed = (edits[it.id + ':instr'] || '').trim(), look = typed && typed !== (it.instr || it.hint || '').trim() ? typed : '';
     Fuzz.setMood('happy'); Fuzz.setArm('none'); Fuzz.pAnim('hop');
-    Fuzz.say('Done! I’ll bring it back ' + when + '.');
+    var text = review ? edits[it.id + ':draft'] : undefined;
+    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
     Fuzz.schedGlyph(Sched.glyph(w), Sched.osd(w));
-    offer('Scheduled “' + it.title + '”: ' + when + '.', Store.track([it.id], function () { Store.schedule(it.id, w); }));
+    offer((review ? 'Not now: “' + it.title + '” asks for your OK again ' : 'Scheduled “' + it.title + '”: ') + when + (look ? '. Fuzz looks into it first.' : '.'), Store.track([it.id], function () { Store.schedule(it.id, w, look, text); }));
+    forgetEdits(it.id);
     /* The card flies off while the schedule shows on Fuzz's screen. */
     var shown = null, exit = sleep(400).then(function () { return fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 520 }); }).then(function () { shown = bringNext(); });
     await Promise.all([exit, sleep(1050)]);
@@ -1062,7 +1081,7 @@
       else if (a === 'letgo') moment(function () { return quickClear('Let go of', 'Let go. You can bring it back from Let go.', function (i) { Store.letGo(i.id); }, 'Let go. That one’s off your plate.', 'sleepy'); });
       else if (a === 'keep') { keptStale[cur().id] = true; renderCard(cur()); refocus(landing()); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Kept. It stays on your list.', { type: false }); setTimeout(function () { if (alive && Fuzz.mood() === 'happy') Fuzz.setMood('idle'); }, 1500); }
       else if (a === 'send') moment(sendDraft);
-      else if (a === 'notnow') moment(function () { return quickClear('Not now:', 'Took “' + cur().title + '” out of triage. It waits in Lineup, under Yours.', function (i) { if ($('#draft')) edits[i.id + ':draft'] = $('#draft').value; Store.leave(i.id); }, 'Okay. It waits in Lineup until you’re ready.'); });
+      else if (a === 'notnow') moment(schedule);
       else if (a === 'revise') {
         var rf = $('#revise'); rf.hidden = !rf.hidden; t.setAttribute('aria-expanded', String(!rf.hidden));
         if (!rf.hidden) $('#revise-text').focus();

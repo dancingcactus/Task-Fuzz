@@ -36,7 +36,7 @@ class CardTable(CoreCase):
         self.assertEqual((t or {}).get("id"), tid, why)
         return tid
 
-    def draft(self, kind="email.reply"):
+    def draft(self, kind="email.new"):
         tid = self.claimed()
         drafts.save_draft(self.core, tid, kind, "elena@acme.com", "Hi Elena, the later date works.")
         return tid, self.card_for(tid)
@@ -140,6 +140,27 @@ class CardTable(CoreCase):
         self.check(self.draft("note"), "approve", ["task.approved"], "done")
         self.check(self.draft(), "edit", ["task.draft_edited"], "review", value="Hi Elena, new text.")
         self.check(self.draft(), "send_back", ["task.sent_back"], "queued", value="Warmer, please")
+
+    def test_not_now_on_a_draft_brings_it_back_for_your_ok(self):
+        tid, card = self.draft()
+        self.assertIn("schedule", card["options"])
+        view = cards.view(self.core, cards.get(self.core, card["id"]))
+        self.assertTrue(view["schedule_options"], "the draft card offers the same times as Schedule")
+        later = {"anchor": view["schedule_options"][0]["anchor"]}   # Later today
+        self.check((tid, card), "schedule", ["task.scheduled"], "scheduled", value=later)   # and Undo
+        answers.answer(self.core, card["id"], "schedule", later)
+        self.assertEqual(self.core.one("SELECT status FROM drafts WHERE task_id=?", (tid,))["status"], "pending")
+        self.clock.advance(hours=8)
+        scheduler.tick(self.core)
+        self.assertEqual(self.task(tid)["state"], "review", "it comes back to review, not triage")
+        self.assertEqual(self.card_for(tid)["kind"], "draft")
+
+    def test_not_now_until_back_at_your_desk(self):
+        tid, card = self.draft("nudge.email")
+        answers.answer(self.core, card["id"], "schedule", {"anchor": {"type": "at_desk"}})
+        self.assertEqual(scheduler.wake(self.core), 1)
+        self.assertEqual(self.task(tid)["state"], "review")
+        self.assertEqual(self.card_for(tid)["kind"], "nudge")
 
     def test_nudge(self):
         made = self.draft("nudge.email")
@@ -313,11 +334,11 @@ class CheckIns(CoreCase):
 class Sending(CoreCase):
     """Approving hands the draft to Fuzz's sender, which sends it with its own connector."""
 
-    def approved(self, kind="email.reply"):
+    def approved(self, kind="email.new"):
         tid = tasks.capture(self.core, "Reply to Elena")
         tasks.assign(self.core, tid)
         scheduler.claim_next(self.core, tid)
-        did = drafts.save_draft(self.core, tid, kind, "Elena Park, email thread", "Hi Elena, the later date works.")
+        did = drafts.save_draft(self.core, tid, kind, "Elena Park", "Hi Elena, the later date works.")
         answers.answer(self.core, self.card_for(tid)["id"], "approve")
         return tid, did
 

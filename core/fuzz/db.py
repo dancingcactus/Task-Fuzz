@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   approved_at TEXT,
   created_at TEXT,
   final INTEGER,                   -- 0: a note that prepares a later step; approving it doesn't close the task
-  attachments TEXT                 -- json list of file names in the task's output folder, for the sender
+  attachments TEXT,                -- json list of file names in the task's output folder, for the sender
+  reply_to INTEGER                 -- the source whose thread a reply or nudge goes in
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -324,7 +325,7 @@ def connect(home):
 
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")],
-              "drafts": [("final", "INTEGER"), ("attachments", "TEXT")],
+              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
               "tasks": [("summary", "TEXT")]}
 
 

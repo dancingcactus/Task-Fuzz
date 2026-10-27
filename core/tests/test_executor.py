@@ -132,6 +132,92 @@ class PrepNote(Claimed):
         self.assertEqual(self.task(tid)["state"], "done")
 
 
+class ScheduledLookup(CoreCase):
+    """You put a task off and ask Fuzz to look into it meanwhile: it comes back at that time, brief in."""
+    LATER = {"type": "exact", "at": "2026-10-21T14:00:00Z"}   # tomorrow afternoon
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(answers, "gathers", return_value=True)   # an executor is set up
+        p.start()
+        self.addCleanup(p.stop)
+
+    def scheduled(self, said="Find out who owns the Eurobet rollout", anchor=None):
+        tid = tasks.capture(self.core, "Confirm the Eurobet trial rolled out")
+        card = self.card_for(tid, "task")
+        answers.answer(self.core, card["id"], "schedule", {"anchor": anchor or self.LATER, "instructions": said})
+        return tid
+
+    def test_it_waits_for_fuzz_with_your_request(self):
+        tid = self.scheduled()
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["assignee"], t["variant_tags"]), ("queued", "fuzz", ["gather"]))
+        self.assertEqual((t["schedule_fire_at"], t["notes"]),
+                         ("2026-10-21T14:00:00Z", "You said: Find out who owns the Eurobet rollout"))
+        self.assertEqual(events.task_log(self.core, tid)[0]["kind"], "guidance")
+        got, why = scheduler.claim_next(self.core)
+        self.assertEqual((got or {}).get("id"), tid, why)
+        brief = tools.get_task(self.core, tid)
+        self.assertTrue(brief["gathering"])
+        self.assertTrue(brief["comes_back"])
+
+    def test_the_brief_waits_until_its_time(self):
+        tid = self.scheduled()
+        scheduler.claim_next(self.core)
+        tools.update_brief(self.core, tid, context_md="## Owner\n\nAmarnath", summary="Amarnath owns it.")
+        self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "scheduled"})
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["variant_tags"], t["schedule_fire_at"]),
+                         ("scheduled", [], "2026-10-21T14:00:00Z"))
+        self.assertIn("It comes back", events.task_log(self.core, tid)[0]["text"])
+        self.assertEqual(cards.open_cards(self.core, tid), [], "nothing in triage before its time")
+        self.clock.advance(days=1, hours=6)
+        scheduler.tick(self.core)
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["summary"]), ("triage", "Amarnath owns it."))
+        self.card_for(tid, "task")
+
+    def test_a_result_waits_too(self):
+        tid = self.scheduled("Summarize the Eurobet thread")
+        scheduler.claim_next(self.core)
+        tools.update_brief(self.core, tid, context_md="## Thread\n\nRolled out Monday")
+        self.assertEqual(tools.finish_gathering(self.core, tid, result=True), {"state": "scheduled"})
+        self.clock.advance(days=1, hours=6)
+        scheduler.tick(self.core)
+        t = self.task(tid)
+        self.assertEqual(t["state"], "triage")
+        self.assertIn("result", t["variant_tags"])
+        self.assertEqual(self.card_for(tid, "task")["suggested"], "done")
+
+    def test_fuzz_has_until_its_time_then_it_comes_back_as_it_was(self):
+        tid = self.scheduled()
+        self.clock.advance(hours=2)   # long past a capture's gather window
+        self.assertEqual(scheduler.tick(self.core)["gather_timeout"], 0)
+        self.assertEqual(self.task(tid)["state"], "queued")
+        self.clock.advance(days=1, hours=4)
+        self.assertEqual(scheduler.tick(self.core)["gather_timeout"], 1)
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["variant_tags"], t["schedule_anchor"]), ("triage", [], None))
+        self.card_for(tid, "task")
+
+    def test_back_at_your_desk_before_fuzz_got_to_it(self):
+        tid = self.scheduled(anchor={"type": "at_desk"})
+        self.assertEqual(self.task(tid)["state"], "queued")
+        scheduler.wake(self.core)
+        self.assertEqual(self.task(tid)["state"], "triage")
+
+    def test_without_instructions_it_is_just_scheduled(self):
+        tid = self.scheduled(said="  ")
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["variant_tags"], t["notes"]), ("scheduled", [], None))
+
+    def test_without_an_executor_the_request_is_kept_for_later(self):
+        answers.gathers.return_value = False
+        tid = self.scheduled()
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["notes"]), ("scheduled", "You said: Find out who owns the Eurobet rollout"))
+
+
 class Identities(CoreCase):
     def test_every_address_is_yours(self):
         cfg = self.core.config

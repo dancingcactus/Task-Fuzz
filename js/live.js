@@ -37,6 +37,8 @@
 
   /* A file opens in a new tab, so its link carries the token the way the event stream does */
   function fileUrl(sid) { return '/files/' + sid + '?token=' + encodeURIComponent(token || ''); }
+  /* A source's link opens where it lives (the email, the Slack thread), but only a web address */
+  function webUrl(link) { return /^https?:\/\//i.test(link || '') ? link : null; }
   function api(method, path, body) {
     var o = { method: method, headers: { Authorization: 'Bearer ' + token } };
     if (body !== undefined) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
@@ -135,6 +137,14 @@
     permission: { primary: ['allow_once', 'Allow once'], secondary: ['always_allow', 'Always allow'], third: ['deny', 'Don’t allow'], dismissed: 'deny' }
   };
 
+  /* How a draft goes out: "Email", or "Email reply in “Eurobet - Go fwd Strategy”" when it answers a source */
+  function via(d, t) {
+    var how = VIA[(d.kind || '').split('.')[0]] || 'Its own app';
+    var src = d.reply_to && (t.sources || []).filter(function (s) { return s.id === d.reply_to; })[0];
+    if (!src) return how;
+    return (d.kind === 'email.reply' ? 'Email reply' : how) + (src.title ? ' in “' + src.title + '”' : '');
+  }
+
   function toItem(t, c, it) {
     it = it || {};
     var tags = t.variant_tags || [], src = (t.sources || []).filter(function (s) { return !s.withdrawn && s.role !== 'ignored'; });
@@ -152,7 +162,7 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : null }; }),
+      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : webUrl(s.link) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
@@ -166,7 +176,7 @@
       doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at),
       draft: draft ? draft.body : null, draftId: draft ? draft.id : null,
       afterApprove: (c && c.after_approve) || null, prep: !!(draft && draft.kind === 'note' && draft.final === 0),
-      sendTo: draft && draft.kind !== 'note' ? { to: draft.target || 'its recipient', via: VIA[(draft.kind || '').split('.')[0]] || 'Its own app' } : null,
+      sendTo: draft && draft.kind !== 'note' ? { to: draft.target || 'its recipient', via: via(draft, t) } : null,
       steps: t.steps_used || 0, needsPermission: tags.indexOf('needs_permission') > -1,
       cardId: c ? c.id : null, cardKind: c ? c.kind : null, cardOptions: c ? c.options : [],
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
@@ -179,7 +189,7 @@
       var left = due - Date.now(), span = Math.max(due - (ts(t.created_at) || Date.now()), 1);
       f.due = { label: 'Due ' + whenText(t.due), left: left <= 0 ? 'Past its time' : ago(new Date(Date.now() - left).toISOString()) + ' left', frac: Math.max(0, Math.min(1, left / span)) };
     }
-    if (state === 'scheduled') { f.scheduledFor = whenText(t.schedule_fire_at); f.now = 'Back ' + f.scheduledFor; }
+    if (state === 'scheduled' || (f.gathering && t.schedule_anchor)) { f.scheduledFor = whenText(t.schedule_fire_at); f.now = 'Back ' + f.scheduledFor; }
     else if (state === 'review') f.now = 'Draft ready to review';
     else if (state === 'sending') f.now = 'Sending' + (f.sendTo ? ' to ' + f.sendTo.to : '');
     else if (state === 'session') f.now = 'Open in Claude';
@@ -197,7 +207,8 @@
       f.answers = { primary: 'Got it. Next one.', secondary: 'Got it. Next one.', third: 'Got it. Next one.' };
       f.incoming = c.reason || f.incoming; f.boxLabel = q.note ? 'What is it?' : c.kind === 'permission' ? 'Anything else Fuzz needs?' : 'Anything that helps?'; f.placeholder = '';
       f.profiles = []; f.mentions = []; f.meta = '';
-      f.aiHeading = 'Why Fuzz asked'; f.aiNote = c.reason || f.aiNote;
+      /* Is it yours? needs what Fuzz found about the task itself; the reason already reads above the answers */
+      if (c.kind !== 'is_task') { f.aiHeading = 'Why Fuzz asked'; f.aiNote = c.reason || f.aiNote; }
     } else {
       ['entity', 'dupOf', 'primary', 'secondary', 'third', 'answers', 'boxLabel', 'placeholder', 'profiles', 'mentions'].forEach(function (k) { delete it[k]; });
     }
@@ -341,9 +352,12 @@
     wrap('wait', function (id) { return decide(S.item(id), 'wait', undefined, 'wait'); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
-    wrap('schedule', function (id, opt) {
-      var a = opt.anchor.type === 'exact' ? { type: 'exact', at: opt.fire_at || opt.anchor.at } : opt.anchor;
-      return decide(S.item(id), 'schedule', { anchor: a }, 'schedule', { anchor: a });
+    /* instr: what Fuzz should look into before it comes back */
+    /* text: a draft you edited before Not now, saved first so it comes back as you left it */
+    wrap('schedule', function (id, opt, instr, text) {
+      var it = S.item(id), a = opt.anchor.type === 'exact' ? { type: 'exact', at: opt.fire_at || opt.anchor.at } : opt.anchor;
+      var v = instr ? { anchor: a, instructions: instr } : { anchor: a };
+      return then(editFirst(it, text), decide(it, 'schedule', v, 'schedule', v));
     });
     wrap('reopen', function (id) { return decide(S.item(id), null, undefined, 'reopen', { where: 'front' }); });
     wrap('bringBack', function (id, where) { return decide(S.item(id), null, undefined, 'reopen', { where: where === 'front' ? 'front' : 'back' }); });

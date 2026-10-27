@@ -98,7 +98,7 @@ class Api(Server):
         tasks.assign(core, tid)
         from fuzz import drafts, scheduler
         scheduler.claim_next(core, tid)
-        drafts.save_draft(core, tid, "email.reply", "Elena", "Hi")
+        drafts.save_draft(core, tid, "email.new", "Elena", "Hi")
         card = self.req("GET", "/cards")[1]["cards"][0]
         self.req("POST", f"/cards/{card['id']}/answer", {"option": "approve"})
         cfg = core.config

@@ -179,9 +179,13 @@ def let_go(core, task_id, card=None, option="drop", why=None):
                 card=card, option=option, question=None, reason=why)
 
 
-def schedule(core, task_id, anchor, card=None, offered_only=True):
+def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=None, gather=False):
     """offered_only: a human pick must be one of the card's options (or exact). The core's own
-    scheduling, like "hold the rest until tomorrow", may use any anchor."""
+    scheduling, like "hold the rest until tomorrow", may use any anchor.
+
+    instructions: what you want Fuzz to look into meanwhile. They go in the task's notes, and with
+    gather Fuzz looks it up now: the task waits queued for Fuzz with the gather tag, and when Fuzz is
+    done it waits as scheduled, so it still comes back at the time you picked, with the brief in."""
     from . import timeres
     t = require(core, task_id)
     the_card = card or next((c for c in cards.open_cards(core, t["id"]) if c["kind"] == "task"), None)
@@ -189,14 +193,21 @@ def schedule(core, task_id, anchor, card=None, offered_only=True):
         anchor, fire_at, source = timeres.pick(core, the_card, t, anchor)
     else:
         fire_at, source = timeres.resolve(core, anchor, t), "direct"
+    said = (instructions or "").strip()
+    when = timeres.label(core, anchor).lower()
+    extra, log = {}, ("status", f"You scheduled this: {when}.")
+    if said:
+        extra["notes"] = ((t.get("notes") or "") + f"\nYou said: {said}").strip()
+        log = ("guidance", f"You scheduled this: {when}. You said: {said}")
+    look = bool(said and gather)
     with core.tx("human"):
         ch = events.Changes()
-        move(core, ch, t, "scheduled", card=card, schedule_anchor=anchor,
-             schedule_fire_at=fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ"), question=None)
-        _answered(core, ch, card, "schedule", {"anchor": anchor})
-        events.emit(core, "task.scheduled", task_id=t["id"], changes=ch,
-                    log=("status", f"You scheduled this: {timeres.label(core, anchor).lower()}."),
-                    data={"anchor": anchor, "source": source, "line": timeres.line(core, anchor)})
+        move(core, ch, t, "queued" if look else "scheduled", card=card, add_tags=("gather",) if look else (),
+             schedule_anchor=anchor, schedule_fire_at=fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+             question=None, attempts=0, **extra)
+        _answered(core, ch, card, "schedule", {"anchor": anchor, "instructions": said} if said else {"anchor": anchor})
+        events.emit(core, "task.scheduled", task_id=t["id"], changes=ch, log=log,
+                    data={"anchor": anchor, "source": source, "line": timeres.line(core, anchor), "gather": look})
         core.q("INSERT INTO feedback (user_id, ts, kind, a, note) VALUES (?,?,?,?,?)",
                (core.user_id, core.now_iso(), "schedule", t["id"], f"{anchor['type']}:{source}"))
     return t["id"]
@@ -204,13 +215,17 @@ def schedule(core, task_id, anchor, card=None, offered_only=True):
 
 def bring_back(core, task_id, where="back", reason=None, type="task.came_back", actor="human", tags=("returning",),
                log=None):
-    """Back into triage: a scheduled task's time came, you pulled it back, or a reply came in."""
+    """Back into triage: a scheduled task's time came, you pulled it back, or a reply came in. A draft
+    you put off ("Not now") comes back to review instead, for your OK."""
     t = require(core, task_id)
-    if t["state"] == "triage":
+    if t["state"] in ("triage", "review"):
         return None
+    to = "triage"
+    if t["state"] == "scheduled" and core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
+        to, tags = "review", ()
     with core.tx(actor):
         ch = events.Changes()
-        move(core, ch, t, "triage", add_tags=tags, order_key=next_order(core, where), reason=reason,
+        move(core, ch, t, to, add_tags=tags, order_key=next_order(core, where), reason=reason,
              schedule_anchor=None, schedule_fire_at=None)
         eid = events.emit(core, type, task_id=t["id"], changes=ch,
                           log=log or ("status", reason or "Back in triage."), data={"reason": reason})

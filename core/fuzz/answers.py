@@ -5,6 +5,7 @@ code change here; the AI only fills in wording.
 """
 
 from . import cards, drafts, events, tasks
+from .config import gathers
 from .db import FuzzError
 
 POSTPONE_LIMIT = 2   # after two "Not sure yet", the core takes the safe answer
@@ -29,8 +30,9 @@ def _task_answer(core, card, t, option, value):
     if option == "session":
         return tasks.session(core, t["id"], card=card)
     if option == "schedule":
-        anchor = (value or {}).get("anchor") if isinstance(value, dict) else None
-        return tasks.schedule(core, t["id"], anchor, card=card)
+        v = value if isinstance(value, dict) else {}
+        return tasks.schedule(core, t["id"], v.get("anchor"), card=card, instructions=v.get("instructions"),
+                              gather=gathers(core.config))
     if option == "done":
         return tasks.done(core, t["id"], card=card)
     if option == "park":
@@ -115,6 +117,9 @@ def _draft(core, card, t, option, value):
         return drafts.send_back(core, card, value)
     if option == "not_yet":
         return drafts.not_yet(core, card)
+    if option == "schedule":   # not now: the draft waits, and asks for your OK again at that time
+        v = value if isinstance(value, dict) else {}
+        return tasks.schedule(core, t["id"], v.get("anchor"), card=card)
 
 
 def _permission(core, card, t, option, value):

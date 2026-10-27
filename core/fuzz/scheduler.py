@@ -58,9 +58,11 @@ def expire_leases(core):
 RESULT_PROMPT = "Here’s what you asked for. Done?"
 
 
-def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=None, result=False):
+def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=None, result=False, hold=False):
     """result: the brief is the deliverable, so the card's main answer is Done, with at most one
-    follow-up the human can tap to send Fuzz further."""
+    follow-up the human can tap to send Fuzz further.
+
+    hold: you scheduled it, so it waits as scheduled and comes to triage, handed back, at that time."""
     if result:
         question = (question or "").strip() or RESULT_PROMPT
         if len([o for o in options or [] if o and o.strip()]) > 1:
@@ -72,7 +74,8 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
         raise FuzzError("A result needs the brief first: write it with update_brief(context_md=…)", "result")
     with core.tx(actor):
         ch = events.Changes()
-        tasks.move(core, ch, t, "triage", add_tags=("handed_back", "result") if result else ("handed_back",),
+        tasks.move(core, ch, t, "scheduled" if hold else "triage",
+                   add_tags=("handed_back", "result") if result else ("handed_back",),
                    order_key=tasks.next_order(core), **tasks.handed_back_fields(question, options))
         events.emit(core, "task.handed_back", task_id=t["id"], changes=ch,
                     data={"question": question.strip(), "result": bool(result)},
@@ -98,26 +101,40 @@ def refuse_while_gathering(t):
         raise FuzzError(GATHER_REFUSED.format(id=t["id"]), "task_id", 409)
 
 
-def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=False, options=None):
+def holding(core, t):
+    """You scheduled it and asked Fuzz to look into it meanwhile, and its time hasn't come yet."""
+    a = t.get("schedule_anchor")
+    if not a:
+        return False
+    return (t.get("schedule_fire_at") or "") > core.now_iso() if t.get("schedule_fire_at") else a.get("type") == "at_desk"
+
+
+def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=False, options=None, hold=True):
     """The context is in: the task goes to triage as captured, with its card, and nothing asked.
 
     result: looking it up was the whole task (a summary, an agenda, an answer), so it arrives done, as a
-    result whose main answer is Done, and you never had to assign it."""
+    result whose main answer is Done, and you never had to assign it.
+    hold: one you scheduled waits as scheduled until its time instead (False: its time came)."""
     t = tasks.require(core, task_id)
     if not gathering(t):
         raise FuzzError(f"Task {t['id']} isn't being gathered", "task_id", 409)
+    held = hold and holding(core, t)
+    back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
     if result:
         if not core.config["gather"]["finish_results"]:
             raise FuzzError("Finishing tasks while gathering is turned off: call finish_gathering without result",
                             "result")
-        return hand_back(core, t["id"], None, options, actor=actor, result=True,
-                         log=log or "Finished while gathering. The result is in the brief.")
+        return hand_back(core, t["id"], None, options, actor=actor, result=True, hold=held,
+                         log=(log or "Finished while gathering. The result is in the brief.") + back)
     with core.tx(actor):
         ch = events.Changes()
-        tasks.move(core, ch, t, "triage")
+        if held:
+            tasks.move(core, ch, t, "scheduled")
+        else:
+            tasks.move(core, ch, t, "triage", schedule_anchor=None, schedule_fire_at=None)
         events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
-                    log=("status", log or ("Fuzz gathered what it could find." if t.get("context_md")
-                                           else "Fuzz found nothing more to add.")))
+                    log=("status", (log or ("Fuzz gathered what it could find." if t.get("context_md")
+                                            else "Fuzz found nothing more to add.")) + back))
         cards.sync(core, t["id"])
     return t["id"]
 
@@ -279,12 +296,20 @@ def tick(core):
     now = core.now_iso()
     # Gathering never keeps a task from you for long: no run picked it up in time, so it goes to triage as is
     late = iso(core.now() - timedelta(minutes=core.config["gather"]["minutes"]))
-    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued' AND created_at < ?",
-                      (core.user_id, late)):
-        if gathering(t):
-            finish_gathering(core, t["id"], actor="system",
-                             log="Fuzz didn't get to this in time, so it came to you as captured.")
-            out["gather_timeout"] += 1
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued'", (core.user_id,)):
+        if not gathering(t):
+            continue
+        if t.get("schedule_anchor"):   # you scheduled it: Fuzz has until its time
+            if not t.get("schedule_fire_at") or t["schedule_fire_at"] > now:
+                continue
+            lab = timeres.label(core, t["schedule_anchor"])
+            log = f"Fuzz didn't get to this before {lab[0].lower() + lab[1:]}, so it came back as it was."
+        elif t["created_at"] < late:
+            log = "Fuzz didn't get to this in time, so it came to you as captured."
+        else:
+            continue
+        finish_gathering(core, t["id"], actor="system", log=log, hold=False)
+        out["gather_timeout"] += 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='scheduled' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
         lab = timeres.label(core, t["schedule_anchor"] or {"type": "exact"})
@@ -319,6 +344,11 @@ def tick(core):
 def wake(core):
     """You're back at your desk: everything scheduled for that comes back."""
     n = 0
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued'", (core.user_id,)):
+        if gathering(t) and (t.get("schedule_anchor") or {}).get("type") == "at_desk":
+            finish_gathering(core, t["id"], actor="system", hold=False,
+                             log="You're back at your desk before Fuzz got to this, so it came back as it was.")
+            n += 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='scheduled'", (core.user_id,)):
         if (t.get("schedule_anchor") or {}).get("type") == "at_desk":
             tasks.bring_back(core, t["id"], reason="You're back at your desk.", actor="system")

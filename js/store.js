@@ -183,10 +183,14 @@
     done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); wrapCheck(it); },
     session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
     /* opt is one of S.scheduleOptions(it), or an exact time: the core's Schedule options, as the API sends them */
-    schedule: function (id, opt) {
+    /* instr: Fuzz looks into it meanwhile, and it still comes back at that time */
+    schedule: function (id, opt, instr, text) {
       var it = S.item(id), when = lowerFirst(opt.label); S.leave(id);
-      it.state = 'scheduled'; it.scheduleAnchor = opt.anchor; it.scheduledFor = when; it.now = 'Back ' + when;
-      S.log(it, 'status', 'You scheduled this: ' + when + '.');
+      if (text != null) it.draft = text;   /* Not now on a draft: it comes back as you left it */
+      it.state = instr ? 'ai-queued' : 'scheduled'; it.gathering = !!instr;
+      it.scheduleAnchor = opt.anchor; it.scheduledFor = when; it.now = 'Back ' + when;
+      if (instr) S.log(it, 'guidance', 'You scheduled this: ' + when + '. You said: ' + instr);
+      else S.log(it, 'status', 'You scheduled this: ' + when + '.');
     },
     scheduleOptions: function (it) { return Sched.options(it); },
     /* The UI decides when to ask how you're doing; the answer is kept (POST /checkin in the core) and sets
@@ -355,6 +359,7 @@
     /* ---- Fuzz working in the background ---- */
     startWork: function () { if (!timer) timer = setInterval(tick, 1000); },
     nowText: function (it) {
+      if (it.gathering && it.scheduledFor) return 'Looking into it. Back ' + it.scheduledFor;
       if (it.gathering && it.state === 'ai-queued') return 'Waiting to gather context';
       if (it.gathering && it.state === 'ai') { var g = it.log[0]; return g && g.kind !== 'status' ? g.text : 'Gathering context'; }
       if (it.state === 'ai-queued') return 'Next up, waiting for a free slot';
