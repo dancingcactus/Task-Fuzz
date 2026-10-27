@@ -101,9 +101,10 @@ class Adapter:
         raise NotImplementedError
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
-                         send_tools=None):
+                         send_tools=None, read_tools=None):
         """files_dir: the user's attachments folder, the only place the run may read files from.
-        send_tools: for the sender, the connector tools it may call to send, as this client names them."""
+        send_tools: for the sender, the connector tools it may call to send, as this client names them.
+        read_tools: for the executor, the connector tools it may call to look things up."""
         raise NotImplementedError
 
     def prompt(self, role, task_id=None):

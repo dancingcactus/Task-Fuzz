@@ -17,6 +17,10 @@ DEFAULTS = {
     # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
     # hands each draft back.
     "send": {"tools": {"claude-code": [], "copilot": []}},
+    # Connector tools the executor may call to look things up (a search, a calendar read), per client, as
+    # that client names them (e.g. "Glean" for every tool of that Copilot server). List only tools that
+    # read: whatever is listed runs without asking. Empty: the executor has only Fuzz's own tools.
+    "read": {"tools": {"claude-code": [], "copilot": []}},
     "embedder": "ollama",
     "ollama_model": "nomic-embed-text",
     "ollama_url": "http://localhost:11434",

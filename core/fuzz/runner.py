@@ -75,10 +75,13 @@ def _headless(core, adapter, role, rid, model, task_id, verbose, say):
     if role == "executor":   # attachments: readable with the client's own file tools, nothing else is
         files_dir = files.user_dir(core)
         os.makedirs(files_dir, exist_ok=True)
-    send_tools = None
+    send_tools = read_tools = None
     if role == "sender":   # the connector tools you allowed for sending, as this client names them
         send_tools = list(((core.config.get("send") or {}).get("tools") or {}).get(adapter.name) or [])
-    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir, send_tools=send_tools)
+    if role == "executor":   # and the ones you allowed for looking things up
+        read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(adapter.name) or [])
+    argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir, send_tools=send_tools,
+                                    read_tools=read_tools)
     with open(os.path.join(run_dir, "argv.json"), "w") as f:
         json.dump(argv, f, indent=2)
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

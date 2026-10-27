@@ -58,6 +58,7 @@ def cmd_serve(a):
     srv = make_server(a.home or default_home(), "127.0.0.1", a.port)
     tok = ensure_token(a.home or default_home(), 1)
     print(f"Fuzz core on http://127.0.0.1:{a.port}/ (token in {os.path.join(a.home or default_home(), 'tokens.json')})")
+    print(f"Open your queue: http://127.0.0.1:{a.port}/?token={tok}  (once per browser; it remembers)", flush=True)
     if a.show_token:
         print(f"token: {tok}")
     try:

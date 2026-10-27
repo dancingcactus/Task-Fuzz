@@ -82,7 +82,9 @@
     stats();
     if (!greeted) { greeted = true; greet(); showAway(); return; }
     Fuzz.say('Back to the queue.', { type: false });
-    booting = true; showNext(); booting = false; /* the router places focus on arrival */
+    booting = true; showNext(); booting = false;
+    /* The router focuses the heading on arrival unless something on the page already has focus */
+    var l = landing(); if (l && l.tagName === 'TEXTAREA') { l.focus({ preventScroll: true }); l.selectionStart = l.selectionEnd = l.value.length; }
   };
   V.unmount = function () {
     alive = false; epoch++;
@@ -151,10 +153,11 @@
     var g = [
       ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now']]],
-      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card'], ['L', 'Let a stale card go'], ['Esc', 'Back out, close a menu, or skip a check-in']]],
+      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card'], ['L', 'Let a stale card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
       ['Anywhere', [['N', 'New task (Esc goes back)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
+      '<p class="meta">A card without a draft starts with the cursor in its text box. Press Esc first to use the letter and number keys.</p>' +
       '<p class="meta">Send is never on a single key, so nothing goes out by accident.</p>';
   }
 
@@ -367,12 +370,12 @@
       h += '<section class="stale"><div class="stale-top"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/></svg><div><h3>Quiet for ' + esc(it.age) + '</h3><p>Nothing new has come up. Letting it go is fine. It moves to Let go, where you can bring it back anytime.</p></div></div>' +
         '<div class="stale-btns"><button type="button" class="btn" data-act="keep" aria-keyshortcuts="K">Yes, keep it' + kbd('K') + '</button><button type="button" class="btn dark" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>';
     } else if (isTask) {
-      var val = edits[it.id] !== undefined ? edits[it.id] : (it.instr || it.hint || '');
+      var val = edits[it.id + ':instr'] !== undefined ? edits[it.id + ':instr'] : (it.instr || it.hint || '');
       h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><textarea id="instr" rows="3">' + esc(val) + '</textarea></div>';
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
-      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span>Optional. Edit anything.</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id] !== undefined ? edits[it.id] : (it.hint || '')) + '</textarea></div>' +
+      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span>Optional. Edit anything.</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
         '<div class="actions ent"><button type="button" class="btn primary" data-act="ent-primary" aria-keyshortcuts="1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' + esc(it.primary) + kbd(1) + '</button>' +
         '<button type="button" class="btn" data-act="ent-secondary" aria-keyshortcuts="2">' + esc(it.secondary) + kbd(2) + '</button>' +
         (it.third ? '<button type="button" class="btn" data-act="ent-third" aria-keyshortcuts="3">' + esc(it.third) + kbd(3) + '</button>' : '') +
@@ -389,7 +392,7 @@
      its connected tools, so the card says what goes to whom, lets you change it first, and keeps Send off
      the single-letter keys. */
   function reviewHTML(it) {
-    var r = Store.recipient(it), val = edits[it.id] !== undefined ? edits[it.id] : (it.draft || '');
+    var r = Store.recipient(it), val = edits[it.id + ':draft'] !== undefined ? edits[it.id + ':draft'] : (it.draft || '');
     var h = tagrow(it, '<span class="tag tag--ok">Needs your OK</span>');
     h += askHTML(r ? 'Send this to ' + r.to + '?' : 'Does this look right?') + titleHTML(it);
     /* After "Ask Fuzz to change it", the draft says it was reworked and what you asked for */
@@ -478,10 +481,18 @@
   }
   /* When what had focus is gone (the card was replaced) or sits in the stack, carry focus to the new
      heading, so keyboard and screen reader users land on what to decide next. */
+  /* A card with no draft starts with the cursor in its box, so you can type straight away. Touch
+     screens keep the heading, or the keyboard would cover the card. */
+  function landing() {
+    var box = !$('#draft') && window.matchMedia && matchMedia('(pointer: fine)').matches && ($('#instr') || $('#note'));
+    return box || $('#ask');
+  }
+  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); }
   function refocus(el) {
     var a = document.activeElement;
     if (booting || !el || (a && a !== document.body && document.contains(a) && !stack.contains(a))) return;
     el.focus({ preventScroll: true });
+    if (el.tagName === 'TEXTAREA') el.selectionStart = el.selectionEnd = el.value.length;
   }
   /* The bottom edge of the header: anything above it is out of view. */
   function topEdge() { var a = document.getElementById('appbar'); return a ? a.getBoundingClientRect().bottom : 0; }
@@ -510,7 +521,7 @@
     renderCard(t); updateStack(false); stats();
     card.classList.add(t.handedBack ? 'enter-tilt' : 'enter');
     if (Fuzz.isCalm()) card.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
-    refocus($('#ask'));
+    refocus(landing());
   }
   /* Bring the next card in as soon as the last one is gone, and hand back the buttons. Fuzz holds his
      reaction to it until he has finished with the last one (showNext(shown)). */
@@ -648,7 +659,7 @@
     if (!alive) return;
     a.hidden = true;
     await showNext();
-    refocus($('#ask'));
+    refocus(landing());
   }
   function openKeys() { var d = $('#keysdlg'); if (d && !d.open) d.showModal(); }
 
@@ -779,6 +790,7 @@
     await sleep(rush ? 150 : 250);
     var waited, title = it.title;
     var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr); });
+    forgetEdits(it.id);
     /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting.
        Once Fuzz starts on it, it can't be undone any more; you'd pull it back from Lineup instead. */
     offer('Assigned “' + title + '” to Fuzz.', ch, waited ? 'Assigned “' + title + '” to Fuzz. It’s next up; five are running.' : null);
@@ -851,7 +863,7 @@
   async function schedule() {
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
-    if ($('#instr')) edits[it.id] = $('#instr').value;
+    if ($('#instr')) edits[it.id + ':instr'] = $('#instr').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
     Fuzz.setMood('eager'); Fuzz.say('Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
@@ -896,7 +908,7 @@
     await sleep(220);
     if (r) offer('Approved “' + title + '” to send.', Store.track([it.id], function () { Store.approve(it.id, text); }), 'Approved. Fuzz is sending it to ' + r.to + '.');
     else offer('Approved “' + title + '”.', Store.track([it.id], function () { Store.accept(it.id, text); }));
-    delete edits[it.id];
+    forgetEdits(it.id);
     Fuzz.flash(); Fuzz.setMood('proud'); Fuzz.setArm('salute'); Fuzz.pAnim('bow');
     Fuzz.say(r ? 'On its way to ' + r.to + '.' : 'Filed. Thanks for checking.', { cls: 'sign', type: false });
     stats();
@@ -913,7 +925,7 @@
     var note = $('#revise-text').value.trim(), title = it.title;
     var draft = $('#draft') ? $('#draft').value : null;
     var ch = Store.track([it.id], function () { Store.revise(it.id, note, draft); });
-    delete edits[it.id];
+    forgetEdits(it.id);
     offer('Sent “' + title + '” back to Fuzz to change.', ch);
     Fuzz.setMood('eager'); Fuzz.setArm('salute'); Fuzz.say('Got it. I’ll bring it back changed.', { type: false });
     var shown = null, flown = fly(card, root.querySelector('#bot'), { scale: 0.08, rot: -18, dur: 600 }).then(function () { shown = bringNext(); });
@@ -987,7 +999,7 @@
     var ta = $('#instr'), typed = ta ? ta.value.trim() : '';
     var text = !typed || typed === (it.instr || it.hint || '').trim() ? q.instr : q.instr + '\n' + typed;
     if (q.mine) {
-      edits[it.id] = undefined;
+      forgetEdits(it.id);
       return quickClear('Took on', 'You took “' + it.title + '” yourself. It waits in Lineup, under Yours.', function (x) { Store.mine(x.id, text); }, 'Got it, it’s with you. I kept the sources handy.');
     }
     if (ta) ta.value = text;
@@ -1007,7 +1019,8 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     card.addEventListener('input', function (e) {
       var it = cur(); if (!it) return;
-      if (e.target.id === 'instr' || e.target.id === 'note' || e.target.id === 'draft') edits[it.id] = e.target.value;
+      /* Each box keeps its own text, so what you told Fuzz never turns up in the draft he brings back */
+      if (e.target.id === 'instr' || e.target.id === 'note' || e.target.id === 'draft') edits[it.id + ':' + e.target.id] = e.target.value;
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
     card.addEventListener('click', function (e) {
@@ -1043,9 +1056,9 @@
       else if (a === 'park') moment(function () { return quickClear('Parked', 'Parked “' + cur().title + '”. Find it in Lineup, under Parked.', function (i) { Store.park(i.id); }, 'Parked. No date, no pressure.'); });
       else if (a === 'waiting') moment(function () { return quickClear('Waiting on someone:', 'Moved to Waiting on others. Fuzz will watch for a reply.', function (i) { Store.wait(i.id); }, 'I’ll watch for the reply.'); });
       else if (a === 'letgo') moment(function () { return quickClear('Let go of', 'Let go. You can bring it back from Let go.', function (i) { Store.letGo(i.id); }, 'Let go. That one’s off your plate.', 'sleepy'); });
-      else if (a === 'keep') { keptStale[cur().id] = true; renderCard(cur()); refocus($('#ask')); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Kept. It stays on your list.', { type: false }); setTimeout(function () { if (alive && Fuzz.mood() === 'happy') Fuzz.setMood('idle'); }, 1500); }
+      else if (a === 'keep') { keptStale[cur().id] = true; renderCard(cur()); refocus(landing()); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Kept. It stays on your list.', { type: false }); setTimeout(function () { if (alive && Fuzz.mood() === 'happy') Fuzz.setMood('idle'); }, 1500); }
       else if (a === 'send') moment(sendDraft);
-      else if (a === 'notnow') moment(function () { return quickClear('Not now:', 'Took “' + cur().title + '” out of triage. It waits in Lineup, under Yours.', function (i) { if ($('#draft')) edits[i.id] = $('#draft').value; Store.leave(i.id); }, 'Okay. It waits in Lineup until you’re ready.'); });
+      else if (a === 'notnow') moment(function () { return quickClear('Not now:', 'Took “' + cur().title + '” out of triage. It waits in Lineup, under Yours.', function (i) { if ($('#draft')) edits[i.id + ':draft'] = $('#draft').value; Store.leave(i.id); }, 'Okay. It waits in Lineup until you’re ready.'); });
       else if (a === 'revise') {
         var rf = $('#revise'); rf.hidden = !rf.hidden; t.setAttribute('aria-expanded', String(!rf.hidden));
         if (!rf.hidden) $('#revise-text').focus();
@@ -1079,6 +1092,8 @@
     docKey = function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
+      /* Escape leaves the card's box, so the number keys work again */
+      if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }

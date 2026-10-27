@@ -94,8 +94,14 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
   A working spike of the matcher itself, as a GitHub Copilot skill, is in [`spikes/task-matching/`](spikes/task-matching/README.md).
 
 The real backend is in [`core/`](core/README.md): the store and event log, cards, the scheduler,
-the MCP server for the AI roles, the HTTP API and the installer for Claude Code and Copilot. `fuzz serve`
-also serves this demo, but the demo doesn't call the core yet.
+the MCP server for the AI roles, the HTTP API and the installer for Claude Code and Copilot.
+
+**Live mode.** `fuzz serve` also serves these screens, and prints a link with your token
+(`http://127.0.0.1:8765/?token=…`). Open it once and the same screens run on your real queue
+(`js/live.js`): every decision goes to the core, Undo is the core's, Assign starts the executor right away,
+and what Fuzz does shows up as it happens through the event stream. Settings > Use demo data goes back to
+the demo. Projects, the conversation tab and code previews are demo-only for now, since the core doesn't
+have them yet.
 
 ## Layout of the code
 
