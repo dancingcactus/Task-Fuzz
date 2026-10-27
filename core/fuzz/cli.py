@@ -7,7 +7,7 @@ import shutil
 import sys
 
 from . import answers, cards, doctor, events, installer, matching, scheduler, tasks
-from .config import get as cfg_get, set_ as cfg_set
+from .config import ME_KEYS, get as cfg_get, set_ as cfg_set, update_me
 from .db import Core, FuzzError, default_home
 
 
@@ -32,10 +32,7 @@ def cmd_init(a):
     from .http_api import ensure_token
     core = _core(a)
     cfg = core.config
-    me = cfg["me"]
-    me["names"] = sorted(set(me.get("names", []) + (a.me_name or [])))
-    me["emails"] = sorted(set(me.get("emails", []) + [e.lower() for e in (a.me_email or [])]))
-    me["slack_ids"] = sorted(set(me.get("slack_ids", []) + (a.me_slack or [])))
+    me = update_me(cfg, add={"names": a.me_name, "emails": a.me_email, "slack_ids": a.me_slack})
     if a.embedder:
         cfg["embedder"] = a.embedder
     if a.tz:
@@ -43,6 +40,23 @@ def cmd_init(a):
     core.save_config(cfg)
     tok = ensure_token(core.home, core.user_id)
     _print({"home": core.home, "user": core.user_id, "token": tok, "me": me})
+    if len(me["emails"]) < 2:
+        print("Have a work and a personal address? Add the other too, so Fuzz knows both are yours:\n"
+              "  fuzz me add --email you@work.example --slack W123", file=sys.stderr)
+
+
+def cmd_me(a):
+    """Every name, email and Slack ID that is yours. The executor uses a connector signed in to any of them
+    without asking which account you meant."""
+    core = _core(a)
+    cfg = core.config
+    if a.op != "show":
+        vals = {"names": a.name, "emails": a.email, "slack_ids": a.slack}
+        if not any(vals.values()):
+            raise FuzzError("Pass --email, --name or --slack", "email")
+        update_me(cfg, **{a.op: vals})
+        core.save_config(cfg)
+    _print({k: cfg["me"].get(k, []) for k in ME_KEYS})
 
 
 def cmd_user_add(a):
@@ -268,6 +282,13 @@ def parser():
     s.add_argument("--embedder", choices=["ollama", "hash", "off"])
     s.add_argument("--tz")
     s.set_defaults(fn=cmd_init)
+
+    s = sub.add_parser("me", help="who you are: add your other email addresses, names and Slack IDs")
+    s.add_argument("op", nargs="?", default="show", choices=["show", "add", "remove"])
+    s.add_argument("--email", action="append")
+    s.add_argument("--name", action="append")
+    s.add_argument("--slack", action="append")
+    s.set_defaults(fn=cmd_me)
 
     s = sub.add_parser("user", help="add a user (each has their own queue)")
     s.add_argument("op", choices=["add"])

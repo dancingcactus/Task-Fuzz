@@ -41,7 +41,8 @@ def build(core, role):
 
     @srv.tool()
     def whoami(prompt_version: str | None = None, client: str | None = None) -> dict:
-        """Who you work for: names, email addresses, Slack IDs and folders to read. Call first.
+        """Who you work for: names, email addresses, Slack IDs and folders to read, today's date, the local
+        time and their time zone. Call first.
         Pass your skill's prompt_version so every event you write records it."""
         return _call(tools.whoami, core, role, prompt_version, client)
 
@@ -76,18 +77,25 @@ def build(core, role):
             return _call(tools.save_notes, core, task_id, text)
 
         @srv.tool()
-        def save_draft(task_id: int, kind: str, target: str, body: str) -> dict:
+        def save_draft(task_id: int, kind: str, target: str, body: str, final: bool = True) -> dict:
             """Store a draft for the human to approve. The task moves to review. kind: email.reply, email.new,
             slack.message, calendar.invite, nudge.email, nudge.slack or note. target: who and where, specific enough
             to send to ("Marcus, Slack #offsite-planning"). This is the only way toward anything outside the system:
-            once the human approves it, Fuzz's sender sends exactly this body. A note is only filed."""
-            return _call(tools.save_draft, core, task_id, kind, target, body)
+            once the human approves it, Fuzz's sender sends exactly this body. A note is only filed.
+            final: false for a note that prepares a step still ahead ("send the update next week"). Call
+            suggest_schedule (or update_brief with due) first: approving it schedules the task for then
+            instead of closing it."""
+            return _call(tools.save_draft, core, task_id, kind, target, body, final)
 
         @srv.tool()
-        def hand_back(task_id: int, question: str, options: list[str] | None = None) -> dict:
+        def hand_back(task_id: int, question: str | None = None, options: list[str] | None = None,
+                      result: bool = False) -> dict:
             """Send the task back to the human's triage with one either/or question and up to four short
-            answers they can tap. It goes to the end of their queue."""
-            return _call(tools.hand_back, core, task_id, question, options)
+            answers they can tap. It goes to the end of their queue.
+            result: true when the brief is the deliverable (a summary, a checklist, an answer). The card then
+            shows it as a result whose main button is Done; question is optional and options holds at most
+            one follow-up ("Dig into the Q3 numbers"). Write the brief with update_brief first."""
+            return _call(tools.hand_back, core, task_id, question, options, result)
 
         @srv.tool()
         def create_task(ask: str, parent_task_id: int | None = None, due: str | None = None,
@@ -114,11 +122,15 @@ def build(core, role):
 
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
-                         effort_mins: int | None = None, energy: str | None = None) -> dict:
+                         effort_mins: int | None = None, energy: str | None = None, due: str | None = None,
+                         title: str | None = None, ask: str | None = None) -> dict:
             """Write what the human sees. context_md: a short Markdown brief (what it is, when it's due, links),
             for tasks with no draft. question: the one thing you need from them now ("What should the deadline
-            be?"). effort_mins and energy (low, normal, high) help order their queue. Pass only what changes."""
-            return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy)
+            be?"). effort_mins and energy (low, normal, high) help order their queue. due: when it must be done,
+            like 2026-11-03 or 2026-11-03T15:00 (their time zone unless it says otherwise). title and ask: only
+            when their instructions changed what the task is; the old title is kept and Undo restores it.
+            Pass only what changes."""
+            return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask)
 
         @srv.tool()
         def release(task_id: int) -> dict:

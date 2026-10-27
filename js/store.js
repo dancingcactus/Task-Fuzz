@@ -293,6 +293,8 @@
     accept: function (id, text) {
       var it = S.item(id);
       S.leave(id); S.editDraft(it, text);
+      /* Prep for a step still ahead files the note and waits for that step; the core says when */
+      if (it.prep) { it.state = 'scheduled'; it.now = it.afterApprove || 'Waiting for the next step'; S.log(it, 'status', 'You approved the prep. ' + (it.afterApprove || '')); return; }
       it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Approved by you';
       S.log(it, 'status', 'You approved this.');
       wrapCheck(it);

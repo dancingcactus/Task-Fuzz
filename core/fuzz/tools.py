@@ -9,7 +9,7 @@ it sends an approved draft with its client's own connector, then says so with ma
 import json
 from contextlib import contextmanager
 
-from . import drafts, events, matching, scheduler, signals, tasks
+from . import drafts, events, matching, scheduler, signals, tasks, timeres
 from .db import FuzzError
 
 LOG_ON_GET = 8
@@ -34,9 +34,11 @@ def whoami(core, role, prompt_version=None, client=None):
         rid = runs.start(core, role, client or "chat", prompt_version=prompt_version, trigger="chat")
         runs.attach(core, rid)
     me = cfg["me"]
+    local = core.now().astimezone(timeres.local_tz(core))
     return {"user_id": core.user_id, "names": me.get("names", []), "emails": me.get("emails", []),
             "slack_ids": me.get("slack_ids", []), "folders": me.get("folders", {}), "role": role,
-            "now": core.now_iso(), "tz": cfg.get("tz"), "run_id": (core.run or {}).get("id")}
+            "now": core.now_iso(), "today": local.strftime("%A %Y-%m-%d"), "local_time": local.isoformat(timespec="minutes"),
+            "tz": timeres.tz_name(core), "run_id": (core.run or {}).get("id")}
 
 
 # ---------------------------------------------------------------- executor
@@ -53,6 +55,7 @@ def _task_brief(core, t):
                     "AND role!='ignored'", (t["id"], core.user_id))
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
+            "created_at": t["created_at"],
             "notes": t["notes"], "context_md": t["context_md"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
             "sources": [_source_ref(s) for s in srcs if not s["withdrawn"]],
@@ -101,15 +104,15 @@ def save_notes(core, task_id, text):
     return {"ok": True}
 
 
-def save_draft(core, task_id, kind, target, body):
+def save_draft(core, task_id, kind, target, body, final=True):
     with _lease(core, task_id):
-        did = drafts.save_draft(core, task_id, kind, target, body)
+        did = drafts.save_draft(core, task_id, kind, target, body, final)
     return {"draft_id": did, "state": "review"}
 
 
-def hand_back(core, task_id, question, options=None):
+def hand_back(core, task_id, question=None, options=None, result=False):
     with _lease(core, task_id):
-        scheduler.hand_back(core, task_id, question, options)
+        scheduler.hand_back(core, task_id, question, options, result=result)
     return {"state": "triage"}
 
 
@@ -133,9 +136,16 @@ def suggest_schedule(core, task_id, anchor, reason):
         return {"label": scheduler.suggest_schedule(core, task_id, anchor, reason)}
 
 
-def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None):
-    with _lease(core, task_id):
-        return {"updated": tasks.update_brief(core, task_id, context_md, question, effort_mins, energy)}
+def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
+                 title=None, ask=None):
+    updated = []
+    if title is not None or ask is not None:
+        with _lease(core, task_id):   # its own command, so Undo reverses the rename and nothing else
+            updated += tasks.rename(core, task_id, title, ask)
+    if any(v is not None for v in (context_md, question, effort_mins, energy, due)) or (title is None and ask is None):
+        with _lease(core, task_id):
+            updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due)
+    return {"updated": sorted(updated)}
 
 
 def release(core, task_id):

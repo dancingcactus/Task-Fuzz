@@ -18,7 +18,7 @@ MOVES = {
     "triage": _ANY_HUMAN,
     "queued": {"working", "triage", "done", "letgo", "parked", "merged", "session", "scheduled", "waiting"},
     "working": {"queued", "review", "triage", "done", "letgo", "merged"},
-    "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged", "sending"},
+    "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged", "sending", "scheduled"},
     # approved: Fuzz's sender sends it with its own connectors, or it comes back to review if it can't
     "sending": {"done", "waiting", "review", "triage", "letgo", "merged"},
     "session": {"done", "triage", "queued", "parked", "letgo", "scheduled", "waiting", "merged"},

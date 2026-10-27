@@ -230,9 +230,14 @@ def keep_stale(core, task_id, card):
 
 # ---------------------------------------------------------------- the AI's writes
 
-def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, actor="fuzz:executor"):
+def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
+                 actor="fuzz:executor"):
     t = require(core, task_id)
     f = {}
+    if due is not None:
+        from .timeres import local_iso
+        # a bare date means by the end of that working day
+        f["due"] = local_iso(core, due + "T17:00" if len(due.strip()) == 10 else due, "due") if due.strip() else None
     if context_md is not None:
         if len(context_md.encode()) > CONTEXT_MAX:
             raise FuzzError(f"context_md is over {CONTEXT_MAX // 1024} KB; keep the brief short and link out",
@@ -249,10 +254,12 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError("energy must be low, normal or high", "energy")
         f["energy"] = energy
     if not f:
-        raise FuzzError("Pass context_md, question, effort_mins or energy", "context_md")
+        raise FuzzError("Pass context_md, question, effort_mins, energy or due", "context_md")
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], **f)
+        if "due" in f:
+            cards.refresh_schedule_options(core, ch, t["id"])
         events.emit(core, "task.brief_updated", task_id=t["id"], changes=ch, data={"fields": sorted(f)})
     return sorted(f)
 
@@ -263,6 +270,28 @@ def save_notes(core, task_id, text, actor="fuzz:executor"):
         ch = events.Changes()
         ch.task(t["id"], notes=(text or "").strip() or None)
         events.emit(core, "task.notes_saved", task_id=t["id"], changes=ch)
+
+
+def rename(core, task_id, title=None, ask=None, actor="fuzz:executor"):
+    """The task is now something else (new instructions changed it). Its own event, so Undo can reverse it."""
+    t = require(core, task_id)
+    if title is not None and not title.strip():
+        raise FuzzError("title is the task's new name, short and plain", "title")
+    f = {}
+    if ask is not None and ask.strip() and ask.strip() != (t.get("ask") or ""):
+        f["ask"] = ask.strip()
+    with core.tx(actor):
+        ch = events.Changes()
+        renamed = title is not None and retitle(core, ch, t, title)
+        if f:
+            ch.task(t["id"], **f)
+        if not renamed and not f:
+            return []
+        new = ch.pending("tasks", t["id"]).get("title", t["title"])
+        log = f"Renamed “{t['title']}” to “{new}”." if renamed else f"Rewrote what “{t['title']}” asks for."
+        events.emit(core, "task.retitled", task_id=t["id"], changes=ch, log=("action", log),
+                    data={"from": t["title"], "to": new})
+    return (["title"] if renamed else []) + sorted(f)
 
 
 def retitle(core, ch, t, title):

@@ -4,31 +4,37 @@ Approving a draft that goes somewhere moves the task to `sending`. Fuzz's sender
 short run, with only the connector tools you allowed for sending) claims it, sends exactly the
 approved body with its client's connector, and calls mark_sent, which writes task.sent. Until
 then Undo takes the approval back; after task.sent nothing can. A note goes nowhere, so approving
-one just files it.
+one just files it and closes the task, unless it is preparation (final=False) for a step still
+ahead: then the task is scheduled for when that step is due.
 """
 
 from . import cards, events, tasks
-from .db import FuzzError
+from .db import FuzzError, iso
 
 DRAFT_KINDS = ("email.reply", "email.new", "slack.message", "calendar.invite", "nudge.email", "nudge.slack", "note")
 BODY_MAX = 32 * 1024
 
 
-def save_draft(core, task_id, kind, target, body, actor="fuzz:executor"):
+def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor"):
     if kind not in DRAFT_KINDS:
         raise FuzzError(f"kind must be one of {', '.join(DRAFT_KINDS)}", "kind")
+    if not final and kind != "note":
+        raise FuzzError("final is for notes: a message is the step itself", "final")
     if not (body or "").strip():
         raise FuzzError("body is empty", "body")
     if len(body.encode()) > BODY_MAX:
         raise FuzzError(f"body is over {BODY_MAX // 1024} KB", "body")
     t = tasks.require(core, task_id)
+    if not final and _comes_back(core, t)[0] is None:
+        raise FuzzError("A prep note needs to know when the real step is due. Call suggest_schedule with that "
+                        "time (or update_brief with due), then save the note again", "final")
     with core.tx(actor):
         did = core.new_id("drafts")
         ch = events.Changes()
         for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
             ch.draft(d["id"], status="withdrawn")
         ch.draft(did, task_id=t["id"], kind=kind, target=target, body=body, status="pending",
-                 created_at=core.now_iso())
+                 created_at=core.now_iso(), final=1 if final else 0)
         tasks.move(core, ch, t, "review")
         if not t.get("question"):
             ch.task(t["id"], question="Is this draft okay?")
@@ -45,12 +51,47 @@ def _draft(core, card):
     return d
 
 
+def _comes_back(core, t):
+    """When a task whose prep is filed comes back for the real step: its first suggested time, else a day
+    before it's due. (anchor, fire_at), or (None, None) if it has neither."""
+    from . import timeres
+    hints = [h for h in (t.get("schedule_hints") or []) if not h.get("cancelled")]
+    anchor = ({k: v for k, v in hints[0].items() if k != "reason"} if hints
+              else {"type": "before_due", "lead": "1d"} if t.get("due") else None)
+    if anchor is None:
+        return None, None
+    try:
+        fire = timeres.resolve(core, anchor, t)
+    except FuzzError:
+        return None, None
+    return anchor, fire
+
+
+def is_prep(d):
+    return d["kind"] == "note" and d.get("final") == 0
+
+
+def after_approve(core, d, t):
+    """What approving this draft does, in a line the card can show before you tap."""
+    from . import timeres
+    if d["kind"] != "note":
+        return f"Fuzz sends it in {_where(d['kind'])}."
+    if not is_prep(d):
+        return "Filed, and the task is done."
+    anchor, fire = _comes_back(core, t)
+    if fire is None or fire <= core.now():
+        return "Filed. The task comes back to you now for the next step."
+    return f"Filed. Back for the next step: {timeres.label(core, anchor)}."
+
+
 def approve(core, card):
     d = _draft(core, card)
     t = tasks.require(core, d["task_id"])
     with core.tx("human"):
         ch = events.Changes()
         ch.draft(d["id"], status="approved", approved_by="human", approved_at=core.now_iso())
+        if is_prep(d):
+            return _file_prep(core, ch, card, d, t)
         if d["kind"] == "note":
             tasks.move(core, ch, t, "done", card=card, question=None)
             log = "You approved this."
@@ -61,6 +102,24 @@ def approve(core, card):
         events.emit(core, "task.approved", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "kind": d["kind"]},
                     log=("status", log))
         cards.sync(core, t["id"])
+
+
+def _file_prep(core, ch, card, d, t):
+    """The note is filed; the task waits for the step it prepares, or comes back now if that is already due."""
+    from . import timeres
+    anchor, fire = _comes_back(core, t)
+    line = after_approve(core, d, t)
+    if fire is None or fire <= core.now():
+        tasks.move(core, ch, t, "triage", card=card, question=None, add_tags=("returning",),
+                   order_key=tasks.next_order(core), reason="You filed the prep. The real step is next.")
+    else:
+        tasks.move(core, ch, t, "scheduled", card=card, question=None, schedule_anchor=anchor,
+                   schedule_fire_at=iso(fire))
+    cards.mark_answered(core, ch, card, "approve")
+    events.emit(core, "task.approved", task_id=t["id"], changes=ch,
+                data={"draft_id": d["id"], "kind": d["kind"], "final": False, "anchor": anchor},
+                log=("status", "You approved the prep. " + line))
+    cards.sync(core, t["id"])
 
 
 def approved_draft(core, task_id):

@@ -71,6 +71,28 @@ def set_(cfg, key, value):
     return cfg
 
 
+ME_KEYS = {"names": "name", "emails": "email", "slack_ids": "slack"}
+
+
+def update_me(cfg, add=None, remove=None, replace=None):
+    """Who you are: every name, email address and Slack ID that is yours (work and personal alike), so the
+    executor knows a connector signed in to any of them is yours. Each of add/remove/replace maps names,
+    emails and slack_ids to lists. Emails are kept lowercase."""
+    me = cfg.setdefault("me", {})
+    for key in ME_KEYS:
+        def clean(vals):
+            vals = [v.strip() for v in (vals or []) if isinstance(v, str) and v.strip()]
+            return [v.lower() for v in vals] if key == "emails" else vals
+        if replace is not None and key in replace:
+            cur = clean(replace[key])
+        else:
+            cur = list(me.get(key, []))
+        cur += clean((add or {}).get(key))
+        gone = set(clean((remove or {}).get(key)))
+        me[key] = sorted({v for v in cur if v not in gone})
+    return me
+
+
 def role_engine(cfg, role, client=None, model=None):
     """The client and model a role runs on: --client/--model, then the role's override, then the engine."""
     over = (cfg.get("roles") or {}).get(role) or {}

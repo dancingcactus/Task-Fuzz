@@ -36,7 +36,7 @@ PROMPTS = {
 }
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "returning", "reopened", "stale"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale"}
 
 
 def open_cards(core, task_id):
@@ -103,7 +103,8 @@ def sync(core, task_id, where="back"):
     if t["state"] == "triage" and not open_:
         kind = "is_task" if "unconfirmed" in tags else "task"
         return create(core, kind, task_id, reason=t.get("reason"),
-                      suggested="keep" if "stale" in tags else ("quick" if t.get("quick_answers") else "assign"),
+                      suggested="keep" if "stale" in tags else "done" if "result" in tags
+                      else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
         d = core.one("SELECT * FROM drafts WHERE task_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (task_id,))
@@ -197,6 +198,9 @@ def view(core, card, task=None):
     if other:
         out["other"] = task_summary(other)
     if payload.get("draft_id"):
+        from . import drafts
         d = core.one("SELECT * FROM drafts WHERE id=?", (payload["draft_id"],))
         out["draft"] = d
+        if d and task:
+            out["after_approve"] = drafts.after_approve(core, d, task)
     return out

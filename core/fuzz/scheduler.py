@@ -55,16 +55,29 @@ def expire_leases(core):
     return len(rows) + len(sends)
 
 
-def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=None):
+RESULT_PROMPT = "Here’s what you asked for. Done?"
+
+
+def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=None, result=False):
+    """result: the brief is the deliverable, so the card's main answer is Done, with at most one
+    follow-up the human can tap to send Fuzz further."""
+    if result:
+        question = (question or "").strip() or RESULT_PROMPT
+        if len([o for o in options or [] if o and o.strip()]) > 1:
+            raise FuzzError("a result offers at most one follow-up, like “Dig into the Q3 numbers”", "options")
     if not (question or "").strip():
         raise FuzzError("question is what you need from the human", "question")
     t = tasks.require(core, task_id)
+    if result and not t.get("context_md"):
+        raise FuzzError("A result needs the brief first: write it with update_brief(context_md=…)", "result")
     with core.tx(actor):
         ch = events.Changes()
-        tasks.move(core, ch, t, "triage", add_tags=("handed_back",), order_key=tasks.next_order(core),
-                   **tasks.handed_back_fields(question, options))
-        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch, data={"question": question.strip()},
-                    log=("blocked", log or f"Handed back: {question.strip()}"))
+        tasks.move(core, ch, t, "triage", add_tags=("handed_back", "result") if result else ("handed_back",),
+                   order_key=tasks.next_order(core), **tasks.handed_back_fields(question, options))
+        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch,
+                    data={"question": question.strip(), "result": bool(result)},
+                    log=("action", log or "Finished. The result is in the brief.") if result
+                    else ("blocked", log or f"Handed back: {question.strip()}"))
         cards.sync(core, t["id"])
     return t["id"]
 

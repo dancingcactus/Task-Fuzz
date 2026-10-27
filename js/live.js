@@ -144,6 +144,7 @@
       sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '' }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
+      result: tags.indexOf('result') > -1 && state === 'triage',
       askBack: tags.indexOf('handed_back') > -1 ? t.question : null,
       quick: tags.indexOf('handed_back') > -1 && t.quick_answers && t.quick_answers.length ? t.quick_answers : null,
       updated: tags.indexOf('returning') > -1 || tags.indexOf('reopened') > -1 || tags.indexOf('woke') > -1,
@@ -153,6 +154,7 @@
       waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
       doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at),
       draft: draft ? draft.body : null, draftId: draft ? draft.id : null,
+      afterApprove: (c && c.after_approve) || null, prep: !!(draft && draft.kind === 'note' && draft.final === 0),
       sendTo: draft && draft.kind !== 'note' ? { to: draft.target || 'its recipient', via: VIA[(draft.kind || '').split('.')[0]] || 'Its own app' } : null,
       steps: t.steps_used || 0, needsPermission: tags.indexOf('needs_permission') > -1,
       cardId: c ? c.id : null, cardKind: c ? c.kind : null, cardOptions: c ? c.options : [],
@@ -202,6 +204,7 @@
     return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo')]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards;
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
+      offerFuzzUndo(r[2].recent || []);
       /* The full task (log, sources, drafts) only when something about it changed */
       var need = list.filter(function (t) { var k = JSON.stringify(t); if (detail[t.id] && detail[t.id].key === k) return false; detail[t.id] = { key: k }; return true; });
       return Promise.all(need.map(function (t) {
@@ -216,6 +219,24 @@
     }).then(function () {
       syncing = false;
       if (again) { again = false; soon(150); }
+    });
+  }
+
+  /* Some of Fuzz's own changes can be taken back, like renaming a task after your instructions changed it.
+     Each new one is offered once, like your own; the ones there when the page opened are not. */
+  var offered = null;
+  function offerFuzzUndo(recent) {
+    var first = offered === null; offered = offered || {};
+    recent.forEach(function (u) {
+      if (u.by === 'human' || offered[u.group]) return;
+      offered[u.group] = true;
+      if (first) return;
+      Say.offerUndo(u.text, function () {
+        if (undoBlocked[u.group]) return undoBlocked[u.group];
+        gen++;
+        write(function () { return api('POST', '/undo', { group: u.group }); }).then(syncThenRefresh, syncThenRefresh);
+        return null;
+      }, null, function () { return undoBlocked[u.group] || null; });
     });
   }
 
@@ -376,7 +397,7 @@
       } finally { recording = outer; }
       if (outer) Array.prototype.push.apply(outer, mine);
       var group = null, failed = false, ready = Promise.all(mine).then(function () {
-        return mine.length ? api('GET', '/undo').then(function (r) { var u = (r.recent || [])[0]; group = u ? u.group : null; if (u) undoBlocked[u.group] = u.blocked; }) : null;
+        return mine.length ? api('GET', '/undo').then(function (r) { var u = (r.recent || []).filter(function (x) { return x.by === 'human'; })[0]; group = u ? u.group : null; if (u) undoBlocked[u.group] = u.blocked; }) : null;
       }, function () { failed = true; });
       return {
         blocked: function () {
@@ -410,6 +431,9 @@
     on: function () { return on; },
     sync: syncThenRefresh,
     disconnect: function () { forget(); location.reload(); },
+    /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
+    me: function () { return api('GET', '/me'); },
+    saveMe: function (body) { return api('PUT', '/me', body); },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {
       if (location.protocol === 'file:' || !readToken()) return start();

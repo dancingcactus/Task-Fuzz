@@ -124,7 +124,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   status TEXT NOT NULL,            -- pending | approved | sent | sent_back | withdrawn
   approved_by TEXT,
   approved_at TEXT,
-  created_at TEXT
+  created_at TEXT,
+  final INTEGER                    -- 0: a note that prepares a later step; approving it doesn't close the task
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -320,7 +321,7 @@ def connect(home):
     return conn
 
 
-MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")]}
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")], "drafts": [("final", "INTEGER")]}
 
 
 def _migrate(conn):

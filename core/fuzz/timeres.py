@@ -38,6 +38,18 @@ def local_tz(core):
     return ZoneInfo(name)
 
 
+def tz_name(core):
+    """The time zone's name, like America/Denver: the configured one, else the machine's."""
+    name = core.config.get("tz") or "local"
+    if name != "local":
+        return name
+    import os
+    path = os.path.realpath("/etc/localtime")
+    if "zoneinfo/" in path:
+        return path.split("zoneinfo/", 1)[1]
+    return datetime.now().astimezone().tzname()
+
+
 def duration(v, field="lead"):
     if isinstance(v, (int, float)):
         return timedelta(minutes=v)
