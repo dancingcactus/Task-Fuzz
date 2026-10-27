@@ -9,7 +9,7 @@ it sends an approved draft with its client's own connector, then says so with ma
 import json
 from contextlib import contextmanager
 
-from . import drafts, events, matching, scheduler, signals, tasks, timeres
+from . import adapters, drafts, events, matching, outputs, scheduler, signals, tasks, timeres
 from .db import FuzzError
 
 LOG_ON_GET = 8
@@ -38,7 +38,16 @@ def whoami(core, role, prompt_version=None, client=None):
     return {"user_id": core.user_id, "names": me.get("names", []), "emails": me.get("emails", []),
             "slack_ids": me.get("slack_ids", []), "folders": me.get("folders", {}), "role": role,
             "now": core.now_iso(), "today": local.strftime("%A %Y-%m-%d"), "local_time": local.isoformat(timespec="minutes"),
-            "tz": timeres.tz_name(core), "run_id": (core.run or {}).get("id")}
+            "tz": timeres.tz_name(core), "run_id": (core.run or {}).get("id"),
+            **({"can_ask_for": _askable(core)} if role == "executor" else {}),
+            **({"output_folder": outputs.folder(core)} if role == "executor" and outputs.folder(core) else {})}
+
+
+def _askable(core):
+    """Connectors set up found but you haven't allowed: name one of these in request_permission."""
+    from . import connectors
+    client = (core.run or {}).get("client") or (core.config.get("engine") or {}).get("client")
+    return connectors.askable(core, client if client in adapters.ADAPTERS else None)
 
 
 # ---------------------------------------------------------------- executor
@@ -56,9 +65,12 @@ def _task_brief(core, t):
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"], "gathering": scheduler.gathering(t),
+            "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"],
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
-            "sources": [_source_ref(s) for s in srcs if not s["withdrawn"]],
+            "sources": [_source_ref(s) for s in srcs if not s["withdrawn"] and s["role"] != "output"],
+            "output_dir": outputs.task_dir(core, t["id"], create=True),
+            "output_files": [f["name"] for f in outputs.listing(core, t["id"])],
             "schedule_hints": t.get("schedule_hints") or [],
             "log": [{"kind": x["kind"], "text": x["text"]} for x in events.task_log(core, t["id"], LOG_ON_GET)]}
 
@@ -104,16 +116,18 @@ def save_notes(core, task_id, text):
     return {"ok": True}
 
 
-def save_draft(core, task_id, kind, target, body, final=True):
+def save_draft(core, task_id, kind, target, body, final=True, attach=None):
     with _lease(core, task_id) as t:
         scheduler.refuse_while_gathering(t)
-        did = drafts.save_draft(core, task_id, kind, target, body, final)
+        outputs.record(core, task_id)
+        did = drafts.save_draft(core, task_id, kind, target, body, final, attach=attach)
     return {"draft_id": did, "state": "review"}
 
 
 def hand_back(core, task_id, question=None, options=None, result=False):
     with _lease(core, task_id) as t:
         scheduler.refuse_while_gathering(t)
+        outputs.record(core, task_id)
         scheduler.hand_back(core, task_id, question, options, result=result)
     return {"state": "triage"}
 
@@ -151,14 +165,16 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
     return {"updated": sorted(updated)}
 
 
-def finish_gathering(core, task_id):
+def finish_gathering(core, task_id, result=False, options=None):
     scheduler.require_lease(core, task_id)
-    scheduler.finish_gathering(core, task_id)
+    outputs.record(core, task_id)
+    scheduler.finish_gathering(core, task_id, result=result, options=options)
     return {"state": "triage"}
 
 
 def release(core, task_id):
     scheduler.require_lease(core, task_id)
+    outputs.record(core, task_id)
     scheduler.release(core, task_id)
     return {"state": "queued"}
 
@@ -169,8 +185,10 @@ def claim_next_send(core):
     t, d = scheduler.claim_next_send(core)
     if t is None:
         return {"send": None, "why": d}
+    files = {f["name"]: f["path"] for f in outputs.listing(core, t["id"])}
+    att = [{"name": n, "path": files[n]} for n in d.get("attachments") or [] if n in files]
     return {"send": {"task_id": t["id"], "draft_id": d["id"], "kind": d["kind"], "target": d["target"],
-                     "body": d["body"], "title": t["title"]}, "lease_until": t["lease_until"]}
+                     "body": d["body"], "title": t["title"], "attachments": att}, "lease_until": t["lease_until"]}
 
 
 def mark_sent(core, task_id, draft_id, where, link=None):

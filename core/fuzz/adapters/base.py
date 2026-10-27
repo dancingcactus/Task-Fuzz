@@ -101,11 +101,25 @@ class Adapter:
         raise NotImplementedError
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
-                         send_tools=None, read_tools=None):
+                         send_tools=None, read_tools=None, write_dir=None):
         """files_dir: the user's attachments folder, the only place the run may read files from.
         send_tools: for the sender, the connector tools it may call to send, as this client names them.
-        read_tools: for the executor, the connector tools it may call to look things up."""
+        read_tools: for the executor, the connector tools it may call to look things up.
+        write_dir: for the executor, the output folder: the one place it may create and change files."""
         raise NotImplementedError
+
+    # ---- discovery, for `fuzz setup`
+    def list_servers(self):
+        """The MCP servers and connectors this client loads, by name, without Fuzz's own."""
+        raise NotImplementedError
+
+    def discovery_command(self, prompt, model=None):
+        """A run that sees every tool the client loads and can call none of them."""
+        raise NotImplementedError
+
+    def allow_name(self, tool, servers):
+        """A tool as the model sees it, written the way read.tools and send.tools take it."""
+        return tool
 
     def prompt(self, role, task_id=None):
         p = PROMPTS[role]

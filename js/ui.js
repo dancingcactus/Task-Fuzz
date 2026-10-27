@@ -81,7 +81,8 @@
 
   function sourcesHTML(list) {
     return '<ul class="sources">' + list.map(function (s) {
-      return '<li><a href="#" data-noop class="source"><span class="pill pill--muted">' + esc(s.type) + '</span><span class="source-title">' + esc(s.title) + '</span>' +
+      var href = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" class="source">' : '<a href="#" data-noop class="source">';
+      return '<li>' + href + '<span class="pill pill--muted">' + esc(s.type) + '</span><span class="source-title">' + esc(s.title) + '</span>' +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a></li>';
     }).join('') + '</ul>';
   }
@@ -94,7 +95,11 @@
     d.innerHTML = html;
     document.body.appendChild(d);
     d.addEventListener('close', function () { d.remove(); if (o.onClose) o.onClose(); });
-    d.addEventListener('click', function (e) { if (e.target === d) d.close(); });
+    /* A click on the backdrop closes it, but only when the press began there too: selecting text and
+       letting go outside the box is not a click outside */
+    var downOn = null;
+    d.addEventListener('pointerdown', function (e) { downOn = e.target; });
+    d.addEventListener('click', function (e) { if (e.target === d && downOn === d) d.close(); downOn = null; });
     d.showModal();
     return d;
   }

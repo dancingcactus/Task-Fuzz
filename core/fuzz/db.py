@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   approved_by TEXT,
   approved_at TEXT,
   created_at TEXT,
-  final INTEGER                    -- 0: a note that prepares a later step; approving it doesn't close the task
+  final INTEGER,                   -- 0: a note that prepares a later step; approving it doesn't close the task
+  attachments TEXT                 -- json list of file names in the task's output folder, for the sender
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -212,9 +213,9 @@ CREATE TABLE IF NOT EXISTS sources (
   task_id INTEGER NOT NULL,
   candidate_id INTEGER,            -- null for an attachment you added
   signal_key TEXT,
-  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment
+  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment | output
   title TEXT,
-  path TEXT,                       -- an attachment's file, in files/u<user>/t<task>/
+  path TEXT,                       -- an attachment's file, in files/u<user>/t<task>/, or an output's
   mime TEXT,
   size INTEGER,
   added_run INTEGER,
@@ -286,7 +287,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 JSON_COLS = {"quick_answers", "variant_tags", "schedule_anchor", "schedule_hints", "title_history",
-             "options", "schedule_options", "payload", "answer", "detail"}
+             "options", "schedule_options", "payload", "answer", "detail", "attachments"}
 
 
 def iso(dt):
@@ -322,7 +323,8 @@ def connect(home):
     return conn
 
 
-MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")], "drafts": [("final", "INTEGER")],
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")],
+              "drafts": [("final", "INTEGER"), ("attachments", "TEXT")],
               "tasks": [("summary", "TEXT")]}
 
 

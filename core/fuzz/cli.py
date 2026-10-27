@@ -257,6 +257,91 @@ def cmd_doctor(a):
             print(f"  connect  {c['connectors']['note']}")
 
 
+def _ask(prompt, default=""):
+    try:
+        got = input(f"{prompt}{f' [{default}]' if default else ''}: ").strip()
+    except EOFError:
+        got = ""
+    return got or default
+
+
+def _pick(tools, chosen):
+    """Numbered list; type numbers to switch them, Enter to keep what is shown."""
+    on = {t["allow"] for t in tools if chosen(t)}
+    while True:
+        for i, t in enumerate(tools, 1):
+            box = "[x]" if t["allow"] in on else "[ ]"
+            print(f"  {box} {i:>3}. {t['allow']}" + (f": {t['does']}" if t["does"] else ""))
+        got = _ask("Numbers to switch (like 2 5 7), or Enter to keep these")
+        if not got:
+            return sorted(on)
+        for n in got.replace(",", " ").split():
+            if n.isdigit() and 1 <= int(n) <= len(tools):
+                on ^= {tools[int(n) - 1]["allow"]}
+
+
+def setup_tools(core, client, discover=None):
+    from . import adapters, connectors
+    v = connectors.view(core, client)
+    label = adapters.get(client).label
+    if discover is None:
+        when = f"last listed {v['discovered_at']}" if v["discovered_at"] else "not listed yet"
+        discover = _ask(f"List {label}'s tools now? It starts one {label} run ({when}) [y/N]").lower().startswith("y")
+    if discover:
+        print(f"Asking {label} which tools it has…")
+        v = connectors.discover(core, client)
+    if not v["tools"]:
+        print(f"No tools listed for {label} yet; skipping.")
+        return v
+    look = [t for t in v["tools"] if t["kind"] == "lookup"]
+    send = [t for t in v["tools"] if t["kind"] == "send"]
+    other = [t for t in v["tools"] if t["kind"] == "change"]
+    print(f"\n{label}: look things up. Fuzz runs these without asking, so only tools that read are suggested.")
+    read = _pick(look, lambda t: t["read"] or (not v["read"] and t["suggested"])) if look else []
+    print(f"\n{label}: send. The sender uses these for drafts you approved. None is picked for you.")
+    sent = _pick(send, lambda t: t["send"]) if send else []
+    if other:
+        print(f"\n{len(other)} more tools create, change or delete things; Fuzz never gets those.")
+    keep = [p for p in v["read"] if not any(connectors.covers(p, t["allow"]) for t in v["tools"])]
+    v = connectors.choose(core, client, read=sorted(set(read) | set(keep)), send=sent)
+    print(f"Saved. {v['cost']['note']}.")
+    return v
+
+
+def cmd_setup(a):
+    """Who you are, which tools Fuzz can use, a folder it may write to, and a check. Each step can be
+    skipped (Enter) and run again on its own with --step."""
+    from . import setup
+    core = _core(a)
+    steps = [a.step] if a.step else ["me", "tools", "folder", "check"]
+    if "me" in steps:
+        cfg = core.config
+        me = cfg["me"]
+        print("Who you are. Fuzz uses a connector signed in to any of these without asking which account you meant.")
+        print(f"  emails    {', '.join(me.get('emails') or []) or '(none)'}")
+        print(f"  names     {', '.join(me.get('names') or []) or '(none)'}")
+        print(f"  slack ids {', '.join(me.get('slack_ids') or []) or '(none)'}")
+        add = {"emails": _ask("Add an email address too (work or personal)").split(","),
+               "names": _ask("Add a name").split(","),
+               "slack_ids": _ask("Add a Slack member ID (like W4R5SVCU9)").split(",")}
+        update_me(cfg, add=add)
+        core.save_config(cfg)
+    if "tools" in steps:
+        for client in ([a.client] if a.client else setup.clients(core)):
+            setup_tools(core, client, discover=True if a.discover else None)
+    if "folder" in steps:
+        cur = setup.state(core, check=False)["folder"]
+        print("\nA folder Fuzz may write to without asking, one subfolder per task. Nothing in it is sent anywhere.")
+        got = a.folder or _ask("Folder (- for none)", cur["path"] or cur["suggested"])
+        print(f"Fuzz writes to {setup.set_folder(core, None if got == '-' else got)['path'] or 'nothing'}.")
+    if "check" in steps:
+        print()
+        a.json, a.no_start_check = False, True
+        cmd_doctor(a)
+    if not a.step:
+        setup.finish(core)
+
+
 def cmd_reset(a):
     if not a.yes:
         raise FuzzError("This deletes the whole store. Pass --yes to confirm.", "yes")
@@ -404,6 +489,13 @@ def parser():
     s.add_argument("--json", action="store_true")
     s.add_argument("--no-start-check", action="store_true", help="don't start the MCP server to check it")
     s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("setup", help="guided setup: who you are, the tools Fuzz can use, a folder it may write to")
+    s.add_argument("--step", choices=["me", "tools", "folder", "check"], help="run one step again")
+    s.add_argument("--client", choices=["claude-code", "copilot"], help="the client for the tools step")
+    s.add_argument("--discover", action="store_true", help="list the client's tools again (one run)")
+    s.add_argument("--folder", help="the output folder, or - for none")
+    s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("reset", help="delete the store's database")
     s.add_argument("--yes", action="store_true")

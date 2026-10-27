@@ -127,6 +127,30 @@ class Api(Server):
             self.assertFalse(http_api.kick_executor(app, core, now=time.time() + 600), "a run is already going")
         self.assertEqual([c.args[1] for c in run.call_args_list], ["executor"])
 
+    def test_setup_over_http(self):
+        import os, tempfile
+        out = os.path.join(tempfile.mkdtemp(), "Fuzz")
+        status, st = self.req("GET", "/setup?check=0")
+        self.assertEqual((status, st["done"], st["folder"]["path"]), (200, False, None))
+        self.assertEqual(self.req("PUT", "/setup/folder", {"folder": out})[1], {"path": out})
+        status, v = self.req("PUT", "/setup/tools", {"client": "copilot", "read": ["workiq(fetch)"]})
+        self.assertEqual((status, v["read"]), (200, ["workiq(fetch)"]))
+        self.assertEqual(self.req("PUT", "/setup/tools", {"client": "nope"})[0], 400)
+        self.assertEqual(self.req("POST", "/setup/done", {})[1], {"done": True})
+        core = self.srv.app.core(1)
+        tid = tasks.capture(core, "Make a checklist")
+        tasks.assign(core, tid)
+        from fuzz import outputs, scheduler
+        scheduler.claim_next(core, tid)
+        d = tools.get_task(core, tid)["output_dir"]
+        with open(os.path.join(d, "list.md"), "w") as f:
+            f.write("- [ ] One")
+        outputs.record(core, tid)
+        sid = outputs.listing(core, tid)[0]["source_id"]
+        self.assertEqual(self.req("GET", f"/files/{sid}", raw=True), (200, b"- [ ] One"))
+        self.assertEqual(self.req("GET", f"/files/{sid}", token=False)[0], 401)
+        self.assertEqual(self.req("GET", "/files/999")[0], 404)
+
     def test_settings_edit_who_you_are(self):
         self.assertEqual(self.req("GET", "/me")[1]["emails"], ["jgrover@adobe.com"])
         status, body = self.req("PUT", "/me", {"emails": ["jgrover@adobe.com", "Justin@Home.example"]})

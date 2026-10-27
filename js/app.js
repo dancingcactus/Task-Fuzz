@@ -61,10 +61,14 @@
       if (u) { u.run(); document.getElementById('undobtn').focus(); }
     });
     Say.onUndoChange(paintUndo); setInterval(paintUndo, 30000); paintUndo();
+    /* Outside-click closes a popover, judged by where the press began: a text selection dragged out of
+       the popover ends with a click on the page, and that isn't a click outside */
+    var downAt = null;
+    document.addEventListener('pointerdown', function (e) { downAt = e.target; }, true);
     document.addEventListener('click', function (e) {
-      var pop = document.getElementById('themepop');
-      if (!pop.hidden && !e.target.closest('#themepop') && !e.target.closest('#setbtn')) togglePopover(false);
-      if (!document.getElementById('undopop').hidden && !e.target.closest('#undopop') && !e.target.closest('#undobtn')) toggleUndo(false);
+      var t = downAt && downAt.isConnected ? downAt : e.target, pop = document.getElementById('themepop');
+      if (!pop.hidden && !t.closest('#themepop') && !t.closest('#setbtn')) togglePopover(false);
+      if (!document.getElementById('undopop').hidden && !t.closest('#undopop') && !t.closest('#undobtn')) toggleUndo(false);
     });
     /* Escape closes an open popover wherever focus is, before any view sees the key. */
     document.addEventListener('keydown', function (e) {
@@ -75,15 +79,14 @@
     }, true);
     document.getElementById('themepop').addEventListener('click', function (e) {
       e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm]'); if (!t) return;
+      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup]'); if (!t) return;
       if (t.dataset.disconnect) { Live.disconnect(); return; }
+      if (t.dataset.setup) { togglePopover(false); Setup.open(); return; }
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
       else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
       else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
     });
-    document.getElementById('themepop').addEventListener('input', function (e) { if (e.target.dataset.me) meDraft[e.target.dataset.me] = e.target.value; });
-    document.getElementById('themepop').addEventListener('submit', function (e) { if (e.target.id === 'meform') { e.preventDefault(); saveMe(); } });
     document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); if (e.target.id === 'codefont') App.setCodeFont(e.target.value); });
     Progress.mount(document.getElementById('prog'));
     paintPopover();
@@ -117,21 +120,6 @@
       return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
-  /* Who you are, for the core: work and personal addresses alike, so Fuzz never has to ask which one is yours */
-  var me = null, meDraft = {};
-  var ME = [['emails', 'Email addresses', 'you@work.example, you@home.example'], ['names', 'Names', 'Justin, Justin G.'], ['slack_ids', 'Slack IDs', 'W123ABC']];
-  function meHTML() {
-    if (!me) { me = {}; Live.me().then(function (r) { me = r; paintPopover(); }, function () { me = null; }); }
-    return '<h2>You</h2><form class="meform" id="meform"><p class="meta">Fuzz treats an account signed in as any of these as yours. Separate them with commas.</p>' +
-      ME.map(function (f) { var v = meDraft[f[0]] !== undefined ? meDraft[f[0]] : (me[f[0]] || []).join(', '); return '<label for="me-' + f[0] + '">' + f[1] + '</label><input id="me-' + f[0] + '" data-me="' + f[0] + '" type="text" autocomplete="off" spellcheck="false" placeholder="' + esc(f[2]) + '" value="' + esc(v) + '">'; }).join('') +
-      '<button type="submit" class="btn small">Save</button></form>';
-  }
-  function saveMe() {
-    var body = {};
-    ME.forEach(function (f) { var el = document.getElementById('me-' + f[0]); if (el) body[f[0]] = el.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); });
-    Live.saveMe(body).then(function (r) { me = r; meDraft = {}; paintPopover(); Say.tell('Saved. Fuzz knows these are all you.'); }, function (e) { Say.tell('Couldn’t save that: ' + e.message); });
-  }
-
   function paintPopover() {
     var pop = document.getElementById('themepop'); if (!pop) return;
     var mode = Themes.resolveMode(prefs.mode);
@@ -145,9 +133,8 @@
       '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
-      (Live.on() ? meHTML() : '') +
       (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Use demo data</button></div>'
+        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Use demo data</button></div>'
         : '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>');
     if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }
@@ -213,5 +200,6 @@
     setInterval(updateCount, 1000);
     updateCount();
     route(true);
+    Setup.maybeOpen();
   });
 })();

@@ -15,7 +15,8 @@ DRAFT_KINDS = ("email.reply", "email.new", "slack.message", "calendar.invite", "
 BODY_MAX = 32 * 1024
 
 
-def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor"):
+def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor", attach=None):
+    """attach: file names in the task's output folder, for the sender to attach when it sends."""
     if kind not in DRAFT_KINDS:
         raise FuzzError(f"kind must be one of {', '.join(DRAFT_KINDS)}", "kind")
     if not final and kind != "note":
@@ -25,6 +26,7 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
     if len(body.encode()) > BODY_MAX:
         raise FuzzError(f"body is over {BODY_MAX // 1024} KB", "body")
     t = tasks.require(core, task_id)
+    attach = _attachments(core, t["id"], kind, attach)
     if not final and _comes_back(core, t)[0] is None:
         raise FuzzError("A prep note needs to know when the real step is due. Call suggest_schedule with that "
                         "time (or update_brief with due), then save the note again", "final")
@@ -34,7 +36,7 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
         for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
             ch.draft(d["id"], status="withdrawn")
         ch.draft(did, task_id=t["id"], kind=kind, target=target, body=body, status="pending",
-                 created_at=core.now_iso(), final=1 if final else 0)
+                 created_at=core.now_iso(), final=1 if final else 0, attachments=attach or None)
         tasks.move(core, ch, t, "review")
         if not t.get("question"):
             ch.task(t["id"], question="Is this draft okay?")
@@ -42,6 +44,24 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
                     log=("action", "The draft is ready. Nothing is sent until you approve it."))
         cards.sync(core, t["id"])
     return did
+
+
+def _attachments(core, task_id, kind, names):
+    names = [n.strip() for n in names or [] if isinstance(n, str) and n.strip()]
+    if not names:
+        return []
+    from . import outputs
+    if kind == "note":
+        raise FuzzError("A note isn't sent, so it has nothing to attach to", "attach")
+    if not outputs.folder(core):
+        raise FuzzError("There's no output folder to attach from. Set one with `fuzz setup`", "attach")
+    outputs.record(core, task_id)
+    have = {f["name"] for f in outputs.listing(core, task_id)}
+    missing = [n for n in names if n not in have]
+    if missing:
+        raise FuzzError(f"Not in this task's output folder: {', '.join(missing)}. Save the file there first",
+                        "attach")
+    return names
 
 
 def _draft(core, card):
@@ -91,17 +111,22 @@ def approve(core, card):
         ch = events.Changes()
         ch.draft(d["id"], status="approved", approved_by="human", approved_at=core.now_iso())
         if is_prep(d):
-            return _file_prep(core, ch, card, d, t)
-        if d["kind"] == "note":
-            tasks.move(core, ch, t, "done", card=card, question=None)
-            log = "You approved this."
+            _file_prep(core, ch, card, d, t)
         else:
-            tasks.move(core, ch, t, "sending", card=card, question=None)
-            log = f"You approved the draft. Fuzz will send it in {_where(d['kind'])}."
-        cards.mark_answered(core, ch, card, "approve")
-        events.emit(core, "task.approved", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "kind": d["kind"]},
-                    log=("status", log))
-        cards.sync(core, t["id"])
+            if d["kind"] == "note":
+                tasks.move(core, ch, t, "done", card=card, question=None)
+                log = "You approved this."
+            else:
+                tasks.move(core, ch, t, "sending", card=card, question=None)
+                log = f"You approved the draft. Fuzz will send it in {_where(d['kind'])}."
+            cards.mark_answered(core, ch, card, "approve")
+            events.emit(core, "task.approved", task_id=t["id"], changes=ch,
+                        data={"draft_id": d["id"], "kind": d["kind"]}, log=("status", log))
+            cards.sync(core, t["id"])
+    if d["kind"] == "note":   # an approved note is kept in the task's output folder too
+        from . import outputs
+        body = core.one("SELECT body FROM drafts WHERE id=?", (d["id"],))["body"]
+        outputs.save_markdown(core, t["id"], "Note.md", body, actor="human")
 
 
 def _file_prep(core, ch, card, d, t):
@@ -250,5 +275,11 @@ def answer_permission(core, card, option):
                  task_id=t["id"])
         ch.task(t["id"], variant_tags=tags)
         cards.mark_answered(core, ch, card, option)
-        events.emit(core, "permission.granted", task_id=t["id"], changes=ch, data=dict(p, kind=option),
-                    log=("status", ("You always allow " if option == "always_allow" else "You allowed ") + p["resource"] + "."))
+        added = []
+        if option == "always_allow" and p.get("scope") == "connector":
+            # a grant only helps if the run can see the tools: put them in read.tools, as set up would
+            from . import connectors
+            added = [x for _, _, got in connectors.allow_for_grant(core, p["resource"]) for x in got]
+        events.emit(core, "permission.granted", task_id=t["id"], changes=ch, data=dict(p, kind=option, tools=added),
+                    log=("status", ("You always allow " if option == "always_allow" else "You allowed ") + p["resource"]
+                         + "." + (f" Fuzz can now use {len(added)} of its lookup tools." if added else "")))

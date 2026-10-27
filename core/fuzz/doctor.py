@@ -1,6 +1,7 @@
 """`fuzz doctor`: is each client ready to run Fuzz's roles? Writes nothing; cached for a minute."""
 
 import asyncio
+import os
 import time
 
 from . import adapters, installer, runs
@@ -40,13 +41,20 @@ def client_status(core, name, check_start=True):
     out["send"] = {"tools": send_tools, "status": "set" if send_tools else "none",
                    "note": None if send_tools else
                    f"No connector tools are allowed for sending, so approved drafts come back to you unsent. "
-                   f"List them in send.tools.{name}, as {adapter.label} names them."}
+                   f"Pick them with `fuzz setup --step tools --client {name}`."}
     read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(name) or [])
     out["read"] = {"tools": read_tools, "status": "set" if read_tools else "none",
                    "note": None if read_tools else
                    f"The executor has only Fuzz's tools, so it can't search or check your calendar. To let it, "
-                   f"list read-only connector tools in read.tools.{name}, as {adapter.label} names them."}
+                   f"pick lookup tools with `fuzz setup --step tools --client {name}`."}
     fixes = []
+    from . import outputs
+    out_dir = outputs.folder(core)
+    out["output"] = {"folder": out_dir, "status": "none" if not out_dir else
+                     "ok" if os.path.isdir(out_dir) and os.access(out_dir, os.W_OK) else "missing"}
+    if out["output"]["status"] == "missing":
+        fixes.append(f"The output folder {out_dir} is gone or can't be written: "
+                     f"pick one with `fuzz setup --step folder`")
     if not found["found"]:
         fixes.append(f"Install {adapter.label} (no `{adapter.exe}` on PATH)")
     roles = (entry or {}).get("roles") or []

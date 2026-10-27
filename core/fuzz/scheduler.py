@@ -79,6 +79,9 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
                     log=("action", log or "Finished. The result is in the brief.") if result
                     else ("blocked", log or f"Handed back: {question.strip()}"))
         cards.sync(core, t["id"])
+    if result:   # the result is kept in the task's output folder too
+        from . import outputs
+        outputs.save_markdown(core, t["id"], "Result.md", t["context_md"], actor=actor)
     return t["id"]
 
 
@@ -95,11 +98,20 @@ def refuse_while_gathering(t):
         raise FuzzError(GATHER_REFUSED.format(id=t["id"]), "task_id", 409)
 
 
-def finish_gathering(core, task_id, actor="fuzz:executor", log=None):
-    """The context is in: the task goes to triage as captured, with its card, and nothing asked."""
+def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=False, options=None):
+    """The context is in: the task goes to triage as captured, with its card, and nothing asked.
+
+    result: looking it up was the whole task (a summary, an agenda, an answer), so it arrives done, as a
+    result whose main answer is Done, and you never had to assign it."""
     t = tasks.require(core, task_id)
     if not gathering(t):
         raise FuzzError(f"Task {t['id']} isn't being gathered", "task_id", 409)
+    if result:
+        if not core.config["gather"]["finish_results"]:
+            raise FuzzError("Finishing tasks while gathering is turned off: call finish_gathering without result",
+                            "result")
+        return hand_back(core, t["id"], None, options, actor=actor, result=True,
+                         log=log or "Finished while gathering. The result is in the brief.")
     with core.tx(actor):
         ch = events.Changes()
         tasks.move(core, ch, t, "triage")

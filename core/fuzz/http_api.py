@@ -15,7 +15,7 @@ import time
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from . import answers, cards, config, engine, events, scheduler, tasks
 from .db import Core, FuzzError, iso
@@ -79,6 +79,7 @@ class App:
         self._cores = {}
         self.send_kicked = {}
         self.gather_kicked = {}
+        self.discovering = {}   # (user, client) -> {"state": running | error, "error"}
         self._mu = threading.Lock()
         self.changed = threading.Condition()
 
@@ -108,6 +109,13 @@ class App:
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
+            ("GET", r"/files/(\d+)", self.download),
+            ("GET", r"/setup", self.setup_get),
+            ("POST", r"/setup/discover", self.setup_discover),
+            ("PUT", r"/setup/tools", self.setup_tools),
+            ("PUT", r"/setup/folder", self.setup_folder),
+            ("POST", r"/setup/folder/choose", self.setup_choose_folder),
+            ("POST", r"/setup/done", self.setup_done),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
@@ -173,6 +181,62 @@ class App:
         from . import files
         files.detach(core, int(m.group(1)), int(m.group(2)))
         return {"removed": int(m.group(2))}
+
+    def download(self, core, m, body, q):
+        """An attachment or a file Fuzz saved in your output folder: GET /files/<source id>?token=…"""
+        s = core.one("SELECT * FROM sources WHERE id=? AND user_id=? AND role IN ('attachment','output') "
+                     "AND path IS NOT NULL AND withdrawn=0", (int(m.group(1)), core.user_id))
+        if s is None or not os.path.isfile(s["path"]):
+            raise FuzzError(f"No file {m.group(1)}", "source_id", 404)
+        return {"_file": s["path"], "_name": os.path.basename(s["path"]), "_type": s["mime"]}
+
+    # ---- setup: who you are, the tools Fuzz can use, the output folder
+    def setup_get(self, core, m, body, q):
+        from . import setup
+        out = setup.state(core, check=q.get("check") != "0")
+        for t in out["tools"]:
+            t["discovery"] = self.discovering.get((core.user_id, t["client"]))
+        return out
+
+    def setup_discover(self, core, m, body, q):
+        """Starts one run of the client that lists its tools; poll GET /setup for the result."""
+        from . import adapters
+        client = body.get("client")
+        adapters.get(client)
+        key = (core.user_id, client)
+        if (self.discovering.get(key) or {}).get("state") == "running":
+            return {"started": False, "state": "running"}, 202
+        self.discovering[key] = {"state": "running", "error": None, "started_at": time.time()}
+
+        def work():
+            from . import connectors
+            try:
+                connectors.discover(core, client, body.get("model"))
+                self.discovering.pop(key, None)
+            except Exception as e:   # shown on the setup screen
+                self.discovering[key] = {"state": "error", "error": str(e)}
+            self._notify()
+        threading.Thread(target=work, daemon=True).start()
+        return {"started": True, "state": "running"}, 202
+
+    def setup_tools(self, core, m, body, q):
+        """{client, read?, send?}: the tools Fuzz may use, as the setup screen lists them (their allow names)."""
+        from . import connectors
+        return connectors.choose(core, body.get("client"), body.get("read"), body.get("send"))
+
+    def setup_folder(self, core, m, body, q):
+        from . import setup
+        return setup.set_folder(core, body.get("folder"))
+
+    def setup_choose_folder(self, core, m, body, q):
+        """Opens the Mac's folder chooser and waits for you: {start?} -> {path} (null if you cancelled).
+        Runs without the store's lock, so the rest of the API keeps answering meanwhile."""
+        from . import setup
+        return {"path": setup.choose_folder(body.get("start"))}
+
+    def setup_done(self, core, m, body, q):
+        from . import setup
+        return setup.finish(core, body.get("done", True))
 
     def add_moment(self, core, m, body, q):
         """A described date you know yourself: {label, at, key?, cancelled?}."""
@@ -270,6 +334,17 @@ def make_handler(app):
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_file(self, res):
+            with open(res["_file"], "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", res.get("_type") or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", "inline; filename*=UTF-8''" + quote(res["_name"]))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
         def _token(self, q):
             h = self.headers.get("Authorization") or ""
             return h[7:].strip() if h.lower().startswith("bearer ") else q.get("token")
@@ -291,11 +366,16 @@ def make_handler(app):
                     try:
                         core = app.core(uid)
                         body = self._raw_body(core) if h == app.upload else self._body()
-                        with core.lock:
+                        if h == app.setup_choose_folder:   # waits on you, and touches no store
                             res = h(core, mt, body, q)
+                        else:
+                            with core.lock:
+                                res = h(core, mt, body, q)
                         status = 200
                         if isinstance(res, tuple):
                             res, status = res
+                        if isinstance(res, dict) and "_file" in res:
+                            return self._send_file(res)
                         return self._send(status, res)
                     except FuzzError as e:
                         return self._send(e.status, e.to_dict())
@@ -339,6 +419,7 @@ def make_handler(app):
             self.send_response(200)
             self.send_header("Content-Type", mimetypes.guess_type(str(p))[0] or "application/octet-stream")
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache")   # the UI changes with the core; never run an old copy
             self.end_headers()
             self.wfile.write(data)
 

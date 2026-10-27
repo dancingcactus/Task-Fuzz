@@ -133,7 +133,7 @@ def install(core, client, roles=ROLES, link=False, launchd=None, actor="human"):
 
     if launchd is None:
         launchd = sys.platform == "darwin"
-    if launchd and "_launchd" not in man:
+    if launchd:   # every install, so a fix to the jobs (their PATH, say) reaches a machine set up before it
         man["_launchd"] = _write_launchd(core)
     save_manifest(core, man)
 
@@ -178,9 +178,18 @@ def uninstall(core, client, actor="human"):
 
 # ---------------------------------------------------------------- launchd (macOS)
 
+def launchd_path():
+    """launchd starts jobs with only /usr/bin:/bin:/usr/sbin:/sbin, so a run can't find `copilot` or `claude`
+    in ~/.local/bin. Give the jobs the folders the clients are in, then the PATH you installed from."""
+    dirs = [os.path.dirname(p) for p in (shutil.which(a.exe) for a in adapters.ADAPTERS.values()) if p]
+    dirs += (os.environ.get("PATH") or "").split(os.pathsep) + ["/usr/local/bin", "/opt/homebrew/bin",
+                                                               "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    return os.pathsep.join(dict.fromkeys(d for d in dirs if d))
+
+
 def _plist(core, label, args, interval=None, keepalive=False):
     d = {"Label": label, "ProgramArguments": [sys.executable, "-m", "fuzz", *args],
-         "EnvironmentVariables": {"PYTHONPATH": PKG_PARENT, "FUZZ_HOME": core.home},
+         "EnvironmentVariables": {"PYTHONPATH": PKG_PARENT, "FUZZ_HOME": core.home, "PATH": launchd_path()},
          "StandardOutPath": os.path.join(core.home, f"{label}.log"),
          "StandardErrorPath": os.path.join(core.home, f"{label}.log")}
     if interval:
@@ -204,7 +213,8 @@ def _write_launchd(core):
         with open(p, "wb") as f:
             plistlib.dump(d, f)
         paths.append(str(p))
-        if shutil.which("launchctl"):
+        if shutil.which("launchctl"):   # unload first, or launchd keeps the job it already has
+            subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
             subprocess.run(["launchctl", "load", "-w", str(p)], capture_output=True)
     return {"plists": paths}
 
