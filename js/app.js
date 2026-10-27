@@ -28,7 +28,10 @@
     },
     navigate: function (hash) { location.hash = hash; },
     refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
-    resetDemo: function () { Store.reset(); TriageView.hardReset(); route(true); Say.tell('Demo data is back to the start.'); }
+    resetDemo: function () {
+      if (Live.on()) { Live.sync().then(function () { Say.tell('Up to date with Fuzz.'); }); return; }
+      Store.reset(); TriageView.hardReset(); route(true); Say.tell('Demo data is back to the start.');
+    }
   };
   window.App = App;
 
@@ -72,7 +75,8 @@
     }, true);
     document.getElementById('themepop').addEventListener('click', function (e) {
       e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-calm]'); if (!t) return;
+      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm]'); if (!t) return;
+      if (t.dataset.disconnect) { Live.disconnect(); return; }
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
       else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
@@ -124,7 +128,9 @@
       '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
-      '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>';
+      (Live.on()
+        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Use demo data</button></div>'
+        : '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>');
     if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }
 
@@ -181,11 +187,13 @@
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;
-  Store.reset();
-  Store.startWork();
-  buildHeader();
-  window.addEventListener('hashchange', function () { route(false); });
-  setInterval(updateCount, 1000);
-  updateCount();
-  route(true);
+  /* With a token from `fuzz serve`, the screens show your real queue (js/live.js); otherwise the demo data */
+  Live.boot(function () {
+    if (!Live.on()) { Store.reset(); Store.startWork(); }
+    buildHeader();
+    window.addEventListener('hashchange', function () { route(false); });
+    setInterval(updateCount, 1000);
+    updateCount();
+    route(true);
+  });
 })();
