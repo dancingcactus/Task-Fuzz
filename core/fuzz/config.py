@@ -12,8 +12,13 @@ DEFAULTS = {
     "tz": "local",
     "stale_days": 7,
     # A task you capture goes to Fuzz first, to look it up with the read tools below, then to triage.
-    # minutes: how long it may wait for a run before it comes to you without.
-    "gather": {"enabled": True, "minutes": 10},
+    # minutes: how long it may wait for a run before it comes to you without. finish_results: when
+    # looking it up is the whole task (a summary, an agenda), Fuzz does it then and it arrives done.
+    "gather": {"enabled": True, "minutes": 10, "finish_results": True},
+    # The one folder the executor may create and change files in, one subfolder per task. None: it can't
+    # write files. Set it in `fuzz setup`; the suggestion is ~/Documents/Fuzz.
+    "output": {"folder": None},
+    "setup": {"done": False},
     "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
     "files": {"max_mb": 25, "max_per_task": 10},
     # The connector tools the sender may call to send an approved draft, per client, as that client

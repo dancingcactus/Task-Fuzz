@@ -1,6 +1,7 @@
 """Claude Code: skills in ~/.claude/skills/, MCP through `claude mcp`, headless runs with `claude -p`."""
 
 import json
+import re
 import subprocess
 
 from .base import Adapter, home, skill_body, write_json
@@ -40,9 +41,10 @@ class ClaudeCode(Adapter):
         return path
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
-                         send_tools=None, read_tools=None):
+                         send_tools=None, read_tools=None, write_dir=None):
         """Only Fuzz's server and its tools, nothing else allowed, nobody to ask. With files_dir, Read is the
-        one built-in tool, allowed only inside that folder (`//` makes the rule's path absolute).
+        one built-in tool, allowed only inside that folder (`//` makes the rule's path absolute). With
+        write_dir, Write and Edit join it, allowed only inside the output folder.
 
         The sender loads your own MCP servers and connectors (no --strict-mcp-config), since it sends with
         them. It may still call only Fuzz's sender tools and the send_tools you listed. The executor loads
@@ -50,24 +52,47 @@ class ClaudeCode(Adapter):
         allowed = [f"mcp__{self.mcp_name(role)}__*"]
         extra = list((send_tools if role == "sender" else read_tools if role == "executor" else None) or [])
         allowed += extra
-        tools = ""
-        if files_dir:
-            tools = "Read"
-            allowed.append(f"Read(/{str(files_dir).rstrip('/')}/**)")
+        tools = []
+        for d in (files_dir, write_dir):
+            if d:
+                tools = ["Read"]
+                allowed.append(f"Read(/{str(d).rstrip('/')}/**)")
+        if write_dir:
+            tools += ["Write", "Edit"]
+            allowed += [f"Write(/{str(write_dir).rstrip('/')}/**)", f"Edit(/{str(write_dir).rstrip('/')}/**)"]
         argv = [self.exe, "-p", self.prompt(role, task_id),
                 "--mcp-config", str(config_path), *([] if extra or role == "sender" else ["--strict-mcp-config"]),
-                "--tools", tools,
+                "--tools", ",".join(tools),
                 "--allowedTools", *allowed,
                 "--permission-mode", "dontAsk",
                 "--append-system-prompt", skill_body(role),
                 "--no-session-persistence"]
-        if files_dir:
-            argv += ["--add-dir", str(files_dir)]
+        for d in (files_dir, write_dir):
+            if d:
+                argv += ["--add-dir", str(d)]
         if model:
             argv += ["--model", model]
         if verbose:
             argv += ["--output-format", "stream-json", "--verbose"]
         return argv
+
+    def list_servers(self):
+        """`claude mcp list` prints "claude.ai Gmail: https://... - ✔ Connected", one server a line."""
+        try:
+            out = subprocess.run([self.exe, "mcp", "list"], capture_output=True, text=True, timeout=120).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        names = []
+        for line in out.splitlines():
+            m = re.match(r"^(.+?): \S.* - (.+)$", line.strip())
+            if m and not m.group(1).startswith("fuzz-"):
+                names.append({"name": m.group(1), "status": m.group(2).strip("✔✗! ").strip()})
+        return names
+
+    def discovery_command(self, prompt, model=None):
+        """Your own servers loaded, no built-in tools, nothing allowed and nobody to ask: it can only answer."""
+        return [self.exe, "-p", prompt, "--tools", "", "--permission-mode", "dontAsk", "--no-session-persistence",
+                "--model", model or "haiku"]
 
     def run_ok(self, returncode, output):
         if returncode != 0:

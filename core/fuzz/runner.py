@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 
-from . import adapters, config, files, runs, scheduler
+from . import adapters, config, files, outputs, runs, scheduler
 from .db import FuzzError
 from .roles import scripted
 
@@ -61,7 +61,10 @@ def run_role(core, role, client=None, model=None, task_id=None, scripted_=False,
         raise
     finally:
         core.run = None
-        runs.finish(core, rid, outcome, detail)
+        done = runs.finish(core, rid, outcome, detail)
+        if role == "executor" and outputs.folder(core):   # whatever the run left in a task's folder is on the task
+            for tid in done.get("tasks") or []:
+                outputs.record(core, tid)
     return {"run_id": rid, "outcome": outcome, "client": client_name, "model": model, **detail}
 
 
@@ -75,13 +78,18 @@ def _headless(core, adapter, role, rid, model, task_id, verbose, say):
     if role == "executor":   # attachments: readable with the client's own file tools, nothing else is
         files_dir = files.user_dir(core)
         os.makedirs(files_dir, exist_ok=True)
-    send_tools = read_tools = None
+    send_tools = read_tools = write_dir = None
+    out = outputs.folder(core)
+    if out:
+        os.makedirs(out, exist_ok=True)
     if role == "sender":   # the connector tools you allowed for sending, as this client names them
         send_tools = list(((core.config.get("send") or {}).get("tools") or {}).get(adapter.name) or [])
-    if role == "executor":   # and the ones you allowed for looking things up
+        files_dir = out    # it may attach what the executor saved there
+    if role == "executor":   # and the ones you allowed for looking things up, and the folder it may write to
         read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(adapter.name) or [])
+        write_dir = out
     argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir, send_tools=send_tools,
-                                    read_tools=read_tools)
+                                    read_tools=read_tools, write_dir=write_dir)
     with open(os.path.join(run_dir, "argv.json"), "w") as f:
         json.dump(argv, f, indent=2)
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

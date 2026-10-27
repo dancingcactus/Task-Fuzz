@@ -18,7 +18,7 @@
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
-  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File' };
+  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File', output: 'Saved file' };
 
   /* ---------- Talking to the core ---------- */
   function readToken() {
@@ -35,6 +35,8 @@
   }
   function forget() { try { localStorage.removeItem(KEY); } catch (e) {} token = null; }
 
+  /* A file opens in a new tab, so its link carries the token the way the event stream does */
+  function fileUrl(sid) { return '/files/' + sid + '?token=' + encodeURIComponent(token || ''); }
   function api(method, path, body) {
     var o = { method: method, headers: { Authorization: 'Bearer ' + token } };
     if (body !== undefined) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
@@ -150,7 +152,7 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '' }; }),
+      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : null }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
@@ -447,8 +449,14 @@
     sync: syncThenRefresh,
     disconnect: function () { forget(); location.reload(); },
     /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
-    me: function () { return api('GET', '/me'); },
     saveMe: function (body) { return api('PUT', '/me', body); },
+    /* Guided setup (js/setup.js): who you are, the tools Fuzz may use, the folder it may write to */
+    setup: function (quick) { return api('GET', '/setup' + (quick ? '?check=0' : '')); },
+    discover: function (client) { return api('POST', '/setup/discover', { client: client }); },
+    saveTools: function (client, read, send) { return api('PUT', '/setup/tools', { client: client, read: read, send: send }); },
+    chooseFolder: function (start) { return api('POST', '/setup/folder/choose', { start: start || null }); },
+    saveFolder: function (folder) { return api('PUT', '/setup/folder', { folder: folder || null }); },
+    setupDone: function () { return api('POST', '/setup/done', {}); },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {
       if (location.protocol === 'file:' || !readToken()) return start();

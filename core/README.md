@@ -46,7 +46,51 @@ fuzz uninstall --client claude-code        # removes exactly what install added
 ```
 
 `--link` symlinks the skills instead of copying them, for development. On a Mac, install also
-writes launchd jobs for `fuzz serve` and the three roles.
+writes launchd jobs for `fuzz serve` and the three roles, with a `PATH` that finds `copilot` and
+`claude` (launchd's own has neither). Every install rewrites and reloads them.
+
+## Setup
+
+```bash
+fuzz setup                                 # who you are, the tools Fuzz can use, an output folder, a check
+fuzz setup --step tools --client copilot --discover   # list the client's tools again (one run)
+fuzz setup --step folder --folder ~/Documents/Fuzz    # or - for none
+```
+
+The UI walks through the same steps the first time you connect, and from Settings > Set up Fuzz.
+Each step can be skipped and done again later.
+
+1. **Who you are**: your other email addresses, names and Slack IDs, so a connector signed in to any
+   of them is yours without asking.
+2. **Which tools Fuzz can use.** Fuzz asks the client once which tools it loads: one run that sees
+   every tool and can call none (Fuzz can't list them itself, since most connectors sign in through
+   the client). What it found is kept in `connectors.json` and grouped into **Look things up** and
+   **Send**. Only tools that read are suggested, a tool whose name acts (`do_action`, `delete_…`) is
+   never suggested whatever the run said, and a send tool is never pre-selected. Your choice is written
+   to `read.tools` and `send.tools` in the client's own syntax (`workiq(fetch)` for Copilot,
+   `mcp__claude_ai_Gmail__search` for Claude Code). Re-run it whenever you add a connector.
+3. **An output folder** (`output.folder`, suggested `~/Documents/Fuzz`). See Output folder.
+4. **Check**: `fuzz doctor`, per client.
+
+**Always allow** on a permission card for a connector adds that connector's lookup tools to
+`read.tools`, for every client that found it, so the next run can use it. `whoami` lists the
+connectors setup found but you haven't allowed (`can_ask_for`), so the executor asks by a name that
+matches. Allow once records the grant only.
+
+## Output folder
+
+The one place the executor may create and change files, with no draft and no permission request: a
+document, a spreadsheet, a checklist, an export. Each task gets its own subfolder, `<id> <title>/`,
+made when the executor claims it (`get_task` gives it as `output_dir`). A run may write only there:
+Claude Code gets `Write` and `Edit` on that folder, Copilot `--allow-tool 'write(<folder>/**)'` instead
+of `--deny-tool write` (`write(<folder>)` alone matches nothing inside it). Nothing in it is sent.
+
+Whatever a run leaves in a task's subfolder is recorded on the task (a `sources` row with role
+`output`, and a `task.file_written` event), and the card and task sheet link to it through
+`GET /files/<source id>`. Files are overwritten in place; once written they stay, and Undo doesn't
+remove them. Approved notes (`Note.md`) and results (`Result.md`) are saved there too. A draft can
+name files in its subfolder in `attach`; the sender gets their paths, may read that folder, and
+attaches them, or reports that its tool can't.
 
 A headless run gets its own MCP config that starts `fuzz mcp --role <role> --run <id>`, so it sees
 only Fuzz's server, and every event it writes carries the run, model and `prompt_version`. Claude
@@ -108,6 +152,9 @@ fuzz/timeres.py     anchors, labels and the Schedule options
 fuzz/scheduler.py   claim, leases, step budget, handbacks, moments, the minute tick, wake
 fuzz/presence.py    back-at-desk detection on a Mac
 fuzz/files.py       attachments, in a folder per task
+fuzz/outputs.py     the output folder: a subfolder per task, what runs wrote, notes and results as Markdown
+fuzz/connectors.py  tool discovery, the lookup/send split, read.tools and send.tools
+fuzz/setup.py       `fuzz setup` and the UI's guided setup
 fuzz/drafts.py      the approval gate: drafts, sending and permissions
 fuzz/matching/      the spike's matcher, moved in: entities, vectors, stages 1–4
 fuzz/signals.py     signal and verdict schemas
@@ -173,8 +220,8 @@ starting a client when nothing waits.
 ## Lookup tools for the executor
 
 The executor has only Fuzz's own tools (and read access to your attachments) unless you allow it
-connector tools for looking things up, such as a search or a calendar. List only tools that read:
-whatever is listed runs without asking.
+connector tools for looking things up, such as a search or a calendar. Pick them in `fuzz setup`, or
+list them by hand. List only tools that read: whatever is listed runs without asking.
 
 ```bash
 fuzz config set read.tools.copilot '["Glean"]'      # every tool of Copilot's Glean server
@@ -189,7 +236,10 @@ and may call only Fuzz's executor tools plus those.
 When an executor engine is set, a task you capture goes to Fuzz before it reaches triage. It waits as
 queued with the `gather` tag, `fuzz serve` starts an executor run at once, and the run looks the task
 up with your attachments and the lookup tools above, writes the brief and calls `finish_gathering`.
-Then the task lands in triage with its card, and nothing has been asked. While gathering, the
+Then the task lands in triage with its card, and nothing has been asked. When looking it up is the
+whole task (a summary, an agenda, an answer) and the run's tools reach it, Fuzz does it then and calls
+`finish_gathering` with `result: true`: the task arrives done, Done first, and you never assign it. Turn
+that off with `fuzz config set gather.finish_results false`. While gathering, the
 executor can't draft, hand back, ask for permission or split the task.
 
 If no run gets to it within `gather.minutes` (10), or a run fails on it `budget.max_attempts` times,

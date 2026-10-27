@@ -181,6 +181,34 @@ class Gathering(CoreCase):
         t, _ = scheduler.claim_next(self.core, tid)
         self.assertFalse(tools.get_task(self.core, tid)["gathering"], "once assigned it's ordinary work")
 
+    def test_a_lookup_task_arrives_done(self):
+        tid = self.gathered("Summarize my email from today")
+        self.assertTrue(tools.get_task(self.core, tid)["may_finish"])
+        with self.assertRaises(FuzzError) as e:
+            tools.finish_gathering(self.core, tid, result=True)
+        self.assertEqual(e.exception.field, "result", "a result needs the brief")
+        tools.update_brief(self.core, tid, context_md="## Today\n\n1. Launch moved",
+                           summary="Four emails, one urgent.")
+        tools.finish_gathering(self.core, tid, result=True, options=["Draft a reply to the urgent one"])
+        t = self.task(tid)
+        self.assertEqual(t["state"], "triage")
+        self.assertEqual(sorted(t["variant_tags"]), ["handed_back", "result"])
+        self.assertEqual(t["quick_answers"], ["Draft a reply to the urgent one"])
+        self.assertEqual(self.card_for(tid, "task")["suggested"], "done")
+        self.assertEqual(events.task_log(self.core, tid)[0]["text"],
+                         "Finished while gathering. The result is in the brief.")
+
+    def test_finishing_while_gathering_can_be_turned_off(self):
+        cfg = self.core.config
+        cfg["gather"]["finish_results"] = False
+        self.core.save_config(cfg)
+        tid = self.gathered("Summarize my email from today")
+        self.assertFalse(tools.get_task(self.core, tid)["may_finish"])
+        tools.update_brief(self.core, tid, context_md="## Today")
+        with self.assertRaises(FuzzError):
+            tools.finish_gathering(self.core, tid, result=True)
+        self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "triage"})
+
     def test_gathering_asks_nothing_and_sends_nothing(self):
         tid = self.gathered()
         for call in (lambda: tools.hand_back(self.core, tid, "Which Sydnee?"),

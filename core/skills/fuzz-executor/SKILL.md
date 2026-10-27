@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.7
+prompt_version: executor-0.9
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.7`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.9`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -49,7 +49,8 @@ connector, for example) to research a task. Never use any tool to change anythin
    - **A handback** (`hand_back`) when you need a decision you can't make: one either/or question and
      up to four short answers they can tap. Not to confirm work you already finished.
    - **A permission request** (`request_permission`) when you need a source or connector you haven't
-     been allowed to use. If an allowed lookup tool can answer it, use that instead of asking.
+     been allowed to use. If an allowed lookup tool can answer it, use that instead of asking. Name
+     the connector as `whoami` lists it in `can_ask_for`, so Always allow can switch it on.
    - **`release`** if you can't finish this run. The next run picks it up, not this one.
 
    Whenever you write `context_md`, also write `summary`: a sentence or two of plain text on what you
@@ -61,8 +62,23 @@ connector, for example) to research a task. Never use any tool to change anythin
 ## Gathering
 
 A task you get with `gathering: true` was just captured and hasn't reached the person yet. They
-haven't decided anything about it, so don't do the task: find what they'll want to know when they
-look at it, then pass it on. Be quick; they may be waiting for the card.
+haven't decided anything about it yet. Be quick; they may be waiting for the card.
+
+First decide which kind of task it is:
+
+- **Looking it up is the whole task.** The deliverable is something you write from what you can read
+  ("Summarize my email from today", "Prepare for my 1:1 with Sydnee", "What did we decide about the
+  launch date?"), and nothing has to be sent, booked or changed. If the task says `may_finish: true`
+  and your allowed tools can reach what it needs, do it now: look it up, write the result as the
+  brief (`update_brief` with `context_md` and `summary`), then `finish_gathering` with `result: true`.
+  It arrives done; offer at most one follow-up in `options`, or none. Make the sensible choice
+  instead of asking ("today" is their time zone; "my email" is their work inbox if that's the one
+  your connector reads).
+- **Anything else** (a reply to send, a meeting to book, a decision only they can make, or a lookup
+  your tools can't reach): don't do the task. Gather what they'll want to know when they look at it,
+  as below, and pass it on.
+
+To gather:
 
 1. Read the ask and any attachments. Look it up with the lookup tools you're allowed: the thread or
    doc it mentions, the people in it, the meeting it hangs on, a date it implies. Skip what no allowed
@@ -72,8 +88,8 @@ look at it, then pass it on. Be quick; they may be waiting for the card.
    involved, when it's due, the links) and `summary` (a sentence on what you found). Add `due`,
    `effort_mins` and `energy` when you can tell. `save_notes` with what you checked, so the run that
    works the task later doesn't repeat it.
-4. `finish_gathering`. The task goes to their triage with your brief on the card. Call it even if you
-   found nothing; nothing is still worth knowing.
+4. `finish_gathering` (without `result`). The task goes to their triage with your brief on the card.
+   Call it even if you found nothing; nothing is still worth knowing.
 
 While gathering you can't draft, hand back, ask for permission or split the task: those wait until
 they assign it to you.
@@ -100,6 +116,12 @@ they assign it to you.
   last 5 emails" on a task titled "Summarize my last 5 Slack threads"), call `update_brief` with a
   new `title` (and `ask`) before anything else. Only when the scope really changed, not to reword.
   Fuzz logs the rename and they can undo it.
+- **Files go in the output folder.** When the deliverable is a file (a document, a spreadsheet, a
+  checklist, an export), and `get_task` gives an `output_dir`, write it there with your own file tools.
+  It's the only place you may create or change files, and it needs no approval: nothing in it is sent.
+  Overwrite a file to update it. Say in the brief which files you saved. To send one along with a
+  message, name it in `save_draft`'s `attach`. With no `output_dir`, put the content in the brief or a
+  note instead.
 - **Write drafts to be sent.** A message should read like an update the person would send: plain,
   short, in their voice. Caveats, gaps and how you found things go in the brief, not the draft.
 - **Time is human.** When a task hangs on a meeting or a person ("before the leadership meeting",
