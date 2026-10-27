@@ -15,6 +15,7 @@
   function cells(it, key) {
     if (key === 'current') {
       var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
+      if (it.gathering) m = ['Gathering context', 'accent'];
       return { tone: m[1], c2: m[0], c3: it.age, c4: Store.nowText(it) || '—' };
     }
     if (key === 'parked') return { tone: it.woke ? 'accent' : 'muted', c2: it.woke ? 'Woke up' : 'Parked', c3: it.parkedAgo || it.age, c4: it.now || '—' };

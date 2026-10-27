@@ -82,6 +82,34 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
     return t["id"]
 
 
+def gathering(t):
+    return "gather" in (t.get("variant_tags") or [])
+
+
+GATHER_REFUSED = ("Task {id} is only being gathered: it goes to the person's triage next, and they decide what "
+                  "happens. Write what you found with update_brief, then call finish_gathering.")
+
+
+def refuse_while_gathering(t):
+    if gathering(t):
+        raise FuzzError(GATHER_REFUSED.format(id=t["id"]), "task_id", 409)
+
+
+def finish_gathering(core, task_id, actor="fuzz:executor", log=None):
+    """The context is in: the task goes to triage as captured, with its card, and nothing asked."""
+    t = tasks.require(core, task_id)
+    if not gathering(t):
+        raise FuzzError(f"Task {t['id']} isn't being gathered", "task_id", 409)
+    with core.tx(actor):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "triage")
+        events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                    log=("status", log or ("Fuzz gathered what it could find." if t.get("context_md")
+                                           else "Fuzz found nothing more to add.")))
+        cards.sync(core, t["id"])
+    return t["id"]
+
+
 def _released_by_me(core):
     """Tasks this caller released. A caller is one run (or one chat process), so a run doesn't get back
     what it just gave up; the next run will."""
@@ -95,7 +123,8 @@ def _eligible(core, task_id=None):
     rows = core.all(sql, (core.user_id, task_id) if task_id else (core.user_id,))
     mine = _released_by_me(core)
     rows = [t for t in rows if "needs_permission" not in (t.get("variant_tags") or []) and t["id"] not in mine]
-    rows.sort(key=lambda t: (-tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
+    # a task waiting to be gathered goes first: you're about to see it in triage
+    rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
     return rows
 
 
@@ -112,6 +141,10 @@ def claim_next(core, task_id=None):
             if not rows:
                 return None, ("That task isn't queued for Fuzz" if task_id else "Nothing is queued for Fuzz")
             t = rows[0]
+            if t["attempts"] >= b["max_attempts"] and gathering(t):
+                finish_gathering(core, t["id"], actor="system",
+                                 log="Fuzz couldn't gather context for this, so it came to you as captured.")
+                continue
             if t["attempts"] >= b["max_attempts"]:
                 hand_back(core, t["id"], "I got stuck on this. What should I try?", ["Try again", "I’ll take it"],
                           actor="system", log=f"Claimed {t['attempts']} times with no progress, so it came back to you.")
@@ -120,7 +153,7 @@ def claim_next(core, task_id=None):
             tasks.move(core, ch, t, "working", lease_owner=caller(core), lease_until=lease_until(core),
                        attempts=t["attempts"] + 1)
             events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core)},
-                        log=("status", "Fuzz started on this."))
+                        log=("status", "Fuzz is gathering context." if gathering(t) else "Fuzz started on this."))
             return tasks.get(core, t["id"]), None
 
 
@@ -230,8 +263,16 @@ def suggest_schedule(core, task_id, anchor, reason, actor="fuzz:executor"):
 
 def tick(core):
     """Run every minute by `fuzz serve` (and by `fuzz tick`). Returns what moved."""
-    out = {"released": expire_leases(core), "came_back": 0, "deadline": 0, "stale": 0}
+    out = {"released": expire_leases(core), "came_back": 0, "deadline": 0, "stale": 0, "gather_timeout": 0}
     now = core.now_iso()
+    # Gathering never keeps a task from you for long: no run picked it up in time, so it goes to triage as is
+    late = iso(core.now() - timedelta(minutes=core.config["gather"]["minutes"]))
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued' AND created_at < ?",
+                      (core.user_id, late)):
+        if gathering(t):
+            finish_gathering(core, t["id"], actor="system",
+                             log="Fuzz didn't get to this in time, so it came to you as captured.")
+            out["gather_timeout"] += 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='scheduled' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
         lab = timeres.label(core, t["schedule_anchor"] or {"type": "exact"})

@@ -19,6 +19,49 @@
   /* Escape text, then turn `backticked` bits into inline code. */
   function text(s) { return esc(s).replace(/`([^`]+)`/g, '<code class="icode">$1</code>'); }
 
+  /* Markdown the AI writes, drawn as HTML. Escaped first, so only these few forms become markup. */
+  function inline(s) {
+    var codes = [];
+    s = esc(s).replace(/`([^`]+)`/g, function (m, c) { codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/(\*\*|__)(?=\S)(.+?)\1/g, '<strong>$2</strong>')
+      .replace(/(^|[^*\w])[*_](?=\S)([^*_]+?)[*_](?![*\w])/g, '$1<em>$2</em>')
+      .replace(/~~(.+?)~~/g, '<del>$1</del>');
+    return s.replace(/\u0000(\d+)\u0000/g, function (m, i) { return '<code class="icode">' + codes[i] + '</code>'; });
+  }
+  function md(src) {
+    var out = [], para = [], list = null, quote = [], fence = null;
+    function flushPara() { if (para.length) out.push('<p>' + para.map(inline).join(' ') + '</p>'); para = []; }
+    function flushList() { if (list) out.push('<' + list.tag + '>' + list.items.join('') + '</' + list.tag + '>'); list = null; }
+    function flushQuote() { if (quote.length) out.push('<blockquote>' + md(quote.join('\n')) + '</blockquote>'); quote = []; }
+    function flush() { flushPara(); flushList(); flushQuote(); }
+    (src || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (l) {
+      var m;
+      if (fence) { if (/^\s*(```|~~~)/.test(l)) { out.push('<pre class="md-code"><code>' + esc(fence.join('\n')) + '</code></pre>'); fence = null; } else fence.push(l); return; }
+      if (/^\s*(```|~~~)/.test(l)) { flush(); fence = []; return; }
+      if ((m = l.match(/^\s*>\s?(.*)$/))) { flushPara(); flushList(); quote.push(m[1]); return; }
+      flushQuote();
+      if (!l.trim()) { flushPara(); flushList(); return; }
+      if ((m = l.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/))) { flush(); var n = Math.min(m[1].length + 3, 6); out.push('<h' + n + '>' + inline(m[2]) + '</h' + n + '>'); return; }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push('<hr>'); return; }
+      if ((m = l.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
+        flushPara();
+        var tag = /\d/.test(m[1]) ? 'ol' : 'ul';
+        if (list && list.tag !== tag) flushList();
+        if (!list) list = { tag: tag, items: [] };
+        var item = m[2], box = item.match(/^\[([ xX])\]\s+(.*)$/);
+        list.items.push(box ? '<li class="md-task"><span class="md-box' + (box[1] === ' ' ? '' : ' on') + '" aria-label="' + (box[1] === ' ' ? 'Not done' : 'Done') + '"></span>' + inline(box[2]) + '</li>' : '<li>' + inline(item) + '</li>');
+        return;
+      }
+      /* A wrapped line under a list item belongs to that item */
+      if (list && /^\s+\S/.test(l)) { var last = list.items.length - 1; list.items[last] = list.items[last].replace(/<\/li>$/, ' ' + inline(l.trim()) + '</li>'); return; }
+      flushList(); para.push(l.trim());
+    });
+    if (fence) out.push('<pre class="md-code"><code>' + esc(fence.join('\n')) + '</code></pre>');
+    flush();
+    return out.join('');
+  }
+
   var KINDS = {
     research: { label: 'Research', icon: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.5-4.5' },
     action: { label: 'Fuzz action', icon: 'M13 3L5 14h6l-1 7 8-11h-6z' },
@@ -56,5 +99,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, text: text, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, text: text, md: md, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
 })();

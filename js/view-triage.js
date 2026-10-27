@@ -276,7 +276,8 @@
   function richAvail(it) {
     var a = [];
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
-    if (it.context.length) a.push(['context', 'Context', it.context.length]);
+    if (it.contextMd) a.push(['context', 'Context', null]);
+    else if (it.context.length) a.push(['context', 'Context', it.context.length]);
     if (it.code && it.code.length) a.push(['code', 'Code', it.code.length]);
     if (it.log.length) a.push(['done', 'Done so far', it.log.length]);
     if (it.sources.length) a.push(['sources', 'Sources', it.sources.length]);
@@ -286,9 +287,10 @@
     var avail = richAvail(it);
     if (!avail.length) return '';
     var t = avail.some(function (a) { return a[0] === tab; }) ? tab : avail[0][0];
-    var tabs = avail.map(function (a) { var on = a[0] === t; return '<button type="button" role="tab" class="tabbtn" id="tab-' + a[0] + '" data-tab="' + a[0] + '" aria-selected="' + on + '" aria-controls="tabpanel" tabindex="' + (on ? 0 : -1) + '">' + a[1] + '<span>' + a[2] + '</span></button>'; }).join('');
+    var tabs = avail.map(function (a) { var on = a[0] === t; return '<button type="button" role="tab" class="tabbtn" id="tab-' + a[0] + '" data-tab="' + a[0] + '" aria-selected="' + on + '" aria-controls="tabpanel" tabindex="' + (on ? 0 : -1) + '">' + a[1] + (a[2] == null ? '' : '<span>' + a[2] + '</span>') + '</button>'; }).join('');
     var body = '';
     if (t === 'conversation') body = '<ol class="convo">' + it.conversation.map(function (m) { var you = m.who === 'You'; return '<li class="' + (you ? 'you' : 'fuzz') + '"><span class="who">' + (you ? '' : Fuzz.mini('good', { cls: 'who-av' })) + esc(m.who) + ' · <span>' + esc(m.time) + '</span></span><span class="bub">' + esc(m.text) + '</span></li>'; }).join('') + '</ol>';
+    else if (t === 'context' && it.contextMd) body = '<div class="md">' + UI.md(it.contextMd) + '</div>';
     else if (t === 'context') body = '<ul class="ctx">' + it.context.map(function (c) { return '<li><i aria-hidden="true"></i><span>' + esc(c) + '</span></li>'; }).join('') + '</ul>';
     else if (t === 'code') body = CodeView.section(it.code, 'card:' + it.id);
     else if (t === 'done') body = UI.logHTML(it.log);

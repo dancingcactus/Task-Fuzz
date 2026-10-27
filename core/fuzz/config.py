@@ -11,6 +11,9 @@ DEFAULTS = {
     "budget": {"max_working": 5, "max_steps": 20, "max_attempts": 3, "lease_minutes": 10},
     "tz": "local",
     "stale_days": 7,
+    # A task you capture goes to Fuzz first, to look it up with the read tools below, then to triage.
+    # minutes: how long it may wait for a run before it comes to you without.
+    "gather": {"enabled": True, "minutes": 10},
     "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
     "files": {"max_mb": 25, "max_per_task": 10},
     # The connector tools the sender may call to send an approved draft, per client, as that client
@@ -91,6 +94,11 @@ def update_me(cfg, add=None, remove=None, replace=None):
         gone = set(clean((remove or {}).get(key)))
         me[key] = sorted({v for v in cur if v not in gone})
     return me
+
+
+def gathers(cfg):
+    """Whether a capture goes to Fuzz first: only when it's on and an executor can run."""
+    return bool((cfg.get("gather") or {}).get("enabled") and role_engine(cfg, "executor")[0])
 
 
 def role_engine(cfg, role, client=None, model=None):

@@ -12,12 +12,13 @@ import re
 import secrets
 import threading
 import time
+from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import answers, cards, config, engine, events, scheduler, tasks
-from .db import Core, FuzzError
+from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
 STATIC_DIRS = ("js", "css", "assets")
@@ -77,6 +78,7 @@ class App:
         self.clock = clock
         self._cores = {}
         self.send_kicked = {}
+        self.gather_kicked = {}
         self._mu = threading.Lock()
         self.changed = threading.Condition()
 
@@ -128,8 +130,11 @@ class App:
         return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"))]}
 
     def capture(self, core, m, body, q):
-        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"))
-        return {"task_id": tid}, 201
+        gather = config.gathers(core.config)
+        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"), gather=gather)
+        if gather:
+            kick_executor(self, core)
+        return {"task_id": tid, "gathering": gather}, 201
 
     def get_task(self, core, m, body, q):
         return task_view(core, tasks.require(core, int(m.group(1))), full=True)
@@ -402,6 +407,35 @@ def kick_sender(app, core, now=None):
     return True
 
 
+def gathers_waiting(core):
+    return any(scheduler.gathering(t) for t in core.all(
+        "SELECT * FROM tasks WHERE user_id=? AND state='queued' AND assignee='fuzz'", (core.user_id,)))
+
+
+def executor_running(core):
+    """A run that started within a lease and hasn't finished: it claims gather tasks first, so it gets there."""
+    since = core.now() - timedelta(minutes=core.config["budget"]["lease_minutes"])
+    return bool(core.one("SELECT COUNT(*) n FROM runs WHERE user_id=? AND role='executor' AND finished_at IS NULL "
+                         "AND started_at > ?", (core.user_id, iso(since)))["n"])
+
+
+def kick_executor(app, core, now=None, wait=None):
+    """Start the executor as soon as you capture a task, so it can gather context before you see the card.
+    Not when a run is already going, and not twice within wait seconds: the clock retries less often."""
+    now = now or time.time()
+    if not gathers_waiting(core) or not config.role_engine(core.config, "executor")[0] or executor_running(core):
+        return False
+    if now - app.gather_kicked.get(core.user_id, 0) < (wait or GATHER_KICK_SECONDS):
+        return False
+    app.gather_kicked[core.user_id] = now
+    engine.run_now(core, "executor")
+    return True
+
+
+GATHER_KICK_SECONDS = 30
+GATHER_RETRY_SECONDS = 180
+
+
 def _ticker(app, stop):
     while not stop.wait(TICK_SECONDS):
         for uid in set(load_tokens(app.home).values()):
@@ -410,6 +444,7 @@ def _ticker(app, stop):
                 with core.lock:
                     scheduler.tick(core)
                     kick_sender(app, core)
+                    kick_executor(app, core, wait=GATHER_RETRY_SECONDS)
             except Exception as e:   # the clock must keep going
                 print(f"tick failed for user {uid}: {e}")
 

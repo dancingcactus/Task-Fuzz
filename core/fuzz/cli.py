@@ -7,7 +7,7 @@ import shutil
 import sys
 
 from . import answers, cards, doctor, events, installer, matching, scheduler, tasks
-from .config import ME_KEYS, get as cfg_get, set_ as cfg_set, update_me
+from .config import ME_KEYS, gathers, get as cfg_get, set_ as cfg_set, update_me
 from .db import Core, FuzzError, default_home
 
 
@@ -110,7 +110,7 @@ def cmd_capture(a):
     for p in a.file or []:
         if not os.path.isfile(p):
             raise FuzzError(f"No file {p}", "file")
-    tid = tasks.capture(core, " ".join(a.text), a.doc, due=a.due)
+    tid = tasks.capture(core, " ".join(a.text), a.doc, due=a.due, gather=gathers(core.config))
     _print({"task_id": tid, "files": [_attach(core, tid, p) for p in a.file or []]})
 
 

@@ -65,12 +65,12 @@ All three are thin layers over the same library, so they can't drift apart.
 
 | Executor (13 tools) | Extractor (5 tools) | Sender (4 tools) |
 | --- | --- | --- |
-| `whoami`, `claim_next_task`, `get_task`, `read_source`, `log_step`, `save_notes`, `save_draft`, `hand_back`, `create_task`, `request_permission`, `suggest_schedule`, `update_brief`, `release` | `whoami`, `get_cursors`, `submit_signals`, `get_pending_judgments`, `submit_verdicts` | `whoami`, `claim_next_send`, `mark_sent`, `send_failed` |
+| `whoami`, `claim_next_task`, `get_task`, `read_source`, `log_step`, `save_notes`, `save_draft`, `hand_back`, `create_task`, `request_permission`, `suggest_schedule`, `update_brief`, `finish_gathering`, `release` | `whoami`, `get_cursors`, `submit_signals`, `get_pending_judgments`, `submit_verdicts` | `whoami`, `claim_next_send`, `mark_sent`, `send_failed` |
 
 `suggest_schedule` also takes a moment (see Calendar times).
 
 No role has a Fuzz tool that sends, posts or deletes. The sender sends with its client's own connector. `update_brief` writes the task's `context_md` (a Markdown
-brief for tasks with no draft) and `question` (the one thing Fuzz is asking you now).
+brief for tasks with no draft), `summary` (a sentence or two on what Fuzz did or found, shown above the brief) and `question` (the one thing Fuzz is asking you now).
 
 **HTTP** (`fuzz serve`, `127.0.0.1` only, `Authorization: Bearer <token>` from `tokens.json`):
 
@@ -183,6 +183,17 @@ fuzz config set read.tools.claude-code '["mcp__claude_ai_Google_Calendar__list_e
 
 With any listed, a Claude Code executor run also loads your own MCP servers (no `--strict-mcp-config`),
 and may call only Fuzz's executor tools plus those.
+
+## Gathering context on capture
+
+When an executor engine is set, a task you capture goes to Fuzz before it reaches triage. It waits as
+queued with the `gather` tag, `fuzz serve` starts an executor run at once, and the run looks the task
+up with your attachments and the lookup tools above, writes the brief and calls `finish_gathering`.
+Then the task lands in triage with its card, and nothing has been asked. While gathering, the
+executor can't draft, hand back, ask for permission or split the task.
+
+If no run gets to it within `gather.minutes` (10), or a run fails on it `budget.max_attempts` times,
+it comes to triage as captured. Turn it off with `fuzz config set gather.enabled false`.
 
 ## Calendar times
 

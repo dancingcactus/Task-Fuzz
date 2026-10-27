@@ -355,6 +355,8 @@
     /* ---- Fuzz working in the background ---- */
     startWork: function () { if (!timer) timer = setInterval(tick, 1000); },
     nowText: function (it) {
+      if (it.gathering && it.state === 'ai-queued') return 'Waiting to gather context';
+      if (it.gathering && it.state === 'ai') { var g = it.log[0]; return g && g.kind !== 'status' ? g.text : 'Gathering context'; }
       if (it.state === 'ai-queued') return 'Next up, waiting for a free slot';
       if (it.state === 'sending') return it.now || 'Sending';
       if (it.state === 'ai') { var l = it.log[0]; return l && l.kind !== 'status' ? l.text : (it.now || 'Getting started'); }

@@ -9,6 +9,7 @@ from .db import FuzzError, parse_iso
 
 CONTEXT_MAX = 16 * 1024
 QUESTION_MAX = 500
+SUMMARY_MAX = 400
 TITLE_MAX = 140
 
 
@@ -69,6 +70,8 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
         remove |= cards.TRIAGE_TAGS | {"unconfirmed"}
         fields.setdefault("reason", None)
         fields.setdefault("quick_answers", None)
+    if to not in ("queued", "working"):
+        remove.add("gather")   # gathering ends however the task leaves Fuzz's hands
     base = dict(t, **pend)
     f = dict(state=to, variant_tags=_tags(base, add_tags, remove), **fields)
     if "assignee" not in fields:
@@ -100,7 +103,9 @@ def _one(core, actor, type, t, to, log, card=None, option=None, value=None, data
 
 # ---------------------------------------------------------------- capture
 
-def capture(core, text, docs=None, actor="human", due=None):
+def capture(core, text, docs=None, actor="human", due=None, gather=False):
+    """gather: Fuzz looks the task up with its read-only tools before it reaches triage, so the card can
+    show what it found. It waits as queued for Fuzz with the gather tag until then."""
     text = (text or "").strip()
     docs = [d for d in (docs or []) if d]
     if not text and not docs:
@@ -110,8 +115,9 @@ def capture(core, text, docs=None, actor="human", due=None):
         tid = core.new_id("tasks")
         now = core.now_iso()
         ch = events.Changes()
-        ch.task(tid, state="triage", assignee="human", title=title, ask=text or None, owner="me", due=due,
-                order_key=next_order(core), variant_tags=[], created_at=now, state_changed_at=now,
+        ch.task(tid, state="queued" if gather else "triage", assignee="fuzz" if gather else "human", title=title,
+                ask=text or None, owner="me", due=due, order_key=next_order(core),
+                variant_tags=["gather"] if gather else [], created_at=now, state_changed_at=now,
                 title_history=[], steps_used=0, attempts=0, deadline_level=0)
         events.emit(core, "task.captured", task_id=tid, changes=ch, data={"docs": docs},
                     log=("status", "You captured this task." if actor == "human" else "Fuzz captured this task."))
@@ -231,7 +237,7 @@ def keep_stale(core, task_id, card):
 # ---------------------------------------------------------------- the AI's writes
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 actor="fuzz:executor"):
+                 summary=None, actor="fuzz:executor"):
     t = require(core, task_id)
     f = {}
     if due is not None:
@@ -243,6 +249,11 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError(f"context_md is over {CONTEXT_MAX // 1024} KB; keep the brief short and link out",
                             "context_md")
         f["context_md"] = context_md or None
+    if summary is not None:
+        if len(summary) > SUMMARY_MAX:
+            raise FuzzError(f"summary is over {SUMMARY_MAX} characters; say what you did or found in a sentence "
+                            "or two", "summary")
+        f["summary"] = summary.strip() or None
     if question is not None:
         if len(question) > QUESTION_MAX:
             raise FuzzError(f"question is over {QUESTION_MAX} characters; ask one short thing", "question")
@@ -254,7 +265,7 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError("energy must be low, normal or high", "energy")
         f["energy"] = energy
     if not f:
-        raise FuzzError("Pass context_md, question, effort_mins, energy or due", "context_md")
+        raise FuzzError("Pass context_md, summary, question, effort_mins, energy or due", "context_md")
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], **f)

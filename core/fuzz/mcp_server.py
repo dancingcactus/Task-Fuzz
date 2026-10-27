@@ -50,7 +50,8 @@ def build(core, role):
         @srv.tool()
         def claim_next_task(task_id: int | None = None) -> dict:
             """Lease the next task the scheduler picks for you (or the one named), for 10 minutes.
-            Any write renews the lease. Returns the task, or why there is nothing to do."""
+            Any write renews the lease. Returns the task, or why there is nothing to do. gathering: true means
+            it was just captured: gather context for the person's triage card, then call finish_gathering."""
             return _call(tools.claim_next_task, core, task_id)
 
         @srv.tool()
@@ -123,14 +124,23 @@ def build(core, role):
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
                          effort_mins: int | None = None, energy: str | None = None, due: str | None = None,
-                         title: str | None = None, ask: str | None = None) -> dict:
+                         title: str | None = None, ask: str | None = None, summary: str | None = None) -> dict:
             """Write what the human sees. context_md: a short Markdown brief (what it is, when it's due, links),
-            for tasks with no draft. question: the one thing you need from them now ("What should the deadline
+            for tasks with no draft. summary: plain text, a sentence or two on what you did or found ("Checked
+            Glean: three open items with Sydnee, led by the TAPER-8461 estimate"); it sits above the brief, so
+            don't repeat the brief's opening. question: the one thing you need from them now ("What should the deadline
             be?"). effort_mins and energy (low, normal, high) help order their queue. due: when it must be done,
             like 2026-11-03 or 2026-11-03T15:00 (their time zone unless it says otherwise). title and ask: only
             when their instructions changed what the task is; the old title is kept and Undo restores it.
             Pass only what changes."""
-            return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask)
+            return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask,
+                         summary)
+
+        @srv.tool()
+        def finish_gathering(task_id: int) -> dict:
+            """End a gather (claim_next_task returned gathering: true): the task goes to the person's triage
+            with the brief you wrote. Call it once the context is in, or straight away if nothing helps."""
+            return _call(tools.finish_gathering, core, task_id)
 
         @srv.tool()
         def release(task_id: int) -> dict:

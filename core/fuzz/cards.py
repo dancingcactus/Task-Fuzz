@@ -169,8 +169,8 @@ def queue(core):
 def task_summary(t):
     if t is None:
         return None
-    keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "question", "quick_answers",
-            "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
+    keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
+            "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
             "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at")
     return {k: t.get(k) for k in keys}
 
