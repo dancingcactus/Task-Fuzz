@@ -134,7 +134,7 @@ def install(core, client, roles=ROLES, link=False, launchd=None, actor="human"):
     if launchd is None:
         launchd = sys.platform == "darwin"
     if launchd:   # every install, so a fix to the jobs (their PATH, say) reaches a machine set up before it
-        man["_launchd"] = _write_launchd(core)
+        man["_launchd"] = _write_launchd(core, man.get("_launchd"))
     save_manifest(core, man)
 
     cfg = core.config
@@ -200,9 +200,11 @@ def _plist(core, label, args, interval=None, keepalive=False):
     return d
 
 
-def _write_launchd(core):
+def _write_launchd(core, prior=None):
+    """prior: the last install's record, so folders it created are still removed on uninstall."""
     agents = Path(os.path.expanduser("~/Library/LaunchAgents"))
-    agents.mkdir(parents=True, exist_ok=True)
+    created = list((prior or {}).get("created", []))
+    _mkdirs(agents, created)
     jobs = {f"com.fuzz.u{core.user_id}.serve": _plist(core, f"com.fuzz.u{core.user_id}.serve", ["serve"], keepalive=True)}
     for role in ROLES:
         label = f"com.fuzz.u{core.user_id}.{role}"
@@ -216,7 +218,7 @@ def _write_launchd(core):
         if shutil.which("launchctl"):   # unload first, or launchd keeps the job it already has
             subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
             subprocess.run(["launchctl", "load", "-w", str(p)], capture_output=True)
-    return {"plists": paths}
+    return {"plists": paths, "created": created}
 
 
 def _remove_launchd(rec):
@@ -224,6 +226,8 @@ def _remove_launchd(rec):
         if shutil.which("launchctl"):
             subprocess.run(["launchctl", "unload", "-w", p], capture_output=True)
         _remove_path(p)
+    for p in reversed(rec.get("created", [])):
+        _remove_if_empty(p)
 
 
 def set_engine(core, client=None, model=None):
