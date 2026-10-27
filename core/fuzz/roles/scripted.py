@@ -49,7 +49,8 @@ async def _executor(core, task_id, say):
             await _call(c, "log_step", {"task_id": tid, "kind": "action", "text": "Drafted the next step."})
             if not t.get("context_md"):
                 await _call(c, "update_brief", {"task_id": tid, "context_md":
-                            f"**{t['title']}**\n\nA scripted run wrote this. Nothing real was read."})
+                            f"**{t['title']}**\n\nA scripted run wrote this. Nothing real was read.",
+                            "summary": "A scripted run read the task and drafted a next step."})
             body = f"Draft for “{t['title']}”, based on: {(t.get('notes') or t.get('ask') or t['title']).strip()}"
             await _call(c, "save_draft", {"task_id": tid, "kind": "note", "target": "", "body": body})
             say(f"Draft ready on #{tid}")

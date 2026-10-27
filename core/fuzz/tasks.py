@@ -9,6 +9,7 @@ from .db import FuzzError, parse_iso
 
 CONTEXT_MAX = 16 * 1024
 QUESTION_MAX = 500
+SUMMARY_MAX = 400
 TITLE_MAX = 140
 
 
@@ -231,7 +232,7 @@ def keep_stale(core, task_id, card):
 # ---------------------------------------------------------------- the AI's writes
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 actor="fuzz:executor"):
+                 summary=None, actor="fuzz:executor"):
     t = require(core, task_id)
     f = {}
     if due is not None:
@@ -243,6 +244,11 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError(f"context_md is over {CONTEXT_MAX // 1024} KB; keep the brief short and link out",
                             "context_md")
         f["context_md"] = context_md or None
+    if summary is not None:
+        if len(summary) > SUMMARY_MAX:
+            raise FuzzError(f"summary is over {SUMMARY_MAX} characters; say what you did or found in a sentence "
+                            "or two", "summary")
+        f["summary"] = summary.strip() or None
     if question is not None:
         if len(question) > QUESTION_MAX:
             raise FuzzError(f"question is over {QUESTION_MAX} characters; ask one short thing", "question")
@@ -254,7 +260,7 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError("energy must be low, normal or high", "energy")
         f["energy"] = energy
     if not f:
-        raise FuzzError("Pass context_md, question, effort_mins, energy or due", "context_md")
+        raise FuzzError("Pass context_md, summary, question, effort_mins, energy or due", "context_md")
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], **f)

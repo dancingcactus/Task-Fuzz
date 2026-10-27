@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   order_key REAL,
   notes TEXT,                      -- "where I left off", for the next stateless run
   context_md TEXT,                 -- Markdown brief the AI writes for the human
+  summary TEXT,                    -- a sentence or two on what the AI did or found, shown above the brief
   question TEXT,                   -- the one question the AI is asking the human now
   quick_answers TEXT,              -- json list, from a handback
   variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed
@@ -321,7 +322,8 @@ def connect(home):
     return conn
 
 
-MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")], "drafts": [("final", "INTEGER")]}
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")], "drafts": [("final", "INTEGER")],
+              "tasks": [("summary", "TEXT")]}
 
 
 def _migrate(conn):

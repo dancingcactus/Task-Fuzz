@@ -1,8 +1,9 @@
 # Fuzz core: design
 
 Status: draft for discussion. Build-order steps 1 to 5 are built in [`core/`](../core/README.md), with two
-additions to the task record: `context_md`, a Markdown brief the AI writes for tasks with no draft, and
-`question`, the one question it is asking you now. Both are set with the executor's `update_brief` tool
+additions to the task record: `context_md`, a Markdown brief the AI writes for tasks with no draft,
+`summary`, a sentence or two on what it did or found, and `question`, the one question it is asking you
+now. All are set with the executor's `update_brief` tool
 (or on an extracted ask) and written as `task.brief_updated` events. Calendar times (step 7) are built
 more simply than below: the core never reads a calendar. A task carries up to two **moments**, described
 dates the AI looks up with its own calendar connector (or you type), and the four calendar anchors
@@ -262,7 +263,7 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `create_task(ask, done_when, sources, project?)` | Splits off a task or captures a follow-up. A split-off task joins the original's project | Goes through matching like any other ask |
 | `request_permission(id, scope, resource, why)` | Asks to read a new source or use a connector | Creates a permission card. The task waits until you answer |
 | `suggest_schedule(id, anchor, reason)` | Adds a human-time option for this task | Checked by the core. See [AI suggestions](#ai-suggestions) |
-| `update_brief(id, context_md?, question?)` | Writes the Markdown brief and the one question shown to you | The task card's prompt is the question; answering clears it |
+| `update_brief(id, context_md?, summary?, question?)` | Writes the Markdown brief, the summary above it and the one question shown to you | The task card's prompt is the question; answering clears it |
 | `release(id)` | Gives up the lease | A lease that runs out releases itself |
 
 Every call checks that the caller holds the lease on that task and that the task belongs to the

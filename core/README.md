@@ -70,7 +70,7 @@ All three are thin layers over the same library, so they can't drift apart.
 `suggest_schedule` also takes a moment (see Calendar times).
 
 No role has a Fuzz tool that sends, posts or deletes. The sender sends with its client's own connector. `update_brief` writes the task's `context_md` (a Markdown
-brief for tasks with no draft) and `question` (the one thing Fuzz is asking you now).
+brief for tasks with no draft), `summary` (a sentence or two on what Fuzz did or found, shown above the brief) and `question` (the one thing Fuzz is asking you now).
 
 **HTTP** (`fuzz serve`, `127.0.0.1` only, `Authorization: Bearer <token>` from `tokens.json`):
 

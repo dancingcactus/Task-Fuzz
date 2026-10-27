@@ -108,11 +108,20 @@
     var t = ts(fire); if (!t) return 'when you’re back at your desk';
     return Sched.hint({ anchor: {}, fire_at: new Date(t).toISOString() }).replace(/^Today, /, 'today at ').replace(/^Tomorrow, /, 'tomorrow at ');
   }
-  /* The brief is Markdown; the card shows it as plain lines */
+  /* The brief is Markdown; the finding on the card shows it as plain lines, the Context tab as Markdown */
   function lines(md) {
-    return (md || '').split('\n').map(function (l) { return l.replace(/^\s*(#+|[-*]\s*(\[[ xX]\])?|\d+\.)\s*/, '').replace(/\*\*|__/g, '').trim(); }).filter(Boolean);
+    return (md || '').split('\n').map(function (l) { return l.replace(/^\s*(#+|>|[-*]\s*(\[[ xX]\])?|\d+\.)\s*/, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|__|`/g, '').trim(); }).filter(function (l) { return l && !/^(```|~~~|[-*_]{3,})/.test(l); });
   }
   function brief(md) { var l = lines(md), s = l.join(' '); return s.length > 320 ? s.slice(0, 317) + '…' : s; }
+  /* A brief too long for the finding gets the Context tab, and the finding says what Fuzz did or found
+     instead: the summary it wrote, or for an older task its latest research or action step */
+  function fullBrief(md) { return lines(md).length > 1 || brief(md).length > 316; }
+  function finding(t) {
+    if (t.summary) return t.summary;
+    if (!fullBrief(t.context_md)) return brief(t.context_md) || null;
+    var step = (t.log || []).filter(function (l) { return l.type === 'task.step' && l.kind !== 'guidance'; })[0];
+    return step ? step.text : null;
+  }
 
   /* Question and approval cards that aren't about routing a task: the views draw them as an "entity"
      card with up to three answers. which -> the core's option. */
@@ -138,8 +147,8 @@
       incoming: t.reason || (t.ask && t.ask !== t.title ? t.ask : origin ? '' : 'You captured this.'),
       ask: (c && c.prompt) || t.question || 'What should happen to this?',
       hint: '', instr: it.instr && it.coreId === t.id ? it.instr : '',
-      aiHeading: 'What Fuzz found', aiNote: brief(t.context_md) || null,
-      context: lines(t.context_md).length > 1 ? lines(t.context_md) : [],
+      aiHeading: 'What Fuzz found', aiNote: finding(t),
+      context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
       sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '' }; }),
       conversation: [], code: [],

@@ -363,6 +363,21 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .ctx { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .ctx li { display: flex; gap: 12px; align-items: flex-start; line-height: 1.55; }
 .ctx i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 8px; }
+.md { line-height: 1.6; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md blockquote, .md pre { margin: 0 0 12px; }
+.md h4, .md h5, .md h6 { margin: 18px 0 6px; font-family: var(--font-body); font-size: 15px; font-weight: 600; }
+.md h5, .md h6 { font-size: 14px; color: var(--muted); }
+.md ul, .md ol { padding-left: 22px; }
+.md li { margin: 4px 0; }
+.md li::marker { color: var(--accent); }
+.md li.md-task { list-style: none; margin-left: -22px; display: flex; gap: 10px; align-items: flex-start; }
+.md-box { flex: none; width: 16px; height: 16px; margin-top: 4px; border-radius: 5px; border: 2px solid var(--line); }
+.md-box.on { background: var(--accent); border-color: var(--accent); }
+.md blockquote { padding: 2px 0 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.md hr { border: 0; border-top: var(--bw) solid var(--line); margin: 16px 0; }
+.md a { color: var(--link); }
+.md-code { padding: 10px 12px; border-radius: 10px; background: var(--code-bg); border: 1px solid var(--code-line); overflow-x: auto; font-family: var(--font-code); font-size: 13px; line-height: 1.5; }
 .convo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .convo li { display: flex; flex-direction: column; gap: 4px; }
 .convo li.you { align-items: flex-end; }

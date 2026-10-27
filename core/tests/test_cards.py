@@ -231,6 +231,21 @@ class Brief(CoreCase):
         self.assertIsNone(self.task(tid)["question"], "answering clears the question")
         self.assertEqual(self.task(tid)["context_md"], md, "the brief stays")
 
+    def test_summary_sits_beside_the_brief(self):
+        tid = tasks.capture(self.core, "Prepare for my 1:1")
+        tasks.assign(self.core, tid)
+        scheduler.claim_next(self.core)
+        r = tools.update_brief(self.core, tid, context_md="## Agenda\n\n1. Estimates",
+                               summary="  Found three open items.  ")
+        self.assertEqual(r["updated"], ["context_md", "summary"])
+        self.assertEqual(self.task(tid)["summary"], "Found three open items.")
+        self.assertEqual(tools.get_task(self.core, tid)["summary"], "Found three open items.")
+        tools.hand_back(self.core, tid, result=True)
+        card = self.card_for(tid, "task")
+        self.assertEqual(cards.view(self.core, card)["task"]["summary"], "Found three open items.")
+        tasks.update_brief(self.core, tid, summary="", actor="human")
+        self.assertIsNone(self.task(tid)["summary"], "an empty summary clears it")
+
     def test_undo_restores_the_brief(self):
         tid = tasks.capture(self.core, "Compliance video")
         tasks.update_brief(self.core, tid, context_md="first", question="Q1?", actor="human")
@@ -247,6 +262,9 @@ class Brief(CoreCase):
         with self.assertRaises(FuzzError) as e:
             tasks.update_brief(self.core, tid)
         self.assertEqual(e.exception.field, "context_md")
+        with self.assertRaises(FuzzError) as e:
+            tasks.update_brief(self.core, tid, summary="x" * 401)
+        self.assertEqual(e.exception.field, "summary")
 
 
 if __name__ == "__main__":

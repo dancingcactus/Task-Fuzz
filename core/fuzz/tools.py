@@ -56,7 +56,7 @@ def _task_brief(core, t):
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"],
-            "notes": t["notes"], "context_md": t["context_md"], "question": t["question"],
+            "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
             "sources": [_source_ref(s) for s in srcs if not s["withdrawn"]],
             "schedule_hints": t.get("schedule_hints") or [],
@@ -137,14 +137,14 @@ def suggest_schedule(core, task_id, anchor, reason):
 
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 title=None, ask=None):
+                 title=None, ask=None, summary=None):
     updated = []
     if title is not None or ask is not None:
         with _lease(core, task_id):   # its own command, so Undo reverses the rename and nothing else
             updated += tasks.rename(core, task_id, title, ask)
-    if any(v is not None for v in (context_md, question, effort_mins, energy, due)) or (title is None and ask is None):
+    if any(v is not None for v in (context_md, summary, question, effort_mins, energy, due)) or (title is None and ask is None):
         with _lease(core, task_id):
-            updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due)
+            updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due, summary)
     return {"updated": sorted(updated)}
 
 
