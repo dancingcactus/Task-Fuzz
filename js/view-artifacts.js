@@ -1,5 +1,5 @@
 /* Artifacts: every file Fuzz has written in your Fuzz folder, newest first, with the task it's for. Each one
-   opens in a new tab (artifact.html), which previews Markdown, Word, PDF and slides. Live mode lists the real
+   opens in the viewer (artifact.html) in this tab, which previews Markdown, Word, PDF and slides. Live mode lists the real
    folder (GET /artifacts) and updates when Fuzz writes; the demo lists the samples in js/samples.js. */
 (function () {
   var V = {};
@@ -47,7 +47,7 @@
   function soon() { clearTimeout(timer); timer = setTimeout(load, 600); }
 
   function rowHTML(a) {
-    return '<li><a class="lrow arow" href="' + esc(a.url) + '" target="_blank" rel="noopener" aria-label="' + esc(a.name + ', ' + KIND[a.kind] + ', opens in a new tab') + '">' +
+    return '<li><a class="lrow arow" href="' + esc(a.url) + '" aria-label="' + esc(a.name + ', ' + KIND[a.kind]) + '">' +
       '<span class="afile afile--' + esc(a.kind) + '" aria-hidden="true">' + BADGE[a.kind] + '</span>' +
       '<span class="lrow-main"><span class="rt">' + esc(a.name) + '</span><span class="rs">For ' + esc(a.task || 'a task') + '</span></span>' +
       '<span class="lrow-side"><span class="lrow-sub">' + esc(agoText(a.updated)) + '</span><span class="lrow-sub">' + esc(sizeText(a.size)) + '</span></span>' +
@@ -55,7 +55,7 @@
   }
 
   function paint() {
-    var head = '<div class="tasks-head"><h1>Artifacts</h1><p class="meta">What Fuzz has written for your tasks: documents, decks, checklists. Each opens in a new tab.</p></div>';
+    var head = '<div class="tasks-head"><h1>Artifacts</h1><p class="meta">What Fuzz has written for your tasks: documents, decks, checklists.</p></div>';
     if (failed) { root.innerHTML = head + '<p class="lempty">Fuzz couldn’t list your files: ' + esc(failed) + '</p>'; return; }
     if (!items) { root.innerHTML = head + '<p class="lempty">Looking in your Fuzz folder…</p>'; return; }
     if (folder === null) {

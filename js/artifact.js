@@ -1,4 +1,4 @@
-/* The artifact viewer (artifact.html): one file Fuzz wrote, opened in its own tab from the Artifacts tab or a
+/* The artifact viewer (artifact.html): one file Fuzz wrote, opened in the same tab from the Artifacts tab or a
    task's Sources. ?id=<source id> reads it from the core (the token this browser keeps from `fuzz serve`);
    ?demo=<sample id> reads a demo file from assets/samples/.
 
@@ -58,9 +58,18 @@
   function text(f) { return bytes(f).then(function (b) { return new TextDecoder().decode(b); }); }
 
   /* ---------- The page ---------- */
+  /* Back goes where you came from (a task or the Artifacts tab), since the viewer opens in the same tab */
+  var cameFromFuzz = document.referrer.indexOf(location.origin + '/') === 0 && history.length > 1;
+  function backHTML() {
+    return '<a class="themebtn av-back" href="index.html#/artifacts">' + ICON_BACK + '<span class="lbl">' + (cameFromFuzz ? 'Back' : 'Artifacts') + '</span></a>';
+  }
+  bar.addEventListener('click', function (e) {
+    if (cameFromFuzz && e.target.closest('.av-back') && !(e.metaKey || e.ctrlKey || e.shiftKey)) { e.preventDefault(); history.back(); }
+  });
+
   function header(f) {
     var meta = [LABEL[f.kind] || 'File', sizeText(f.size), f.updated ? 'Updated ' + agoText(f.updated) : ''].filter(Boolean).join(' · ');
-    bar.innerHTML = '<div class="av-left"><a class="themebtn av-back" href="index.html#/artifacts">' + ICON_BACK + '<span class="lbl">Artifacts</span></a>' +
+    bar.innerHTML = '<div class="av-left">' + backHTML() +
       '<div class="av-title"><h1>' + esc(f.name) + '</h1><p class="meta">' + esc(meta) + (f.task ? ' · For <span class="av-task">' + esc(f.task) + '</span>' : '') + '</p></div></div>' +
       '<div class="appbar-right">' + (f.id ? '<button type="button" class="themebtn av-del" data-del>' + ICON_TRASH + '<span>Delete</span></button>' : '') +
       '<a class="themebtn av-dl" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download</span></a></div>';
@@ -183,7 +192,7 @@
     main.className = 'av av--' + f.kind;
     return (RENDER[f.kind] || RENDER.other)(f).catch(function (e) { console.error('[fuzz artifact]', e); fail(e.message || 'Fuzz couldn’t open it.', f); });
   }).catch(function (e) {
-    bar.innerHTML = '<div class="av-left"><a class="themebtn av-back" href="index.html#/artifacts">' + ICON_BACK + '<span class="lbl">Artifacts</span></a></div>';
+    bar.innerHTML = '<div class="av-left">' + backHTML() + '</div>';
     fail(e.message);
   });
 })();
