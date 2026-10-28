@@ -1,6 +1,6 @@
 /* One in-memory store shared by Triage, Lineup and New task.
    Principles it enforces:
-   - assigned work runs in the background, five at a time (6, 1)
+   - assigned work runs in the background, MAX_RUNNING at a time (6, 1)
    - a handback is a normal state and goes to the end of the queue (2)
    - every change writes a line to the task's "done so far" log (3)
    - nothing is sent until the human approves the draft, and then Fuzz sends it with its own tools (6)
@@ -9,7 +9,8 @@
      it again), and you're told why (6, 11)
    - projects are made by Fuzz and are only ever a label on their tasks */
 (function () {
-  var MAX_RUNNING = 5;
+  /* Fuzz's slots: how many tasks run at once in the demo. Live mode takes the core's budget.max_working. */
+  var MAX_RUNNING = 2;
   var STEP_MS = 6500;
   var SEND_MS = 3500;
   var state, subs = [], timer = 0, captureN = 0, sentN = 0;
@@ -23,7 +24,8 @@
   function emit(evt) { subs.slice().forEach(function (fn) { fn(evt || { type: 'change' }); }); }
 
   var S = {
-    MAX_RUNNING: MAX_RUNNING,
+    slots: function () { return MAX_RUNNING; },
+    setSlots: function (n) { if (n > 0) MAX_RUNNING = n; },
     clock: clock,
 
     reset: function () {

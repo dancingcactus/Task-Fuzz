@@ -136,7 +136,8 @@ class App:
         return [(m, re.compile("^" + p + "$"), h) for m, p, h in R]
 
     def list_tasks(self, core, m, body, q):
-        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"))]}
+        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"))],
+                "max_working": scheduler.budget(core)["max_working"]}
 
     def capture(self, core, m, body, q):
         gather = config.gathers(core.config)

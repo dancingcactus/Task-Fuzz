@@ -225,6 +225,7 @@
     syncing = true; var g = gen;
     return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo')]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards;
+      if (r[0].max_working) Store.setSlots(r[0].max_working);
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
       offerFuzzUndo(r[2].recent || []);
       /* The full task (log, sources, drafts) only when something about it changed */

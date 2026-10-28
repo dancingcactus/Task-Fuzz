@@ -8,7 +8,7 @@ DEFAULTS = {
     "me": {"names": [], "emails": [], "slack_ids": [], "folders": {}},
     "engine": {"client": None, "model": None},
     "roles": {},
-    "budget": {"max_working": 5, "max_steps": 20, "max_attempts": 3, "lease_minutes": 10},
+    "budget": {"max_working": 2, "max_steps": 20, "max_attempts": 3, "lease_minutes": 10},
     "tz": "local",
     "stale_days": 7,
     # A task you capture goes to Fuzz first, to look it up with the read tools below, then to triage.
