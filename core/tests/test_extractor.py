@@ -127,6 +127,31 @@ class TwoDays(CoreCase):
                                            "verdict": "same", "confidence": 0.95, "new_ask": True, "reason": "t"}])
         self.assertEqual(self.task(contract["id"])["state"], "letgo")
 
+    def theirs_then(self, owner, sid):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        tasks.theirs(self.core, contract["id"], on="Marco Diaz", card=self.card_for(contract["id"], "task"))
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": sid, "anchor": "email:conv-B", "ts": "2026-10-20T09:30:00Z",
+            "from": {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": "Can you sign off on the contract?",
+            "candidates": [{"ask": "Sign off on the vendor contract", "owner": owner}]}])
+        item = tools.get_pending_judgments(self.core)["items"][0]
+        tools.submit_verdicts(self.core, [{"candidate_id": item["candidate_id"], "task_id": contract["id"],
+                                           "verdict": "same", "confidence": 0.95, "new_ask": True, "reason": "t"}])
+        return self.task(contract["id"])
+
+    def test_someone_elses_task_comes_back_when_it_needs_you(self):
+        t = self.theirs_then("me", "msg-b11")
+        self.assertEqual((t["state"], t["owner"]), ("triage", "me"))
+        self.assertNotIn("theirs", t["variant_tags"])
+        self.assertIn("now Marco Diaz needs you", t["reason"])
+
+    def test_someone_elses_task_stays_theirs_while_it_is(self):
+        t = self.theirs_then("Marco Diaz", "msg-b12")
+        self.assertEqual(t["state"], "letgo")
+        self.assertIn("theirs", t["variant_tags"])
+        self.assertEqual(self.sources(t["id"]), 2, "kept with it as context")
+
     def test_a_reply_from_the_person_you_wait_on_comes_back(self):
         self.day("day1.json")
         contract = self.by_title("vendor contract")

@@ -198,12 +198,68 @@ def park(core, task_id, card=None):
                 option="park", question=None, remove_tags=("woke",))
 
 
-def wait(core, task_id, on=None, card=None, option="wait"):
+CHECK_BACK_DAYS = 3        # business days, when Fuzz doesn't pick a time
+CHECK_BACK_WEEK = 7        # Fuzz picks within a week, unless it has a reason to wait longer
+CHECK_BACK_LONGEST = 30
+
+
+def default_check_back(core, days=CHECK_BACK_DAYS):
+    """9am your time, the given number of business days from now."""
+    from . import timeres
+    d = core.now().astimezone(timeres.local_tz(core))
+    while days:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            days -= 1
+    return iso(d.replace(hour=9, minute=0, second=0, microsecond=0))
+
+
+def waiting_on(t, on=None):
+    """Who you're waiting on: the name you gave, or the task's owner when it's a person."""
+    who = (on or "").strip() or (t.get("owner") if t.get("owner") not in ("me", "unclear", "someone", None) else None)
+    return (who or "").strip() or None
+
+
+def wait(core, task_id, on=None, card=None, option="wait", plan=False, actor="human"):
+    """Waiting means you're blocked until someone gets back to you, so it needs a who. It always has a
+    check-back time: with plan, Fuzz looks at the context first and picks it (set_check_back); otherwise,
+    or until it does, it's a few business days out."""
     t = require(core, task_id)
-    who = on or (t.get("owner") if t.get("owner") not in ("me", "unclear", None) else None) or "someone"
-    return _one(core, "human", "task.waiting", t, "waiting",
-                ("status", f"You moved this to Waiting on others ({who}). Fuzz watches for the reply."),
-                card=card, option=option, value=on, waiting_on=who, question=None)
+    who = waiting_on(t, on)
+    if not who:
+        raise FuzzError("Who are you waiting on?", "value")
+    back = default_check_back(core)
+    with core.tx(actor):
+        ch = events.Changes()
+        if plan:
+            move(core, ch, t, "queued", card=card, add_tags=("gather", "plan_wait"), waiting_on=who,
+                 schedule_anchor=None, schedule_fire_at=back, question=None, attempts=0)
+            log = f"You're waiting on {who}. Fuzz is working out when to check back."
+        else:
+            move(core, ch, t, "waiting", card=card, waiting_on=who, schedule_anchor=None, schedule_fire_at=back,
+                 question=None)
+            log = f"You're waiting on {who}. Fuzz checks back {_when(core, back)}, sooner if they reply."
+        _answered(core, ch, card, option, who)
+        eid = events.emit(core, "task.waiting", task_id=t["id"], changes=ch, log=("status", log),
+                          data={"on": who, "plan": plan})
+        cards.sync(core, t["id"])
+    return eid
+
+
+def _when(core, at):
+    from . import timeres
+    lab = timeres.label(core, {"type": "exact", "at": at})
+    return lab[0].lower() + lab[1:]
+
+
+def theirs(core, task_id, on=None, card=None, option="someone_else"):
+    """Someone else's task: Fuzz doesn't track other people's work, so it closes. It stays findable, and a
+    new ask that needs you brings it back (the matcher resurfaces it)."""
+    t = require(core, task_id)
+    who = waiting_on(t, on)
+    why = f"You said this is {who}'s, not yours." if who else "You said this is someone else's, not yours."
+    return _one(core, "human", "task.let_go", t, "letgo", ("status", why), card=card, option=option, value=on,
+                question=None, reason=why, add_tags=("theirs",), owner=who or t.get("owner"))
 
 
 def let_go(core, task_id, card=None, option="drop", why=None):
@@ -289,19 +345,30 @@ def keep_parked(core, task_id, card):
                 option="keep_parked", question=None, reviewed_at=core.now_iso(), reviews=(t.get("reviews") or 0) + 1)
 
 
-def clarify(core, task_id, card):
-    """The parked review asked and you want it now: it stays in triage, first in line, as a fresh task card
-    so you decide what happens to it next."""
+def clarify(core, task_id, card, option="now", log="You brought this back from Parked."):
+    """It's yours to decide again: it stays in triage, first in line, as a fresh task card. From the parked
+    review (you want it now) and from a check-back (they got back to you)."""
     t = require(core, task_id)
     with core.tx("human"):
         ch = events.Changes()
-        ch.task(t["id"], variant_tags=_tags(t, remove=("review",)), order_key=next_order(core, "front"),
-                reason=None, reviewed_at=core.now_iso())
-        _answered(core, ch, card, "now")
-        events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": "now"},
-                    log=("status", "You brought this back from Parked."))
+        f = dict(variant_tags=_tags(t, remove=("review", "check_back")), order_key=next_order(core, "front"), reason=None)
+        if option == "now":
+            f["reviewed_at"] = core.now_iso()
+        ch.task(t["id"], **f)
+        _answered(core, ch, card, option)
+        events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": option},
+                    log=("status", log))
         cards.sync(core, t["id"], "front")
     return t["id"]
+
+
+def check_back(core, task_id, actor="system"):
+    """A waiting task's check-back time came: back to triage to ask if they got back to you."""
+    t = require(core, task_id)
+    who = t.get("waiting_on") or "they"
+    return bring_back(core, t["id"], where="front", reason=f"Did {who} get back to you?", actor=actor,
+                      tags=("check_back",), log=("status", f"Checking in: you've been waiting on {who} since "
+                                                           f"{_when(core, t['state_changed_at'])}."))
 
 
 # ---------------------------------------------------------------- the AI's writes

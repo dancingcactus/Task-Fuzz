@@ -66,7 +66,10 @@ def _task_brief(core, t):
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"], "gathering": scheduler.gathering(t),
             "reviewing": scheduler.gathering(t) and "review" in (t.get("variant_tags") or []),
-            "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"] and "review" not in (t.get("variant_tags") or []),
+            "planning_wait": ({"on": t.get("waiting_on"), "default": tasks._when(core, t["schedule_fire_at"])}
+                              if scheduler.gathering(t) and "plan_wait" in (t.get("variant_tags") or []) else None),
+            "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"]
+                          and not {"review", "plan_wait"} & set(t.get("variant_tags") or []),
             "comes_back": timeres.label(core, t["schedule_anchor"]) if scheduler.gathering(t) and t.get("schedule_anchor") else None,
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
@@ -179,8 +182,13 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
     return {"updated": sorted(updated)}
 
 
-def finish_gathering(core, task_id, result=False, options=None):
+def finish_gathering(core, task_id, result=False, options=None, check_back=None):
     scheduler.require_lease(core, task_id)
+    if check_back:
+        if not isinstance(check_back, dict):
+            raise FuzzError("check_back is {\"at\": …, \"reason\": …}", "check_back")
+        scheduler.set_check_back(core, task_id, check_back.get("at"), check_back.get("reason"),
+                                 check_back.get("beyond_a_week_because"))
     outputs.record(core, task_id)
     scheduler.finish_gathering(core, task_id, result=result, options=options)
     return {"state": tasks.require(core, task_id)["state"]}

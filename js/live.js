@@ -157,7 +157,7 @@
       age: ago(t.created_at) || 'Just now', stage: tags.indexOf('stale') > -1 ? 'stale' : 'fresh',
       mins: t.effort_mins || 5, energy: t.energy || 'normal',
       incoming: t.reason || (t.ask && t.ask !== t.title ? t.ask : origin ? '' : 'You captured this.'),
-      ask: (tags.indexOf('review') > -1 && t.reason) || (c && c.prompt) || t.question || 'What should happen to this?',
+      ask: ((tags.indexOf('review') > -1 || tags.indexOf('check_back') > -1) && t.reason) || (c && c.prompt) || t.question || 'What should happen to this?',
       hint: '', instr: it.instr && it.coreId === t.id ? it.instr : '',
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
@@ -172,9 +172,12 @@
       woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1,
       /* A parked task back to ask if you still want it; after a few keeps the card leans toward letting go */
       review: tags.indexOf('review') > -1 && state === 'triage', leansGo: !!(c && c.suggested === 'drop'),
+      /* A waiting task back to ask if they got back to you; and one you said was someone else's */
+      checkBack: tags.indexOf('check_back') > -1 && state === 'triage', theirs: tags.indexOf('theirs') > -1,
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
-      waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
+      waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at),
+      nextCheck: t.state === 'waiting' && t.schedule_fire_at ? whenText(t.schedule_fire_at) : '',
       doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at), changedAt: ts(t.state_changed_at) || 0,
       draft: draft ? draft.body : null, draftId: draft ? draft.id : null,
       afterApprove: (c && c.after_approve) || null, prep: !!(draft && draft.kind === 'note' && draft.final === 0),
@@ -184,6 +187,8 @@
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
       group: t.group_id ? 'g' + t.group_id : null
     };
+    /* Waiting on someone while Fuzz works out when to check back: it's already with them, not with Fuzz */
+    if (tags.indexOf('plan_wait') > -1) { f.state = 'waiting'; f.gathering = false; f.nextCheck = 'Fuzz is picking a time'; }
     /* Time-sensitive tasks get the rush treatment; others with a date get the due bar */
     var due = ts(t.due);
     if (due && (t.deadline_level || 0) >= 1) f.dueAt = due;
@@ -196,7 +201,7 @@
     else if (state === 'sending') f.now = 'Sending' + (f.sendTo ? ' to ' + f.sendTo.to : '');
     else if (state === 'session') f.now = 'Open in Claude';
     else if (state === 'done') f.now = 'Done';
-    else if (state === 'letgo') f.now = 'Let go';
+    else if (state === 'letgo') f.now = f.theirs ? 'Someone else’s' : 'Let go';
     else f.now = '';
     var q = c && QUESTION[c.kind];
     /* A permission card's task stays queued for Fuzz in the core, but it is waiting on you */
@@ -381,7 +386,10 @@
     wrap('park', function (id) { return decide(S.item(id), 'park', undefined, 'park'); });
     wrap('keepParked', function (id) { return decide(S.item(id), 'keep_parked'); });
     wrap('clarify', function (id) { return decide(S.item(id), 'now'); });
-    wrap('wait', function (id) { return decide(S.item(id), 'wait', undefined, 'wait'); });
+    wrap('wait', function (id, who) { return decide(S.item(id), 'wait', who, 'wait', { on: who }); });
+    wrap('gotIt', function (id) { return decide(S.item(id), 'got_it'); });
+    wrap('keepWaiting', function (id) { return decide(S.item(id), 'keep_waiting'); });
+    wrap('nudgeThem', function (id) { var it = S.item(id); return then(decide(it, 'nudge'), function () { return kick(it); }); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     /* instr: what Fuzz should look into before it comes back */

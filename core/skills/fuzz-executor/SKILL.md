@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.12
+prompt_version: executor-0.13
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.12`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.13`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -77,6 +77,15 @@ they still want it. Never do the task or finish it as a result. Check what chang
 parked: a reply in the thread, a meeting that covered it, someone else doing it, a date that passed.
 Say what you found in `summary` in one sentence ("Dana booked the venue on Oct 12, so this looks
 settled."), or that nothing changed. Then `finish_gathering` without `result`.
+
+If it says `planning_wait` (like `{"on": "Dana", "default": "Friday 9am"}`), the person is blocked
+until that person gets back to them, and you pick when Fuzz should ask whether they have. Don't do
+the task or draft anything. Look at the thread and anything it hangs on: a date they promised, a
+deadline, how urgent it reads, whether they're out (calendar, auto-replies). Then call
+`finish_gathering` without `result`, with `check_back`: a time and a one-sentence reason, like
+`{"at": "2026-11-03T09:00", "reason": "Dana said she'd send it Monday, so Tuesday morning."}`.
+Keep it within a week. Go later only with strong evidence, and say what it is in
+`beyond_a_week_because`. If nothing tells you, leave `check_back` out and the default stands.
 
 First decide which kind of task it is:
 

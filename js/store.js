@@ -218,7 +218,25 @@
     keepParked: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.review = false; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You kept this parked.'); },
     /* You want it now: it stays first in triage as an ordinary card, so you decide what happens next */
     clarify: function (id) { var it = S.item(id); it.review = false; it.leansGo = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', 'You brought this back from Parked.'); },
-    wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
+    /* Waiting means you're blocked until someone gets back to you, so it always names who, and Fuzz checks back */
+    wait: function (id, who) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.checkBack = false; it.waitingOn = who || it.waitingOn || it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'In a few days'; S.log(it, 'status', 'You’re waiting on ' + it.waitingOn + '. Fuzz checks back in a few days, sooner if they reply.'); },
+    /* A check-back: they got back to you, so it's yours to decide again, first in line */
+    gotIt: function (id) { var it = S.item(id); it.checkBack = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', (it.waitingOn || 'They') + ' got back to you.'); },
+    keepWaiting: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.checkBack = false; it.nextCheck = 'In a few days'; S.log(it, 'status', 'Still waiting on ' + (it.waitingOn || 'them') + '. Fuzz checks back in a few days.'); },
+    nudgeThem: function (id) {
+      var it = S.item(id); S.leave(id); it.checkBack = false;
+      it.workStep = 0; it.nextAt = Date.now() + 4500; it.instr = 'Draft a short, friendly nudge to ' + (it.waitingOn || 'them') + '.';
+      it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
+      S.log(it, 'status', 'You asked Fuzz to nudge ' + (it.waitingOn || 'them') + '.');
+    },
+    /* People you've waited on before, and whoever this task came from, for the "Waiting on whom?" box */
+    waitNames: function (it) {
+      var seen = {}, out = [];
+      [it.waitingOn, it.who].concat((it.sources || []).map(function (src) { var m = /\bfrom (.+)$/.exec(src.title || ''); return m && m[1]; }))
+        .concat(state.items.filter(function (i) { return i.waitingOn && i.waitingOn !== 'Someone'; }).map(function (i) { return i.waitingOn; }))
+        .forEach(function (n) { n = (n || '').trim(); if (n && n !== 'Someone' && n !== 'You' && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; out.push(n); } });
+      return out.slice(0, 4);
+    },
     letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
     drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },
     /* A duplicate card's answers: primary, Merge; secondary, Keep separate */

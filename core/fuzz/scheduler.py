@@ -118,6 +118,8 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
     t = tasks.require(core, task_id)
     if not gathering(t):
         raise FuzzError(f"Task {t['id']} isn't being gathered", "task_id", 409)
+    if "plan_wait" in (t.get("variant_tags") or []):
+        return _done_planning(core, t, actor, log)
     held = hold and holding(core, t)
     result = result and "review" not in (t.get("variant_tags") or [])   # a parked review only asks; you decide
     back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
@@ -138,6 +140,45 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
                                             else "Fuzz found nothing more to add.")) + back))
         cards.sync(core, t["id"])
     return t["id"]
+
+
+def _done_planning(core, t, actor, log=None):
+    """Fuzz looked at a task you're waiting on: it waits, with the check-back time it picked or the default."""
+    with core.tx(actor):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "waiting", remove_tags=("plan_wait",))
+        when = tasks._when(core, t["schedule_fire_at"]) if t.get("schedule_fire_at") else "in a few days"
+        events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                    log=("status", log or f"Waiting on {t.get('waiting_on') or 'them'}. Fuzz checks back {when}, "
+                                          "sooner if they reply."))
+        cards.sync(core, t["id"])
+    return t["id"]
+
+
+def set_check_back(core, task_id, at, reason, beyond_a_week_because=None, actor="fuzz:executor"):
+    """When to ask if they got back to you, picked from the context. Within a week unless there's a reason
+    to wait longer (they're out, it's due later), and never more than a month."""
+    t = require_lease(core, task_id)
+    if "plan_wait" not in (t.get("variant_tags") or []):
+        raise FuzzError(f"Task {t['id']} isn't waiting on anyone: check_back is only for planning_wait tasks.",
+                        "check_back", 409)
+    if not (reason or "").strip():
+        raise FuzzError("check_back.reason says why then, in a sentence the person will read", "check_back.reason")
+    when = parse_iso(timeres.local_iso(core, at))
+    longest = tasks.CHECK_BACK_LONGEST if (beyond_a_week_because or "").strip() else tasks.CHECK_BACK_WEEK
+    if when <= core.now() + timedelta(hours=1):
+        raise FuzzError("check_back.at must be more than an hour from now", "check_back.at")
+    if when > core.now() + timedelta(days=longest, hours=12):
+        raise FuzzError(f"check_back.at must be within {longest} days" + ("" if longest == tasks.CHECK_BACK_LONGEST else
+                        "; add beyond_a_week_because when there's strong evidence it should be later"), "check_back.at")
+    why = reason.strip()[:200] + (f" ({beyond_a_week_because.strip()[:200]})" if longest == tasks.CHECK_BACK_LONGEST else "")
+    with core.tx(actor):
+        ch = events.Changes()
+        ch.task(t["id"], schedule_fire_at=iso(when))
+        renew(core, ch, t["id"])
+        events.emit(core, "task.check_back_set", task_id=t["id"], changes=ch, data={"at": iso(when), "why": why},
+                    log=("status", f"Fuzz will check back {tasks._when(core, iso(when))}: {why}"))
+    return {"at": iso(when), "label": tasks._when(core, iso(when))}
 
 
 def _released_by_me(core):
@@ -306,6 +347,10 @@ def tick(core):
                 continue
             lab = timeres.label(core, t["schedule_anchor"])
             log = f"Fuzz didn't get to this before {lab[0].lower() + lab[1:]}, so it came back as it was."
+        elif "plan_wait" in (t.get("variant_tags") or []):   # working out when to check back: the default stands
+            if (t.get("state_changed_at") or "") >= late:
+                continue
+            log = None
         elif "review" in (t.get("variant_tags") or []):   # a parked task back to ask: its clock starts then
             if (t.get("reviewed_at") or "") >= late:
                 continue
@@ -321,6 +366,10 @@ def tick(core):
         lab = timeres.label(core, t["schedule_anchor"] or {"type": "exact"})
         tasks.bring_back(core, t["id"], reason=f"You scheduled this for {lab[0].lower() + lab[1:]}.", actor="system")
         out["came_back"] += 1
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='waiting' AND schedule_fire_at IS NOT NULL "
+                      "AND schedule_fire_at <= ?", (core.user_id, now)):
+        tasks.check_back(core, t["id"])
+        out["checked_back"] = out.get("checked_back", 0) + 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND due IS NOT NULL AND state NOT IN ('done','letgo','merged')",
                       (core.user_id,)):
         lvl = tasks.due_level(core, t)

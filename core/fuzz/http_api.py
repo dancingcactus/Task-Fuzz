@@ -174,7 +174,8 @@ class App:
         elif act == "park":
             tasks.park(core, tid)
         elif act == "wait":
-            tasks.wait(core, tid, body.get("on"))
+            tasks.wait(core, tid, body.get("on"), plan=config.gathers(core.config))
+            kick_executor(self, core)
         elif act == "letgo":
             tasks.let_go(core, tid)
         elif act == "session":
@@ -310,7 +311,7 @@ class App:
         if "option" not in body:
             raise FuzzError("option is required", "option")
         out = answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
-        if body["option"] == "schedule":   # you asked Fuzz to look into it meanwhile
+        if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
         return out
 

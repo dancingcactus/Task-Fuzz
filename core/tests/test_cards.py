@@ -123,7 +123,7 @@ class CardTable(CoreCase):
     def test_is_task(self):
         self.check(self._is_task(), "mine", ["task.confirmed"], "triage")
         self.check(self._is_task(), "not_task", ["task.let_go"], "letgo")
-        self.check(self._is_task(), "someone_else", ["task.waiting"], "waiting", value="Dana")
+        self.check(self._is_task(), "someone_else", ["task.let_go"], "letgo", value="Dana")
 
     def _is_task(self):
         n = self.core.one("SELECT COUNT(*) n FROM tasks")["n"]

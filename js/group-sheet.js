@@ -5,7 +5,7 @@
 (function () {
   var esc = UI.esc;
   var STATE = { triage: ['In Triage', 'accent'], ai: ['With Fuzz', 'accent'], 'ai-queued': ['Next up', 'muted'], review: ['Needs your OK', 'warn'],
-    mine: ['With you', 'accent'], session: ['In Claude', 'muted'], scheduled: ['Later', 'muted'], waiting: ['With others', 'warn'],
+    mine: ['With you', 'accent'], session: ['In Claude', 'muted'], scheduled: ['Later', 'muted'], waiting: ['Waiting on others', 'warn'],
     parked: ['Parked', 'muted'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'] };
   var dlg = null, gid = null, opts = {}, renaming = false, unsub = null;
 

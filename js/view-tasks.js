@@ -1,5 +1,5 @@
 /* Lineup: one page, by who has the ball. To decide (the Triage count), Yours, With Fuzz (his lane, live),
-   With others, Later, then Parked and Finished (both collapsed). Everything here reads and writes the shared Store. */
+   Waiting on others, Later, then Parked and Finished (both collapsed). Everything here reads and writes the shared Store. */
 (function () {
   var V = {};
   var esc = UI.esc;
@@ -9,7 +9,7 @@
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
     parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
-    waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'With someone else. Fuzz watches for replies and drafts nudges for your OK. Replies go straight back to triage.' },
+    waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'You’re blocked until someone gets back to you. Fuzz checks back on each one, and a reply brings it straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
     letgo: { label: 'Let go', cols: ['Status', 'Let go', 'Note'], states: ['letgo'], blurb: 'Things you decided not to carry. Bring any of them back, no questions asked.' }
   };
@@ -53,7 +53,7 @@
   }
 
   /* Finished shows the last two weeks. Anything older is a search away, so the page stays quick as the years pile up. */
-  function finRow(it) { return it.state === 'done' ? rowHTML(it, 'Done', 'ok', it.doneAgo) : rowHTML(it, 'Let go', 'muted', it.doneAgo); }
+  function finRow(it) { return it.state === 'done' ? rowHTML(it, 'Done', 'ok', it.doneAgo) : rowHTML(it, it.theirs ? 'Someone else’s' : 'Let go', 'muted', it.doneAgo); }
   function olderHTML() {
     var n = Store.finishedOlder();
     if (!n && !finQ) return '';
@@ -149,7 +149,7 @@
       : '<p class="decide decide--clear">Nothing to decide. Triage is clear.</p>';
     h += sectionHTML('yours', 'Yours', yoursRows(), 'Nothing is waiting on you right now.');
     h += laneHTML();
-    h += sectionHTML('others', 'With others', Store.inState('waiting').map(function (it) { return rowHTML(it, it.waitingOn || 'Someone', 'warn', !it.nextCheck ? '' : /,/.test(it.nextCheck) ? it.nextCheck : 'Next check: ' + it.nextCheck.charAt(0).toLowerCase() + it.nextCheck.slice(1)); }));
+    h += sectionHTML('others', 'Waiting on others', Store.inState('waiting').map(function (it) { return rowHTML(it, it.waitingOn || 'Someone', 'warn', !it.nextCheck ? '' : /^Fuzz /.test(it.nextCheck) ? it.nextCheck : 'Checks back ' + it.nextCheck.charAt(0).toLowerCase() + it.nextCheck.slice(1)); }));
     var later = Store.inState('scheduled').map(function (it) { return rowHTML(it, 'Scheduled', 'muted', it.scheduledFor ? 'Back ' + it.scheduledFor : it.now); });
     var parked = Store.inState('parked').sort(function (a, b) { return (b.woke ? 1 : 0) - (a.woke ? 1 : 0); });
     /* A parked task that woke up (something new came in) stays in view; the rest wait in Parked, closed */

@@ -19,6 +19,7 @@ from . import entities, vectors
 MATCHER_VERSION = "core-0.1"
 
 CLOSED_WINDOW_DAYS = 30
+THEIRS_WINDOW_DAYS = 90   # someone else's task can come back when it starts needing you, for longer
 SHORTLIST_SIZE = 3
 ENTITY_MIN = 0.5
 STRONG_ENTITY = 2.0
@@ -161,10 +162,12 @@ def candidate_anchors(ctx, cand):
 
 def eligible_tasks(ctx):
     cutoff = iso(ctx.core.now() - timedelta(days=CLOSED_WINDOW_DAYS))
+    theirs = iso(ctx.core.now() - timedelta(days=THEIRS_WINDOW_DAYS))
     live = ",".join(f"'{s}'" for s in states.LIVE)
     rows = ctx.core.q(
         f"SELECT * FROM tasks WHERE user_id=? AND (state IN ({live}) "
-        "OR (state IN ('done','letgo') AND state_changed_at >= ?))", (_uid(ctx), cutoff)).fetchall()
+        "OR (state IN ('done','letgo') AND state_changed_at >= ?) "
+        "OR (state='letgo' AND variant_tags LIKE '%\"theirs\"%' AND state_changed_at >= ?))", (_uid(ctx), cutoff, theirs)).fetchall()
     return {r["id"]: r for r in rows}
 
 
@@ -471,9 +474,13 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
             ch.task(tid, due=due)
             cards.refresh_schedule_options(core, ch, tid)
         if reopen:
+            theirs = "theirs" in (t.get("variant_tags") or [])
             why = (f"{who} asked something new after you marked this done" if t["state"] == "done"
+                   else f"This was someone else's, but now {who} needs you" if theirs
                    else f"{who} asked again after you let this go")
             back = ("task.reopened", why, "reopened")
+            if theirs:
+                ch.task(tid, owner="me", variant_tags=tasks._tags(t, remove=("theirs",)))
         elif t["state"] == "scheduled" and due and t["schedule_fire_at"] and due < t["schedule_fire_at"]:
             back = ("task.came_back", f"Pulled forward: the new deadline {due} is before {t['schedule_fire_at'][:10]}",
                     "returning")
@@ -538,6 +545,8 @@ def apply_verdicts(ctx, verdicts):
             st = target["state"]
             if st == "done":
                 outcome = "reopened" if v.get("new_ask") else "ignored"
+            elif st == "letgo" and other and "theirs" in (target.get("variant_tags") or []):
+                outcome = "context"   # still theirs: kept with it, so it has the history if it ever needs you
             elif st == "letgo":
                 ts = _signal(ctx, cand).get("ts") or ""
                 outcome = "resurfaced" if v.get("new_ask") and ts > (target["state_changed_at"] or "") else "ignored"

@@ -18,7 +18,8 @@ MOVES = {
     "triage": _ANY_HUMAN,
     "queued": {"working", "triage", "done", "letgo", "parked", "merged", "session", "scheduled", "waiting"},
     # scheduled: Fuzz looked into one you put off, and it waits until the time you picked
-    "working": {"queued", "review", "triage", "done", "letgo", "merged", "scheduled"},
+    # waiting: Fuzz worked out when to check back on someone you're waiting on
+    "working": {"queued", "review", "triage", "done", "letgo", "merged", "scheduled", "waiting"},
     "review": {"done", "queued", "triage", "waiting", "letgo", "parked", "merged", "sending", "scheduled"},
     # approved: Fuzz's sender sends it with its own connectors, or it comes back to review if it can't
     "sending": {"done", "waiting", "review", "triage", "letgo", "merged"},

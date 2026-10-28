@@ -181,7 +181,10 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
     with core.tx(actor):
         ch = events.Changes()
         ch.draft(d["id"], status="sent")
-        tasks.move(core, ch, t, "waiting" if d["kind"].startswith("nudge") else "done")
+        if d["kind"].startswith("nudge"):   # nudged: ask again in a few days if there's still no reply
+            tasks.move(core, ch, t, "waiting", schedule_anchor=None, schedule_fire_at=tasks.default_check_back(core))
+        else:
+            tasks.move(core, ch, t, "done")
         to = f" to {d['target']}" if d.get("target") else ""
         events.emit(core, "task.sent", task_id=t["id"], changes=ch,
                     data={"draft_id": d["id"], "kind": d["kind"], "where": where.strip(), "link": link},
@@ -257,7 +260,8 @@ def not_yet(core, card):
     with core.tx("human"):
         ch = events.Changes()
         ch.draft(d["id"], status="withdrawn")
-        tasks.move(core, ch, t, "waiting", card=card, question=None)
+        tasks.move(core, ch, t, "waiting", card=card, question=None, schedule_anchor=None,
+                   schedule_fire_at=tasks.default_check_back(core))
         cards.mark_answered(core, ch, card, "not_yet")
         events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "nudge", "option": "not_yet"},
                     log=("status", "Not yet. Fuzz keeps waiting for the reply."))

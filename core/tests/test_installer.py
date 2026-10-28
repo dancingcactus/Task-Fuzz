@@ -78,7 +78,7 @@ class Install(FakeHome):
         self.assertTrue(out["engine_set"], "the first client installed becomes the engine")
         self.assertEqual(self.core.config["engine"]["client"], "claude-code")
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
-        self.assertIn("prompt_version: executor-0.12", skill.read_text())
+        self.assertIn("prompt_version: executor-0.13", skill.read_text())
         reg = self.stub_registry()
         self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor", "fuzz-sender"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])
