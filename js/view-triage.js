@@ -139,9 +139,9 @@
       stats();
       if (card.style.display === 'none' && !ciOpen && !awayOpen) renderEmpty();
     } else if (e.type === 'wrapped') {
-      /* The last task in a project finished, so the project closes on its own. Worth a small party. */
+      /* The last task in a group finished, so the group is finished too. Worth a small party. */
       Fuzz.setMood('proud'); Fuzz.pAnim('hop'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
-      Say.tell('That wraps up ' + e.project.title + '. Every task in it is done.');
+      Say.tell('That wraps up ' + e.group.title + '. Every task in it is done.');
       setTimeout(function () { if (alive && Fuzz.mood() === 'proud') Fuzz.setMood('idle'); }, 2600);
     } else if (e.type === 'reset' || e.type === 'restore' || e.type === 'moment') {
       /* the caller refreshes */
@@ -322,10 +322,10 @@
   function titleHTML(it) {
     return '<div class="title-block"><h3 class="task-title">' + esc(it.title) + '</h3><div class="chips">' + ageChip(it) + '<span class="meta">' + esc(it.meta || '') + '</span></div>' + partOfHTML(it) + '</div>';
   }
-  /* A project is context on the card, never a card of its own: one line, which opens the project sheet */
+  /* A group is context on the card, never a card of its own: one line, which opens the group sheet */
   function partOfHTML(it) {
     var line = Store.partOf(it, true); if (!line) return '';
-    return '<button type="button" class="partof" data-act="project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(line) + '</button>';
+    return '<button type="button" class="partof" data-act="group"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(line) + '</button>';
   }
   function findingHTML(it) {
     return '<div class="finding"><span class="finding-tag">' + esc(it.aiHeading || 'What Fuzz did') + '</span>' + Fuzz.mini('good', { cls: 'finding-av' }) + '<p>' + UI.text(it.aiNote) + '</p></div>';
@@ -1001,9 +1001,9 @@
     Fuzz.setMood('idle');
     await showNext(shown);
   }
-  function openProject(trigger) {
-    var p = Store.projectOf(cur()); if (!p) return;
-    ProjectSheet.open(p.id, { trigger: trigger,
+  function openGroup(trigger) {
+    var g = Store.groupOf(cur()); if (!g) return;
+    GroupSheet.open(g.id, { trigger: trigger,
       onChange: function () { var it = cur(); if (it && !busy) { renderCard(it); stats(); } },
       onUndo: function () { V.refresh(); } });
   }
@@ -1090,7 +1090,7 @@
       else if (a === 'ent-secondary') moment(function () { return answerEntity('secondary'); });
       else if (a === 'ent-third') moment(function () { return answerEntity('third'); });
       else if (a === 'ent-later') moment(entityLater);
-      else if (a === 'project') openProject(t);
+      else if (a === 'group') openGroup(t);
     });
     docClick = function (e) {
       var mm = root && root.querySelector('#moremenu');

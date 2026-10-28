@@ -156,10 +156,10 @@ and log zones). The new parts are below.
 ```sql
 users        (id, name, created_at)                    -- one row for now
 events       (id, user_id, ts, actor, type, task_id, payload, caused_by, run_id, model, prompt_version)
-tasks        (id, user_id, state, assignee, title, ask, done_when, project_id, due, order_key, notes, context_md, question,
+tasks        (id, user_id, state, assignee, title, ask, done_when, group_id, due, order_key, notes, context_md, question,
               variant_tags, steps_used, attempts, lease_owner, lease_until,
               schedule_anchor, schedule_fire_at, schedule_hints, updated_event_id)
-projects     (id, user_id, title, done_when, state, created_event_id)   -- made by Fuzz, see Projects stay light
+groups       (id, user_id, title, origin, link, state)   -- made by the core from the origin, see Groups
 cards        (id, user_id, kind, task_id, other_id, prompt, reason, options, suggested,
               schedule_options, status, postponed, created_event_id, answered_event_id)
 drafts       (id, user_id, task_id, kind, body, target, status, approved_by, approved_at)
@@ -221,7 +221,7 @@ task.handed_back task.scheduled  task.woke        task.parked      task.waiting
 task.done       task.let_go      task.restored    task.stale       task.deadline_level
 task.reopened   task.reply_in    task.came_back   task.anchor_moved task.anchor_lost
 task.confirmed  task.draft_edited task.sent_back task.send_failed
-project.created project.linked   project.unlinked project.renamed project.closed
+group.created   group.linked     group.unlinked   group.renamed    group.wrapped
 entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
 permission.asked permission.granted permission.denied
@@ -262,7 +262,7 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `save_notes(id, text)` | Replaces the short "where I left off" notes | For the next run of a stateless worker |
 | `save_draft(id, kind, target, body)` | Stores a draft. The task moves to `review` | The only way towards anything outside the system |
 | `hand_back(id, question, options?)` | Sends the task to triage with an either/or question | Goes to the end of the queue |
-| `create_task(ask, done_when, sources, project?)` | Splits off a task or captures a follow-up. A split-off task joins the original's project | Goes through matching like any other ask |
+| `create_task(ask, done_when, sources)` | Splits off a task or captures a follow-up. A split-off task joins the original's group | Goes through matching like any other ask |
 | `request_permission(id, scope, resource, why)` | Asks to read a new source or use a connector | Creates a permission card. The task waits until you answer |
 | `suggest_schedule(id, anchor, reason)` | Adds a human-time option for this task | Checked by the core. See [AI suggestions](#ai-suggestions) |
 | `update_brief(id, context_md?, summary?, question?)` | Writes the Markdown brief, the summary above it and the one question shown to you | The task card's prompt is the question; answering clears it |
@@ -556,28 +556,28 @@ are the same, so this costs nothing extra, but headless runs come first.
   connector it hasn't used, `request_permission` creates a permission card. "Always allow" answers are
   stored in `grants`, so the same request isn't asked twice.
 
-## Tasks, steps and projects
+## Tasks, steps and groups
 
 A **task** is something Fuzz or you *produce*. A **card** is something Fuzz needs *from you*. A task
 stays in the Lineup until it's done or let go. A card sits in Triage, points at a task (or at the
 queue, for a check-in) and goes away once you answer it. A card is never the work itself.
 
-### Three levels
+### Two levels, and groups
 
 | Level | What it is | Who checks it | Example |
 | --- | --- | --- | --- |
 | **Step** | One move inside a task, written to its "Done so far" log | Fuzz | Pull the guardrail metrics. Draft the reply |
 | **Task** | Work with its own done-state that someone is waiting on | You, or the person who asked | Reply to Priya with a ship/no-ship call. Send Priya the summary deck |
-| **Project** | The larger outcome that several tasks serve | You | Priya can brief her team on Q4 before Tuesday |
 
 The line between a step and a task is the judge rubric's test: *would someone check this off on its
 own?* If yes, it's a task. "Reply to Priya" is a task even though it serves a bigger goal, because
-Priya is waiting on the reply by itself.
+Priya is waiting on the reply by itself. Tasks that came from the same email, message or meeting
+form a [group](#groups).
 
 ### Done when
 
 Every task has a **done when**: one short line saying what exists, or who knows something, once the
-task is finished. A project has one too, and it states the real goal.
+task is finished.
 
 | Task | Outcome | Done when |
 | --- | --- | --- |
@@ -602,47 +602,80 @@ isn't a task yet. It's parked, or it gets an `is_task` card, and Fuzz can offer 
    takes effort to produce, it's a task. Approvals and handbacks are cards on a task.
 4. **No decision, no card.** "Fuzz finished the summary" and "thanks!" aren't tasks or cards.
 
-### Projects stay light
+### Groups
 
-Projects are where task systems turn into planning tools, which is the overhead Fuzz exists to
-remove. So:
+One email, Slack message or meeting often brings several asks at once: the action items from a
+staff sync, or Marcus's "can you send the deck, book the room and ping Sam?". Each ask is its own
+task, but they belong together, and you want to see them that way. A **group** is that: the tasks
+that came from the same place.
 
-1. **Fuzz makes projects. You never have to.** New task stays one field with no categories. Fuzz
-   groups tasks when two or more share a goal, or when one ask is too big for a single done-state
-   ("Prepare the board update").
-2. **Most tasks have no project.** "Renew the car registration" stands alone.
-3. **Triage stays one task per card.** A project is context on a card, never a card to work through.
-4. **A project inherits the soonest deadline** of its tasks, so Priya's Tuesday also makes the deck
-   time-sensitive.
-5. **Projects only grow towards done.** There's no percentage of what's left and nothing in red.
+A group is made from **where the tasks came from**, never from a guess about what they're for. The
+core makes groups itself, as code, from the signal's fields. No AI decides, so grouping can't be
+wrong in a way you have to correct. (Grouping by shared goal, such as "Priya can brief her team by
+Tuesday", is left for later. See [Open questions](#open-questions).)
 
-Grouping is an undoable change with nothing outside the system at stake, so Fuzz just does it and
-says so ("I put these together under *Q4 readout for Priya*"), with Undo. It asks only when the
-matcher is unsure: the judge's `related` verdict with medium confidence becomes a duplicate card
-with a third answer, **Same goal, separate tasks**. Without that answer, the Priya reply and the deck
-force a bad choice: merging hides an ask, and keeping them apart loses the shared deadline.
+1. **Fuzz makes groups. You never have to.** New task stays one field with no categories.
+2. **Two or more, or none.** A group forms when a second task of yours comes from the same origin.
+   One action item gets no group. Most tasks have none.
+3. **Only tasks still open.** A new ask joins tasks from the same origin that are still live. Once
+   every task in a group is done or let go, the group is finished, and a new ask from the same
+   thread starts fresh.
+4. **One group per task. No groups inside groups.** A task already in a group stays in it.
+5. **Triage stays one task per card.** A group is context on a card, never a card to work through.
+6. **Each task keeps its own deadline and done-when.** The asks from one meeting don't share a goal,
+   so the group has neither.
+7. **Groups only grow towards done.** There's no percentage of what's left and nothing in red.
 
-### Projects in the UI
+#### What counts as the same origin
 
-The word "project" doesn't appear in the UI. A project shows up as a **"Part of …" line**, and its
-name reads as a goal: "Q4 readout for Priya", not "Q4".
+| Source | Origin | Later asks join when |
+| --- | --- | --- |
+| Email | The thread (`email:<conversationId>`) | A reply in the thread brings a new ask while the group's tasks are still open |
+| Meeting | The summary file (`meeting:<file stem>`, every row of it) | An edit to the notes adds an action item |
+| Slack | One message, or a **burst**: messages from the same person in the same channel or DM, each within 10 minutes of the one before, with nothing from you in between | Only within the burst |
+| Fuzz | The task Fuzz split it from (`create_task` with a parent) | It joins the parent's group, or starts one with the parent |
+| Captured by you | None | Never |
+
+Slack is different because a channel or DM is not a conversation with an edge. A DM can run for
+weeks and change topic many times, and many DMs have no threads at all. So the channel is never an
+origin. The thread isn't either: a reply days later in an old thread is usually about something
+else. It can still **merge** into an existing task through matching; it just doesn't join the
+group. The burst catches the common way people send a list in Slack, which is several messages in a
+row. Your own message, or a 10-minute gap (`grouping.slack_burst_minutes`), ends it.
+
+The group's name comes from its origin: the email's subject or the meeting's title, from the
+signal's optional `title`, or "Marcus on Slack" when there is none. You can rename it.
+
+#### Groups in the UI
+
+The word "group" doesn't appear in the UI. A group shows up as a **"From …" line**: "From Staff sync
+· 1 of 3 done".
 
 | Place | What changes |
 | --- | --- |
-| Triage card | One line under the tags: "Part of Q4 readout for Priya · 1 of 2 done". No new buttons. Tapping it opens the project sheet |
-| Duplicate card | The third answer, Same goal, separate tasks |
-| Lineup | Still grouped by who has it (Yours, Fuzz's lane, With others, Later). A row in a project gets the same "Part of …" line. The Lineup is never grouped by project, because that would hide what's waiting on you |
-| Task detail | The "Part of …" line, which opens the project sheet, and the task's done-when |
-| Project sheet | A dialog, like task detail: the name, the done-when, the deadline, each task with its state ("2 done, 1 with Fuzz"), and the steps from all its tasks in one log. Actions: Rename, Take a task out, It's wrapped up |
-| Fuzz | Says when he groups tasks, and celebrates when a project wraps up |
+| Triage card | One line under the tags. No new buttons. Tapping it opens the group sheet |
+| Lineup | Still grouped by who has it (Yours, Fuzz's lane, With others, Later). A row in a group gets the same "From …" line. The Lineup is never grouped by group, because that would hide what's waiting on you |
+| Task detail | The "From …" line, which opens the group sheet, and the task's done-when |
+| Group sheet | A dialog, like task detail: the name, a link back to the origin (Open the email, Open the meeting notes), each task with its state ("2 done, 1 with Fuzz"), and the latest steps from all its tasks in one log. Actions: Rename, Take a task out, It's wrapped up, each with Undo |
+| Fuzz | Celebrates when the last task in a group is done |
 
-What's left out on purpose: a projects page, a project picker, project colours or icons, project
-progress bars, and project cards in Triage.
+What's left out on purpose: a groups page, a group picker, group colours or icons, progress bars,
+and group cards in Triage.
 
-When the last task is done, the project closes on its own and Fuzz celebrates. Before that, if the
-project's done-when looks unmet ("Priya has the reply and the deck. Does she need anything else to
-brief her team?"), Fuzz suggests the missing piece as a new task, through an `is_task` card. He
-doesn't ask about the project itself.
+**Take out** removes one task from the group. A group of one isn't a group, so taking out the
+second-to-last task finishes the group and the last task stands on its own. **It's wrapped up**
+finishes the group while some tasks are still open: they keep going on their own, and no new ask
+joins the group.
+
+#### In the core
+
+`groups (id, user_id, title, origin, link, state)` is a projected table like `tasks`, and
+`tasks.group_id` points at it. `state` is `open` or `wrapped` (you said so). A group whose tasks are
+all done or let go is finished without an event: that is worked out when it is read. The events are
+`group.created` and `group.linked` (Fuzz, as matching creates tasks), and `group.unlinked`,
+`group.renamed` and `group.wrapped` (you, from the group sheet, each undoable). The executor's
+`get_task` lists the other tasks in the group by title and state, so a run knows "these all came
+from the staff sync" and can reuse what the others found.
 
 ## Cards and actions
 
@@ -659,7 +692,7 @@ replied" are not cards. They are things Fuzz says, through the
 | Family | Kind | The decision | Answers |
 | --- | --- | --- | --- |
 | **Routing** | `task` | What should happen to this work? | Assign to Fuzz · Work in Claude · Schedule · Done, plus Park it · Waiting on someone · Drop |
-| **Questions** | `duplicate` | Are these the same task? | Merge · Same goal, separate tasks · Keep separate · Not sure yet |
+| **Questions** | `duplicate` | Are these the same task? | Merge · Keep separate · Not sure yet |
 | | `entity_person` | Are these the same person? | Same person · Different people · Not sure yet |
 | | `entity_term` | What is this? | Save definition · Same as an existing project · Not sure yet |
 | | `is_task` | Is this a task we should work on? | Yes, it's mine · No, not a task · It's someone else's · Not sure yet |
@@ -738,7 +771,6 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Stale: Yes, keep it | `card.answered` | Stays, stale clock resets |
 | | Handed back: quick answer `{text}` | `card.answered`, `task.assigned` | Back to `queued` with the answer in its notes |
 | `duplicate` | Merge | `task.merged` | The other task redirects. Logged in `feedback` |
-| | Same goal, separate tasks | `project.created` or `project.linked` | Both tasks in one project, which takes the sooner deadline. Logged in `feedback` |
 | | Keep separate | `card.answered` | A `kept_separate` link, so Fuzz won't ask again. Logged in `feedback` |
 | `entity_person` | Same person | `entity.merged` | Profiles merge |
 | | Different people | `entity.kept_separate` | Both stay, linked as different |
@@ -1011,8 +1043,7 @@ Not designed yet. Two choices now keep it cheap:
 10. **Token cost.** MCP was chosen over the CLI for safety, not cost. A quick measurement (one
     scripted extraction through `tm.py` and through MCP) would show whether the difference is as
     small as expected.
-11. **What to call projects.** "Project" in the data model matches the `entity_term` answer, but it
-    sounds heavy for two emails to Priya. The UI avoids the word with "Part of …". Is that enough, or
-    should one word ("goal"?) be used everywhere?
-12. **Projects inside projects.** Not allowed for now. A project that seems to need one is probably
-    two projects.
+11. **Grouping by goal.** Groups come only from a shared origin for now. Tasks from different places
+    that serve one outcome (the Priya reply and the deck she asked for on Slack) could share a group
+    through a third answer on the duplicate card, "Same goal, separate tasks". Worth adding once
+    origin groups have been used for a while.

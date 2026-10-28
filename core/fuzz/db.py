@@ -2,7 +2,7 @@
 
 Three zones, as in the matching spike:
   log        events (the source of truth), runs, decisions, feedback
-  projection tasks, cards, drafts, grants, user_state: rebuilt by replaying events
+  projection tasks, groups, cards, drafts, grants, user_state: rebuilt by replaying events
   derived    signals, candidates, entities, sources and the rest of the matcher's tables
 
 Every row carries user_id, even with one user. Core.user_id is the one place that says who
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   waiting_on TEXT,
   merged_into INTEGER,
   parent_id INTEGER,
+  group_id INTEGER,                -- the tasks that came from the same place (groups.py)
   title_history TEXT,              -- json list
   created_at TEXT,
   state_changed_at TEXT,
@@ -94,6 +95,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_event_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS tasks_user_state ON tasks (user_id, state);
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  origin TEXT,                     -- email:<conversation> | meeting:<file stem> | slack:<channel>:<first ts> | fuzz:task<id>
+  link TEXT,                       -- back to the email, the meeting notes or the first Slack message
+  state TEXT NOT NULL,             -- open | wrapped (you said so); finished when no task in it is open
+  created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS cards (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -326,7 +336,7 @@ def connect(home):
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
-              "tasks": [("summary", "TEXT")]}
+              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER")]}
 
 
 def _migrate(conn):

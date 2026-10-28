@@ -1,6 +1,6 @@
 """The event log and the projection it drives.
 
-Every change to tasks, cards, drafts, grants and user_state is an event whose payload carries
+Every change to tasks, groups, cards, drafts, grants and user_state is an event whose payload carries
 the field changes. The reducer applies them; rebuild() replays them all and must land on the
 same tables. emit() also records the earlier values of every field it changes ("prior"), so
 Undo is a compensating task.restored event, never a delete.
@@ -21,6 +21,7 @@ EVENT_TYPES = {
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
     "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached", "task.gathered",
     "task.file_written",
+    "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "entity.merged", "entity.kept_separate", "entity.defined",
     "card.created", "card.answered", "card.postponed", "card.expired",
     "permission.asked", "permission.granted", "permission.denied",
@@ -30,7 +31,7 @@ EVENT_TYPES = {
 }
 
 # Projected tables and their key column. user_state is keyed by (user_id, key).
-TABLES = {"tasks": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
+TABLES = {"tasks": "id", "groups": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
 
 ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "system")
 
@@ -50,6 +51,9 @@ class Changes:
 
     def task(self, tid, **fields):
         return self._put("tasks", tid, fields)
+
+    def group(self, gid, **fields):
+        return self._put("groups", gid, fields)
 
     def card(self, cid, **fields):
         return self._put("cards", cid, fields)
@@ -272,7 +276,7 @@ def _groups(core, limit=200):
 # renewals...) are bookkeeping: undo keeps whatever later events set them to.
 DECISIVE = {"tasks": {"state", "assignee", "lease_owner", "notes", "question", "schedule_anchor", "title",
                       "merged_into", "waiting_on", "quick_answers"},
-            "cards": {"status"}, "drafts": {"status", "body"}, "grants": {"kind"}, "user_state": {"value"}}
+            "groups": {"title", "state"}, "cards": {"status"}, "drafts": {"status", "body"}, "grants": {"kind"}, "user_state": {"value"}}
 
 
 def _restore_plan(evs):
@@ -372,6 +376,8 @@ def _absent(table, created):
     """What 'didn't exist' becomes, since nothing is deleted."""
     if table == "tasks":
         return {"state": "letgo", "reason": "Undone"}
+    if table == "groups":
+        return {"state": "wrapped"}
     if table == "cards":
         return {"status": "withdrawn"}
     if table == "drafts":

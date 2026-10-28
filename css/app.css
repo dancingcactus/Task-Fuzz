@@ -692,12 +692,11 @@ html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
 .selectrow select { width: 100%; min-height: 44px; padding: 0 12px; border: var(--bw) solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font-size: 14px; }
 .palettes .pal .pal-sw i:nth-child(2) { opacity: .95; }
 
-/* Projects: a "Part of …" line on cards and tasks, and the project sheet. Never a screen of its own. */
+/* Groups: a "From …" line on cards and tasks, and the group sheet. Never a screen of its own. */
 .partof { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 13px; font-weight: 600; text-align: left; }
 .partof svg { flex: none; color: var(--link); }
 .partof:hover { color: var(--ink); border-color: var(--accent); }
-.ps-goal p { margin: 0; line-height: 1.5; font-size: 16px; }
-.ps-goal .ps-due { font-size: 13px; color: var(--muted); }
+.ps-origin { display: inline-block; margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--link); text-underline-offset: 3px; }
 .donewhen p { margin: 0; line-height: 1.5; }
 .ps-tasks { list-style: none; margin: 0; padding: 0; border: var(--bw) solid var(--line); border-radius: 16px; overflow: hidden; }
 .ps-tasks > li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }

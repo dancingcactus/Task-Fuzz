@@ -180,7 +180,7 @@
       steps: t.steps_used || 0, needsPermission: tags.indexOf('needs_permission') > -1,
       cardId: c ? c.id : null, cardKind: c ? c.kind : null, cardOptions: c ? c.options : [],
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
-      project: null
+      group: t.group_id ? 'g' + t.group_id : null
     };
     /* Time-sensitive tasks get the rush treatment; others with a date get the due bar */
     var due = ts(t.due);
@@ -223,8 +223,8 @@
     if (!on) return Promise.resolve();
     if (syncing || pending) { again = true; return Promise.resolve(); }
     syncing = true; var g = gen;
-    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo')]).then(function (r) {
-      var list = r[0].tasks, cards = r[1].cards;
+    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'), api('GET', '/groups')]).then(function (r) {
+      var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
       offerFuzzUndo(r[2].recent || []);
@@ -234,7 +234,7 @@
         return api('GET', '/tasks/' + t.id).then(function (full) { detail[t.id].full = full; }, function (e) { delete detail[t.id]; throw e; });
       })).then(function () {
         if (g !== gen || pending) { again = true; return; }
-        apply(list, cards, r[1].moment);
+        apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
       if (e.status === 401) { forget(); Say.tell('Fuzz doesn’t know this browser any more. Open the link `fuzz serve` printed.'); on = false; return; }
@@ -263,7 +263,10 @@
     });
   }
 
-  function apply(list, cards, moment) {
+  /* The tasks that came from the same place. A meeting's notes are a file, which a browser page can't open. */
+  function toGroup(g) { return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped }; }
+
+  function apply(list, cards, moment, groups) {
     var st = Store.get(), byTask = {};
     cards.forEach(function (c) { if (c.task && !byTask[c.task.id]) byTask[c.task.id] = c; });
     var keep = {}, items = [];
@@ -282,10 +285,12 @@
     unpin = false;
     if (front && seen[front] && order[0] !== front) order = [front].concat(order.filter(function (id) { return id !== front; }));
     var added = order.filter(function (id) { return st.queue.indexOf(id) < 0; });
-    var next = JSON.stringify([items, order, moment]);
+    groups = (groups || []).map(toGroup);
+    var next = JSON.stringify([items, order, moment, groups]);
     if (next === sig) return;
     sig = next;
     st.items = items;
+    st.groups = groups;
     st.queue = order;
     st.queue.forEach(function (id, n) { Store.item(id).order = n; });
     st.maxOrder = order.length; st.minOrder = 0;
@@ -334,7 +339,7 @@
   function install() {
     var S = Store;
     /* An empty start: the core fills it */
-    Demo.build = function () { return { items: [], queue: [], totalEver: 0, projects: [], captured: [] }; };
+    Demo.build = function () { return { items: [], queue: [], totalEver: 0, groups: [], captured: [] }; };
     S.startWork = function () {};
     S.scheduleOptions = function (it) { return it.scheduleOptions || Sched.options(it); };
     S.progress = function (it) { return { done: it.steps || 0, total: Math.max((it.steps || 0) + 1, 3) }; };
@@ -375,6 +380,11 @@
       var it = S.item(id);
       return it && QUESTION[it.cardKind] && (it.cardOptions || []).indexOf('not_sure') > -1 ? decide(it, 'not_sure') : null;
     });
+    /* The group sheet: the core makes groups; renaming one, taking a task out and wrapping it up are yours */
+    function groupCall(g, what, body) { var gid = g && g.coreId; return gid ? function () { return api('POST', '/groups/' + gid + '/' + what, body || {}); } : null; }
+    wrap('renameGroup', function (id, title) { return groupCall(S.group(id), 'rename', { title: (title || '').trim() }); });
+    wrap('takeOut', function (id) { var it = S.item(id); return groupCall(S.groupOf(it), 'take_out', { task_id: it && it.coreId }); });
+    wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
     /* The demo's resolve acts out its own duplicates; here the card just leaves and the core decides */
     S.resolve = function (id, which) {
       var it = S.item(id), q = QUESTION[it.cardKind];

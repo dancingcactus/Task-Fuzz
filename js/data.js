@@ -42,7 +42,7 @@
     var items = [
 
       /* ---------- Triage queue, in order ---------- */
-      { id: 'headcount', kind: 'task', doneWhen: 'Marcus has one final number for the venue', project: 'offsite', state: 'triage', title: 'Confirm headcount for tomorrow’s offsite booking', source: 'Slack', who: 'Marcus',
+      { id: 'headcount', kind: 'task', doneWhen: 'Marcus has one final number for the venue', state: 'triage', title: 'Confirm headcount for tomorrow’s offsite booking', source: 'Slack', who: 'Marcus',
         age: '35 minutes', stage: 'fresh', mins: 3, energy: 'low', dueMin: 95,
         incoming: 'Marcus needs a final number so the venue can lock the booking. The venue wants it before the end of the day.',
         ask: 'Is it 14 or 16 people?',
@@ -54,7 +54,7 @@
         sendTo: { to: 'Marcus', via: 'Slack, #offsite-planning' },
         draft: 'Hi Marcus, final count for the offsite is 14 confirmed. I will send an update only if one of the two maybes changes. Thanks!' },
 
-      { id: 'room', kind: 'task', doneWhen: 'a room for eight is booked and the invite is out', state: 'triage', title: 'Book the room for Thursday’s workshop', source: 'Meeting', who: 'Staff sync',
+      { id: 'room', kind: 'task', doneWhen: 'a room for eight is booked and the invite is out', group: 'staff', state: 'triage', title: 'Book the room for Thursday’s workshop', source: 'Meeting', who: 'Staff sync',
         age: '1 day', stage: 'settling', mins: 2, energy: 'low', dueMin: 250,
         incoming: 'In the staff sync you said you would book a room for the Thursday workshop. Eight people are coming.',
         ask: 'Should I take the big room on 3 or the quiet one on 5?',
@@ -144,22 +144,11 @@
         meta: '',
         incoming: 'In Slack, Priya asked for the Q4 summary deck so she can brief her team. It looks close to the email you already have in this queue.',
         ask: 'Is this the same task as “Reply to Priya about the Q4 experiment readout”?',
-        aiHeading: 'Why Fuzz thinks so', aiNote: 'Same person, same Q4 results, two hours apart, and both are for briefing her team before Tuesday. But a reply doesn’t deliver a deck, so I think these are two tasks with one goal.',
-        effect: 'Same goal keeps both tasks and puts them together under “Q4 readout for Priya”, sharing her Tuesday deadline. Merge makes the Slack message a source on the email task. Keep separate leaves them unlinked.',
+        aiHeading: 'Why Fuzz thinks so', aiNote: 'Same person, same Q4 results, two hours apart, and both are for briefing her team before Tuesday. But a reply doesn’t deliver a deck, so I’m not sure it’s one task.',
+        effect: 'Merge makes the Slack message a source on the email task. Keep separate leaves them unlinked.',
         boxLabel: 'Anything that helps?', placeholder: 'Optional note.',
-        primary: 'Same goal, separate tasks', secondary: 'Merge', third: 'Keep separate',
-        goal: { title: 'Q4 readout for Priya', doneWhen: 'Priya can brief her team on the Q4 results before Tuesday' },
-        /* What the Slack ask becomes if it's its own task */
-        asTask: { doneWhen: 'Priya has the Q4 summary deck', mins: 5, energy: 'low',
-          incoming: 'In Slack, Priya asked for the Q4 summary deck so she can brief her team.',
-          ask: 'Send the deck as it is, or add the guardrail slide first?',
-          hint: 'Add one slide with the guardrail metrics, then send me the deck before it goes to Priya.',
-          aiHeading: 'What Fuzz did', aiNote: 'I found the Q4 summary deck. It has the results but not the guardrail metrics, which your reply to Priya leans on.',
-          firstStep: 'Open the deck and look at the last slide.',
-          sources: [{ type: 'Slack', title: 'Priya: Q4 summary deck request' }, { type: 'Doc', title: 'Q4 summary deck' }],
-          sendTo: { to: 'Priya Raman', via: 'Slack' },
-          draft: 'Hi Priya, here’s the Q4 summary deck. I added a slide with the guardrail metrics so it matches my email. Happy to walk your team through it.' },
-        answers: { primary: 'Two tasks, one goal. I put them together under Q4 readout for Priya.', secondary: 'Merged. The Slack message is now a source on the Priya task.', third: 'Kept separate, and linked so Fuzz won’t ask again.' } },
+        primary: 'Merge', secondary: 'Keep separate',
+        answers: { primary: 'Merged. The Slack message is now a source on the Priya task.', secondary: 'Kept separate, and linked so Fuzz won’t ask again.' } },
 
       { id: 'lantern', kind: 'entity', entity: 'term', state: 'triage', title: 'Project Lantern', source: 'Entity check', who: '',
         age: '3 days', stage: 'settling', mins: 1, energy: 'low',
@@ -261,7 +250,7 @@
         aiNote: 'You opened this in Claude. Fuzz keeps the email thread and the style guide open while you work.',
         log: [L('status', '1:10 PM', 'You opened this in a working session with Claude.'), L('research', '1:08 PM', 'Gathered both headline options and the style guide.')],
         sources: [{ type: 'Email', title: 'Nadia: pricing page copy' }, { type: 'Doc', title: 'Style guide' }] },
-      { id: 'sam', kind: 'task', doneWhen: 'a 30-minute slot with Sam is on both calendars', state: 'scheduled', title: 'Find time with Sam for 1:1 prep', source: 'Meeting', who: 'Staff sync', age: '1 day', stage: 'settling', mins: 5,
+      { id: 'sam', kind: 'task', doneWhen: 'a 30-minute slot with Sam is on both calendars', group: 'staff', state: 'scheduled', title: 'Find time with Sam for 1:1 prep', source: 'Meeting', who: 'Staff sync', age: '1 day', stage: 'settling', mins: 5,
         scheduledFor: 'tomorrow morning', now: 'Back tomorrow morning',
         incoming: 'In the weekly staff sync you said you would find thirty minutes with Sam before the planning review.',
         aiNote: 'Comes back tomorrow morning. Fuzz already found three open windows on both calendars.',
@@ -298,7 +287,7 @@
         sources: [{ type: 'Note', title: 'Your capture note' }] },
 
       /* ---------- Waiting on others ---------- */
-      { id: 'budget', kind: 'task', doneWhen: 'Dana has approved the offsite budget', project: 'offsite', state: 'waiting', title: 'Approval of the offsite budget', source: 'Email', who: 'Dana Reyes', waitingOn: 'Dana Reyes', waitedFor: '4 days', age: '4 days', stage: 'settling',
+      { id: 'budget', kind: 'task', doneWhen: 'Dana has approved the offsite budget', state: 'waiting', title: 'Approval of the offsite budget', source: 'Email', who: 'Dana Reyes', waitingOn: 'Dana Reyes', waitedFor: '4 days', age: '4 days', stage: 'settling',
         nextCheck: 'Nudge drafted, needs your OK', nudge: true,
         incoming: 'You asked Dana Reyes on Tuesday to approve the offsite budget so you can book the venue.',
         aiNote: 'A short, friendly follow-up is drafted. It will not send until you approve it.',
@@ -312,7 +301,7 @@
         aiNote: 'Fuzz looks at the ticket again tomorrow morning and drafts a nudge if nothing has moved.',
         log: [L('research', 'Today', 'Checked the ticket. No new estimate.'), L('status', '2 days ago', 'You moved this to Waiting on others.')],
         sources: [{ type: 'Slack', title: '#report-builder thread' }, { type: 'Ticket', title: 'Performance ticket' }] },
-      { id: 'catering', kind: 'task', doneWhen: 'lunch for the offsite is quoted and ordered', project: 'offsite', state: 'waiting', title: 'Quote for the offsite catering', source: 'Email', who: 'Caterer', waitingOn: 'The caterer', waitedFor: '1 day', age: '1 day', stage: 'fresh',
+      { id: 'catering', kind: 'task', doneWhen: 'lunch for the offsite is quoted and ordered', state: 'waiting', title: 'Quote for the offsite catering', source: 'Email', who: 'Caterer', waitingOn: 'The caterer', waitedFor: '1 day', age: '1 day', stage: 'fresh',
         nextCheck: 'Monday',
         incoming: 'You asked the caterer for a quote and the dietary options for sixteen people.',
         aiNote: 'Fuzz drafts a nudge on Monday if there is no reply.',
@@ -320,7 +309,7 @@
         sources: [{ type: 'Email', title: 'Catering email thread' }] },
 
       /* ---------- Done and let go ---------- */
-      { id: 'venue', kind: 'task', doneWhen: 'the venue has the agenda', project: 'offsite', state: 'done', title: 'Send the offsite agenda to the venue', source: 'Email', who: 'Venue', age: '2 days', stage: 'fresh', doneAgo: 'Yesterday', now: 'Sent with your OK',
+      { id: 'venue', kind: 'task', doneWhen: 'the venue has the agenda', state: 'done', title: 'Send the offsite agenda to the venue', source: 'Email', who: 'Venue', age: '2 days', stage: 'fresh', doneAgo: 'Yesterday', now: 'Sent with your OK',
         incoming: 'The venue asked for the agenda so they can plan the room layout.',
         aiNote: 'Done. Fuzz sent the agenda after you approved the draft.',
         log: [L('sent', 'Yesterday', 'Sent the agenda to the venue after you approved the draft.'), L('action', 'Yesterday', 'Drafted the cover note.'), L('status', '2 days ago', 'You assigned this to Fuzz.')],
@@ -351,9 +340,10 @@
       items: items,
       queue: items.filter(function (i) { return i.state === 'triage'; }).map(function (i) { return i.id; }),
       totalEver: items.filter(function (i) { return i.state === 'triage'; }).length,
-      /* Made by Fuzz, never by you. A project is a label on its tasks; it closes when they're all finished. */
-      projects: [
-        { id: 'offsite', title: 'Team offsite next week', doneWhen: 'the venue is booked for the final headcount, the budget is approved and lunch is ordered', due: 'The venue needs the headcount today' }
+      /* Made by the core from where tasks came from, never by you. A group is a label on its tasks; it's
+         finished when they all are. */
+      groups: [
+        { id: 'staff', title: 'Staff sync', source: 'meeting', link: null }
       ],
       captured: [
         { text: 'Ask Dana about the offsite budget', ref: null, status: 'Waiting in triage', time: '10 minutes ago', tone: 'wait' },

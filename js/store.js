@@ -7,16 +7,16 @@
    - every change undoes on its own, the way the core's Undo works: not a stack. A change can't be
      undone once something else has changed the same task since (Fuzz started, it was sent, you moved
      it again), and you're told why (6, 11)
-   - projects are made by Fuzz and are only ever a label on their tasks */
+   - groups (tasks from the same email, meeting or Slack burst) are made by the core and are only ever a label on their tasks */
 (function () {
   /* Fuzz's slots: how many tasks run at once in the demo. Live mode takes the core's budget.max_working. */
   var MAX_RUNNING = 2;
   var STEP_MS = 6500;
   var SEND_MS = 3500;
   var state, subs = [], timer = 0, captureN = 0, sentN = 0;
-  /* Not part of any project count: cleared cards and dropped tasks */
+  /* Not part of any group count: cleared cards and dropped tasks */
   var GONE = ['dropped', 'resolved'];
-  /* Projects Fuzz has already celebrated, so a wrap-up is only cheered once */
+  /* Groups Fuzz has already celebrated, so a wrap-up is only cheered once */
   var celebrated = {};
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -72,17 +72,17 @@
     track: function (ids, fn) {
       ids = ids.filter(function (id, i) { return S.item(id) && ids.indexOf(id) === i; });
       var before = ids.map(function (id) { return { item: clone(S.item(id)), queued: S.inQueue(id), logAt: S.item(id).log.length }; });
-      var m0 = state.moment, n0 = state.items.length, p0 = projectsById();
+      var m0 = state.moment, n0 = state.items.length, p0 = groupsById();
       fn();
       var after, logAt, m1 = state.moment;
-      /* Tasks the change made (a duplicate that became its own task) and projects it touched undo with it */
-      var made = state.items.slice(n0).map(function (i) { return i.id; }), madeAt, p1 = projectsById();
+      /* Tasks the change made and groups it touched undo with it */
+      var made = state.items.slice(n0).map(function (i) { return i.id; }), madeAt, p1 = groupsById();
       var pids = Object.keys(Object.assign({}, p0, p1)).filter(function (k) { return p0[k] !== p1[k]; });
       function settle() {
         after = ids.map(function (id) { return fingerprint(S.item(id)); });
         logAt = ids.map(function (id) { return S.item(id).log.length; });
         madeAt = made.map(function (id) { return fingerprint(S.item(id)); });
-        p1 = projectsById();
+        p1 = groupsById();
       }
       settle();
       var ch = {
@@ -97,8 +97,8 @@
             return 'You changed this since. Undo that first.';
           }
           for (var j = 0; j < made.length; j++) if (S.item(made[j]) && fingerprint(S.item(made[j])) !== madeAt[j]) return 'You changed “' + S.item(made[j]).title + '” since. Undo that first.';
-          var pn = projectsById();
-          if (pids.some(function (k) { return pn[k] !== p1[k]; })) return 'You changed that project since. Undo that first.';
+          var pn = groupsById();
+          if (pids.some(function (k) { return pn[k] !== p1[k]; })) return 'You changed that group since. Undo that first.';
           if (m1 !== m0 && state.moment !== m1) return 'You answered another check-in since. Undo that first.';
           return null;
         },
@@ -116,8 +116,8 @@
           made.forEach(function (id) { if (S.inQueue(id)) { S.leave(id); state.totalEver--; } state.items = state.items.filter(function (i) { return i.id !== id; }); });
           made = [];
           pids.forEach(function (k) {
-            state.projects = state.projects.filter(function (p) { return p.id !== k; });
-            if (p0[k]) state.projects.push(JSON.parse(p0[k]));
+            state.groups = state.groups.filter(function (g) { return g.id !== k; });
+            if (p0[k]) state.groups.push(JSON.parse(p0[k]));
           });
           if (m1 !== m0) state.moment = m0;
           settle();
@@ -213,61 +213,45 @@
     wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
     letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
     drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },
-    /* A duplicate card's answers: primary, Same goal, separate tasks; secondary, Merge; third, Keep separate */
+    /* A duplicate card's answers: primary, Merge; secondary, Keep separate */
     resolve: function (id, which) {
       var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
       var t = it.kind === 'dup' && S.item(it.dupOf);
-      if (t && which === 'secondary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
-      if (t && which === 'primary') S.group(it, t);
+      if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
     },
 
-    /* ---- projects ----
-       Fuzz groups tasks that share a goal. A project has no queue, no card and no progress bar of its own:
-       it shows up as a "Part of …" line on its tasks, and closes on its own when they are all finished. */
-    project: function (id) { return (state.projects || []).filter(function (p) { return p.id === id; })[0] || null; },
-    projectOf: function (it) { return it && it.project ? S.project(it.project) : null; },
-    projectTasks: function (p) { return state.items.filter(function (i) { return i.project === p.id && GONE.indexOf(i.state) < 0; }); },
+    /* ---- groups ----
+       The tasks that came from the same email thread, meeting or run of Slack messages. The core makes
+       them; you never do. A group has no queue, no card and no progress bar of its own: it shows up as a
+       "From …" line on its tasks, and is finished when none of them is still open. */
+    group: function (id) { return (state.groups || []).filter(function (g) { return g.id === id; })[0] || null; },
+    groupOf: function (it) { return it && it.group ? S.group(it.group) : null; },
+    groupTasks: function (g) { return state.items.filter(function (i) { return i.group === g.id && GONE.indexOf(i.state) < 0; }); },
     /* Counts what's done, never what's left. Let-go tasks leave the count. */
-    projectCount: function (p) {
-      var all = S.projectTasks(p).filter(function (i) { return i.state !== 'letgo'; });
+    groupCount: function (g) {
+      var all = S.groupTasks(g).filter(function (i) { return i.state !== 'letgo'; });
       return { done: all.filter(function (i) { return i.state === 'done'; }).length, total: all.length };
     },
-    projectFinished: function (p) { var c = S.projectCount(p); return p.closed || (c.total > 0 && c.done === c.total); },
-    /* The line a card or row shows: "Part of Q4 readout for Priya · 1 of 2 done" */
+    groupFinished: function (g) { var c = S.groupCount(g); return g.closed || (c.total > 0 && c.done === c.total); },
+    /* The line a card or row shows: "From Staff sync · 1 of 3 done" */
     partOf: function (it, withCount) {
-      var p = S.projectOf(it); if (!p) return '';
-      if (!withCount) return 'Part of ' + p.title;
-      var c = S.projectCount(p);
-      return 'Part of ' + p.title + ' · ' + (S.projectFinished(p) ? 'wrapped up' : c.done ? c.done + ' of ' + c.total + ' done' : c.total + ' tasks');
+      var g = S.groupOf(it); if (!g) return '';
+      if (!withCount) return 'From ' + g.title;
+      var c = S.groupCount(g);
+      return 'From ' + g.title + ' · ' + (S.groupFinished(g) ? 'wrapped up' : c.done ? c.done + ' of ' + c.total + ' done' : c.total + ' tasks');
     },
-    /* "Same goal, separate tasks": the new ask becomes its own task, and both share one project
-       that takes the sooner deadline. */
-    group: function (dup, t) {
-      var p = S.projectOf(t);
-      if (!p) {
-        p = { id: 'p' + (++captureN), title: dup.goal.title, doneWhen: dup.goal.doneWhen, due: t.due ? t.due.label : '' };
-        state.projects.push(p); t.project = p.id;
-      }
-      var it = Object.assign({ id: dup.id + '-task', kind: 'task', state: 'triage', title: dup.title, source: dup.source, who: dup.who, age: dup.age, stage: 'fresh',
-        project: p.id, due: t.due, isNew: false, log: [], context: [], conversation: [], code: [] }, clone(dup.asTask));
-      state.items.push(it);
-      S.log(it, 'status', 'Fuzz made this its own task, part of ' + p.title + '.');
-      S.log(t, 'status', 'Fuzz put this together with “' + it.title + '” under ' + p.title + '.');
-      S.enqueue(it, 'back');
-      return p;
-    },
-    renameProject: function (id, title) { var p = S.project(id); if (p && title && title.trim()) p.title = title.trim(); },
-    /* Take a task out. A project of one isn't a project, so the last task left stands on its own. */
+    renameGroup: function (id, title) { var g = S.group(id); if (g && title && title.trim()) g.title = title.trim(); },
+    /* Take a task out. A group of one isn't a group, so the last task left stands on its own. */
     takeOut: function (id) {
-      var it = S.item(id), p = S.projectOf(it); if (!p) return;
-      it.project = null; S.log(it, 'status', 'You took this out of ' + p.title + '.');
-      var left = S.projectTasks(p);
-      if (left.length === 1) { left[0].project = null; S.log(left[0], 'status', p.title + ' had only this task left, so it stands on its own now.'); p.closed = true; return 'dissolved'; }
+      var it = S.item(id), g = S.groupOf(it); if (!g) return;
+      it.group = null; S.log(it, 'status', 'You took this out of ' + g.title + '.');
+      var left = S.groupTasks(g);
+      if (left.length === 1) { left[0].group = null; S.log(left[0], 'status', g.title + ' had only this task left, so it stands on its own now.'); g.closed = true; return 'dissolved'; }
     },
     wrapUp: function (id) {
-      var p = S.project(id); if (!p) return;
-      p.closed = true;
-      S.projectTasks(p).forEach(function (i) { S.log(i, 'status', 'You said ' + p.title + ' is wrapped up.'); });
+      var g = S.group(id); if (!g) return;
+      g.closed = true;
+      S.groupTasks(g).forEach(function (i) { S.log(i, 'status', 'You said ' + g.title + ' is wrapped up.'); });
     },
 
     /* ---- movement between lists ---- */
@@ -371,16 +355,16 @@
     }
   };
 
-  /* When the last open task in a project finishes, the project closes on its own and Fuzz celebrates.
+  /* When the last open task in a group finishes, the group is finished and Fuzz celebrates.
      The event waits a moment so it lands after the card has left. */
   function wrapCheck(it) {
-    var p = S.projectOf(it);
-    if (!p || p.closed || celebrated[p.id] || !S.projectFinished(p)) return;
-    celebrated[p.id] = true;
-    setTimeout(function () { if (S.project(p.id) && S.projectFinished(S.project(p.id))) emit({ type: 'wrapped', project: S.project(p.id) }); }, 1800);
+    var g = S.groupOf(it);
+    if (!g || g.closed || celebrated[g.id] || !S.groupFinished(g)) return;
+    celebrated[g.id] = true;
+    setTimeout(function () { if (S.group(g.id) && S.groupFinished(S.group(g.id))) emit({ type: 'wrapped', group: S.group(g.id) }); }, 1800);
   }
-  /* Each project as JSON, by id, so a change can tell which projects it touched */
-  function projectsById() { var o = {}; (state.projects || []).forEach(function (p) { o[p.id] = JSON.stringify(p); }); return o; }
+  /* Each group as JSON, by id, so a change can tell which groups it touched */
+  function groupsById() { var o = {}; (state.groups || []).forEach(function (g) { o[g.id] = JSON.stringify(g); }); return o; }
 
   function lowerFirst(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   /* What decides whether a change still undoes: everything about the item but its log, plus whether it's in the queue. */

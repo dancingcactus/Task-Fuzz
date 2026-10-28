@@ -16,6 +16,7 @@ action-item row. See `fixtures/day1.json` and `fixtures/day2.json` for complete 
   "people": [{"name": "Sam Ortiz", "email": "sam@acme.com"}],
   "links": ["https://docs.google.com/.../d/<id>/edit", "https://jira.example/browse/OPS-412"],
   "quote": "one or two sentences of the new text, under 300 characters",
+  "title": "the email's subject, optional",
   "withdrawn": false,
   "candidates": [
     {
@@ -43,6 +44,8 @@ action-item row. See `fixtures/day1.json` and `fixtures/day2.json` for complete 
 
 - The **row slug** is a short lowercase hyphenated slug of the action item's text. Two rows in one
   file must never share a slug. The same row must produce the same slug on every run.
+- `title` is optional: an email's subject, without "Re:" or "Fw:". When one email, meeting or burst of
+  Slack messages brings several asks, the core groups their tasks and names the group after it.
 - `message_ids` is what links a **forward**, which starts a new conversation, back to the original.
   Include the References header whenever the tool exposes it.
 - `links` holds only shared docs and tickets mentioned in the message. Never include the message's own permalink.
