@@ -4,6 +4,7 @@
   var V = {};
   var esc = UI.esc;
   var root, openId = null, dlg = null, unsub = null, timer = 0;
+  var finQ = '', finHits = null, finAsk = 0, finTimer = 0;
 
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
@@ -45,9 +46,32 @@
   }
 
   /* A section that starts closed (Parked, Finished) and stays as you left it while the page updates */
-  function foldHTML(id, title, rows) {
-    if (!rows.length) return '';
-    return '<details class="lsec fold" id="' + id + '"' + (openSecs[id] ? ' open' : '') + '><summary><h2 id="sec-' + id + '">' + title + ' <span class="lcount">' + rows.length + '</span></h2></summary><ul class="lrows">' + rows.join('') + '</ul></details>';
+  function foldHTML(id, title, rows, extra) {
+    if (!rows.length && !extra) return '';
+    return '<details class="lsec fold" id="' + id + '"' + (openSecs[id] ? ' open' : '') + '><summary><h2 id="sec-' + id + '">' + title + (rows.length ? ' <span class="lcount">' + rows.length + '</span>' : '') + '</h2></summary>' +
+      (rows.length ? '<ul class="lrows">' + rows.join('') + '</ul>' : '') + (extra || '') + '</details>';
+  }
+
+  /* Finished shows the last two weeks. Anything older is a search away, so the page stays quick as the years pile up. */
+  function finRow(it) { return it.state === 'done' ? rowHTML(it, 'Done', 'ok', it.doneAgo) : rowHTML(it, 'Let go', 'muted', it.doneAgo); }
+  function olderHTML() {
+    var n = Store.finishedOlder();
+    if (!n && !finQ) return '';
+    var h = '<div class="fin-older"><label for="fin-q">Search older finished work <span class="lcount">' + n + '</span></label>' +
+      '<input id="fin-q" type="search" autocomplete="off" placeholder="Words from the title" value="' + esc(finQ) + '">';
+    if (finHits) h += finHits.length ? '<ul class="lrows" aria-label="Older finished work">' + finHits.map(function (it) {
+      return finRow(it).replace('data-open="' + it.id + '"', 'data-older="' + it.coreId + '"');
+    }).join('') + '</ul>' : '<p class="lempty">Nothing older matches “' + esc(finQ) + '”.</p>';
+    return h + '</div>';
+  }
+  function searchOlder(q) {
+    finQ = q; clearTimeout(finTimer);
+    var ask = ++finAsk;
+    if (!q.trim()) { finHits = null; render(); return; }
+    finTimer = setTimeout(function () {
+      Live.searchFinished(q.trim()).then(function (hits) { if (ask === finAsk) { finHits = hits; render(); } },
+        function (e) { console.error('[fuzz] search', e); });
+    }, 250);
   }
   function yoursRows() {
     var mine = Store.inState('review').filter(function (it) { return !Store.inQueue(it.id); });
@@ -98,9 +122,12 @@
     root = container; prevLane = null; departed = {};
     root.innerHTML = '<section class="lineup" aria-labelledby="tasks-h"><div class="tasks-head"><h1 id="tasks-h">Lineup</h1></div><div class="board" id="board"></div></section>';
     root.querySelector('#board').addEventListener('click', function (e) {
+      var o = e.target.closest('[data-older]');
+      if (o) { Live.loadFinished(o.dataset.older).then(function (it) { open(it.id, o); }, function () { Say.tell('That task wouldn’t open. Try again.'); }); return; }
       var b = e.target.closest('[data-open]'); if (!b) return;
       open(b.dataset.open, b);
     });
+    root.querySelector('#board').addEventListener('input', function (e) { if (e.target.id === 'fin-q') searchOlder(e.target.value); });
     root.querySelector('#board').addEventListener('toggle', function (e) { if (e.target.tagName === 'DETAILS') openSecs[e.target.id] = e.target.open; }, true);
     unsub = Store.on(function (e) { if (e.type !== 'change') { render(); if (openId) renderDialog(); } });
     timer = setInterval(function () { if (Object.keys(departed).length) render(); }, 2000);
@@ -129,11 +156,13 @@
     later = parked.filter(function (it) { return it.woke; }).map(function (it) { return rowHTML(it, 'Woke up', 'accent', it.now, 'woke'); }).concat(later);
     h += sectionHTML('later', 'Later', later);
     h += foldHTML('parked', 'Parked', parked.filter(function (it) { return !it.woke; }).map(function (it) { return rowHTML(it, 'Parked', 'muted', 'No date'); }));
-    var fin = Store.inState('done').map(function (it) { return rowHTML(it, 'Done', 'ok', it.doneAgo); })
-      .concat(Store.inState('letgo').map(function (it) { return rowHTML(it, 'Let go', 'muted', it.doneAgo); }));
-    h += foldHTML('fin', 'Finished', fin);
+    var fin = Store.inState('done', 'letgo').sort(function (a, b) { return (b.changedAt || 0) - (a.changedAt || 0); }).map(finRow);
+    h += foldHTML('fin', Store.finishedOlder() ? 'Finished · last 2 weeks' : 'Finished', fin, olderHTML());
     board.innerHTML = h;
-    if (keep) { var el = board.querySelector('[data-open="' + keep + '"]') || document.getElementById(keep); if (el) el.focus({ preventScroll: true }); }
+    if (keep) {
+      var el = board.querySelector('[data-open="' + keep + '"]') || document.getElementById(keep); if (el) el.focus({ preventScroll: true });
+      if (el && el.id === 'fin-q') el.setSelectionRange(el.value.length, el.value.length);
+    }
   }
 
   function actionsFor(it) {

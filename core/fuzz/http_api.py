@@ -108,6 +108,7 @@ class App:
         R = [
             ("GET", r"/tasks", self.list_tasks),
             ("POST", r"/tasks", self.capture),
+            ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule)", self.task_action),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
@@ -144,8 +145,15 @@ class App:
         return [(m, re.compile("^" + p + "$"), h) for m, p, h in R]
 
     def list_tasks(self, core, m, body, q):
-        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"))],
-                "max_working": scheduler.budget(core)["max_working"]}
+        """Done and let-go tasks from the last two weeks only, unless ?all=1. Older ones come from /tasks/search."""
+        days = None if q.get("all") == "1" else tasks.FINISHED_WINDOW_DAYS
+        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"), closed_days=days)],
+                "max_working": scheduler.budget(core)["max_working"],
+                "finished_window_days": tasks.FINISHED_WINDOW_DAYS,
+                "finished_older": 0 if days is None else tasks.finished_older(core)}
+
+    def search_tasks(self, core, m, body, q):
+        return {"tasks": [task_view(core, t) for t in tasks.search_finished(core, q.get("q"), q.get("limit") or 50)]}
 
     def capture(self, core, m, body, q):
         gather = config.gathers(core.config)
@@ -281,7 +289,7 @@ class App:
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
 
     def list_groups(self, core, m, body, q):
-        return {"groups": groups.list_groups(core)}
+        return {"groups": groups.list_groups(core, None if q.get("all") == "1" else tasks.finished_cutoff(core))}
 
     def group_action(self, core, m, body, q):
         gid, act = int(m.group(1)), m.group(2)

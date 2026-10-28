@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_event_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS tasks_user_state ON tasks (user_id, state);
+CREATE INDEX IF NOT EXISTS tasks_user_closed ON tasks (user_id, state, state_changed_at);
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,

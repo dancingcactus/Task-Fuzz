@@ -106,6 +106,46 @@ class Api(Server):
         self.assertEqual(out["tasks"], [])
         self.assertEqual(self.req("GET", "/groups")[1]["groups"], [])
 
+    def test_finished_work_older_than_two_weeks_is_left_out_but_searchable(self):
+        old = self.req("POST", "/tasks", {"text": "Renew the parking permit"})[1]["task_id"]
+        gone = self.req("POST", "/tasks", {"text": "Look into a standing desk"})[1]["task_id"]
+        self.req("POST", f"/tasks/{old}/done", {})
+        self.req("POST", f"/tasks/{gone}/letgo", {})
+        self.clock.advance(days=20)
+        recent = self.req("POST", "/tasks", {"text": "Send the parking receipt"})[1]["task_id"]
+        self.req("POST", f"/tasks/{recent}/done", {})
+        live = self.req("POST", "/tasks", {"text": "Book the parking spot"})[1]["task_id"]
+        body = self.req("GET", "/tasks")[1]
+        self.assertEqual(sorted(t["id"] for t in body["tasks"]), [recent, live])
+        self.assertEqual(body["finished_older"], 2)
+        self.assertEqual(len(self.req("GET", "/tasks?all=1")[1]["tasks"]), 4)
+        self.assertEqual([t["id"] for t in self.req("GET", "/tasks?state=done")[1]["tasks"]], [recent])
+        # newest first, open tasks never; every word has to be there
+        self.assertEqual([t["id"] for t in self.req("GET", "/tasks/search?q=parking")[1]["tasks"]], [recent, old])
+        self.assertEqual([t["id"] for t in self.req("GET", "/tasks/search?q=PERMIT%20parking")[1]["tasks"]], [old])
+        self.assertEqual([t["id"] for t in self.req("GET", "/tasks/search?q=desk")[1]["tasks"]], [gone])
+        self.assertEqual(self.req("GET", "/tasks/search?q=%25")[1]["tasks"], [])
+        self.assertEqual(self.req("GET", "/tasks/search?q=")[1]["tasks"], [])
+        # bringing one back puts it in the list again
+        self.req("POST", f"/tasks/{old}/reopen", {})
+        self.assertIn(old, [t["id"] for t in self.req("GET", "/tasks")[1]["tasks"]])
+
+    def test_groups_long_finished_leave_the_list(self):
+        def group(anchor, asks):
+            tools.submit_signals(self.core, [{"source": "email", "source_id": anchor, "anchor": "email:" + anchor,
+                                              "ts": "2026-10-20T09:00:00Z", "title": "Re: " + asks[0], "from": {"name": "Dana"},
+                                              "candidates": [{"ask": a} for a in asks]}])
+            g = next(g for g in self.req("GET", "/groups")[1]["groups"] if g["origin"].endswith(anchor))
+            return [t["id"] for t in g["tasks"]]
+        over = group("A1", ["Book the venue for the offsite", "Order lunch for twelve"])
+        going = group("B2", ["Draft the quarterly budget memo", "Collect receipts from the trip"])
+        for tid in over + going[:1]:
+            self.req("POST", f"/tasks/{tid}/done", {})
+        self.clock.advance(days=20)
+        gs = self.req("GET", "/groups")[1]["groups"]
+        self.assertEqual([(g["done"], g["total"], len(g["tasks"])) for g in gs], [(1, 2, 2)])
+        self.assertEqual(len(self.req("GET", "/groups?all=1")[1]["groups"]), 2)
+
     def test_undo_list_says_what_is_blocked(self):
         tid = self.req("POST", "/tasks", {"text": "One"})[1]["task_id"]
         self.req("POST", f"/tasks/{tid}/park")

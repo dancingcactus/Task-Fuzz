@@ -173,7 +173,7 @@
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
       waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
-      doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at),
+      doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at), changedAt: ts(t.state_changed_at) || 0,
       draft: draft ? draft.body : null, draftId: draft ? draft.id : null,
       afterApprove: (c && c.after_approve) || null, prep: !!(draft && draft.kind === 'note' && draft.final === 0),
       sendTo: draft && draft.kind !== 'note' ? { to: draft.target || 'its recipient', via: via(draft, t) } : null,
@@ -236,6 +236,10 @@
         return api('GET', '/tasks/' + t.id).then(function (full) { detail[t.id].full = full; }, function (e) { delete detail[t.id]; throw e; });
       })).then(function () {
         if (g !== gen || pending) { again = true; return; }
+        /* A task that left the list (finished more than two weeks ago) leaves the cache too */
+        var listed = {}; list.forEach(function (t) { listed[t.id] = true; });
+        Object.keys(detail).forEach(function (id) { if (!listed[id]) delete detail[id]; });
+        Store.get().finishedOlder = r[0].finished_older || 0;
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
@@ -266,7 +270,10 @@
   }
 
   /* The tasks that came from the same place. A meeting's notes are a file, which a browser page can't open. */
-  function toGroup(g) { return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped }; }
+  function toGroup(g) {
+    return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped,
+      members: (g.tasks || []).map(function (t) { return { id: 't' + t.id, state: STATE[t.state] || t.state }; }) };
+  }
 
   function apply(list, cards, moment, groups) {
     var st = Store.get(), byTask = {};
@@ -499,6 +506,12 @@
     setupDone: function () { return api('POST', '/setup/done', {}); },
     /* The Artifacts tab: what Fuzz wrote in your output folder, and a call whenever the core's events move */
     artifacts: function () { return api('GET', '/artifacts'); },
+    /* Finished work older than Lineup shows, by words in its title or summary, newest first */
+    searchFinished: function (q) {
+      return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
+    },
+    /* One of those, whole, so its dialog shows the log and sources */
+    loadFinished: function (coreId) { return api('GET', '/tasks/' + coreId).then(function (t) { return Store.keepAside(toItem(t, null, null)); }); },
     onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {

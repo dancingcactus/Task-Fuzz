@@ -45,7 +45,11 @@
     on: function (fn) { subs.push(fn); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; },
     emit: emit,
 
-    item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0]; },
+    /* Older finished tasks found by search aren't in the list; they're kept aside so a dialog can still open them */
+    item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0] || (state.archive && state.archive[id]); },
+    keepAside: function (it) { (state.archive = state.archive || {})[it.id] = it; return it; },
+    /* Done and let-go tasks older than the window: the core counts them, search finds them */
+    finishedOlder: function () { return state.finishedOlder || 0; },
     /* Steps Fuzz has done out of those planned, for the progress dots in Lineup */
     progress: function (it) { var sc = it.script || generic(it); return { done: Math.min(it.workStep || 0, sc.steps.length), total: sc.steps.length }; },
     inState: function () {
@@ -230,6 +234,8 @@
     /* Counts what's done, never what's left. Let-go tasks leave the count. */
     groupCount: function (g) {
       var all = S.groupTasks(g).filter(function (i) { return i.state !== 'letgo'; });
+      /* The core lists every task in the group, older finished ones too, which aren't loaded here */
+      (g.members || []).forEach(function (m) { if (m.state !== 'letgo' && GONE.indexOf(m.state) < 0 && !state.items.some(function (i) { return i.id === m.id; })) all.push(m); });
       return { done: all.filter(function (i) { return i.state === 'done'; }).length, total: all.length };
     },
     groupFinished: function (g) { var c = S.groupCount(g); return g.closed || (c.total > 0 && c.done === c.total); },

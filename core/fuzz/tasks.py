@@ -5,15 +5,17 @@ here, so HTTP, MCP and the CLI all call the same code.
 """
 
 import re
+from datetime import timedelta
 from urllib.parse import unquote_plus, urlparse
 
 from . import cards, events, states
-from .db import FuzzError, parse_iso
+from .db import FuzzError, iso, parse_iso
 
 CONTEXT_MAX = 16 * 1024
 QUESTION_MAX = 500
 SUMMARY_MAX = 400
 TITLE_MAX = 140
+FINISHED_WINDOW_DAYS = 14   # done and let-go tasks older than this stay out of the UI's list; search finds them
 
 
 def get(core, task_id):
@@ -39,15 +41,43 @@ def require(core, task_id):
     return t
 
 
-def list_tasks(core, state=None):
+def finished_cutoff(core, days=FINISHED_WINDOW_DAYS):
+    return iso(core.now() - timedelta(days=days))
+
+
+def list_tasks(core, state=None, closed_days=None):
+    """With closed_days, done and let-go tasks that closed longer ago than that are left out."""
+    where, args = "", []
+    if closed_days is not None:
+        where, args = " AND NOT (state IN ('done','letgo') AND COALESCE(state_changed_at,'') < ?)", [finished_cutoff(core, closed_days)]
     if state:
         wanted = [s for s in state.split(",") if s]
         for s in wanted:
             if s not in states.STATES:
                 raise FuzzError(f"Unknown state {s!r}", "state")
-        return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ({','.join('?' * len(wanted))}) ORDER BY order_key, id",
-                        [core.user_id] + wanted)
-    return core.all("SELECT * FROM tasks WHERE user_id=? AND state!='merged' ORDER BY order_key, id", (core.user_id,))
+        return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ({','.join('?' * len(wanted))}){where} ORDER BY order_key, id",
+                        [core.user_id] + wanted + args)
+    return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state!='merged'{where} ORDER BY order_key, id", [core.user_id] + args)
+
+
+def finished_older(core, days=FINISHED_WINDOW_DAYS):
+    """How many done and let-go tasks closed before the window: the ones only search finds."""
+    return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state IN ('done','letgo') AND COALESCE(state_changed_at,'') < ?",
+                    (core.user_id, finished_cutoff(core, days)))["n"]
+
+
+def search_finished(core, q, limit=50):
+    """Done and let-go tasks whose title or summary has the words, newest first."""
+    words = [w for w in (q or "").split() if w][:8]
+    if not words:
+        return []
+    like = " AND ".join("(title LIKE ? ESCAPE '\\' OR COALESCE(summary,'') LIKE ? ESCAPE '\\')" for _ in words)
+    args = []
+    for w in words:
+        w = "%" + re.sub(r"([%_\\])", r"\\\1", w) + "%"
+        args += [w, w]
+    return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ('done','letgo') AND {like} "
+                    "ORDER BY state_changed_at DESC, id DESC LIMIT ?", [core.user_id] + args + [max(1, min(int(limit), 200))])
 
 
 def next_order(core, where="back"):
