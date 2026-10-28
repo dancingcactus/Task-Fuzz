@@ -1,7 +1,7 @@
 ---
 name: fuzz-extract
 description: Run Fuzz extraction. Reads the person's email, Slack and meeting summaries since the last run with your own connectors, turns each ask into a signal, and judges which existing Fuzz task each ask belongs to. Use when asked to "run Fuzz extraction", "pull my asks into Fuzz" or "update Fuzz from email and Slack".
-prompt_version: extract-0.5
+prompt_version: extract-0.6
 ---
 
 # Fuzz extraction
@@ -13,7 +13,7 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
 
 ## Steps
 
-1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.5`). It returns the person's
+1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.6`). It returns the person's
    names, email addresses, Slack IDs and the folders to read. Use these; never guess who they are.
 2. **`get_cursors`**: where to start reading each source. Read from there to now. A search filter
    that takes a day (Glean's `after`) leaves that day out, so pass the day **before** the cursor's
@@ -48,6 +48,9 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
    - The person's own reply that does what the thread asked of them ("Got it, no need to join", "Sent",
      a direct answer to their question): `"answers": true` and no candidates. Fuzz marks the thread's
      task done. Not for "I'll look tomorrow" or a reply that only asks something back.
+   - The person's own message (an email or invite they sent, their Slack post) is an ask only when they
+     commit to something beyond the message itself ("I'll send the deck Friday"). An invite they sent,
+     or their note on why they're meeting, has `"candidates": []`: the calendar already holds it.
 5. **`submit_signals`**, up to 200 at a time. Matching runs inside it. Fix any error it names (it
    says exactly which field) and resend.
 6. **Judge.** Call `get_pending_judgments` and page through. For each ask, decide whether it is the
