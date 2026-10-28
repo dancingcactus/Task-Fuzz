@@ -540,6 +540,8 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
 .setup-folderrow .btn { flex: none; min-height: 44px; }
 .dlg-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 16px; border-top: var(--bw) solid var(--line); }
 .dlg-actions .btn { flex: 1 1 150px; min-height: 50px; font-size: 15px; }
+/* Quiet id at the foot of a card or dialog, for quoting in bug reports; one click selects it all */
+.taskid { margin-top: 14px; text-align: right; font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); opacity: .7; user-select: all; }
 
 /* ---------- New task ---------- */
 .capture { display: flex; flex-direction: column; gap: 24px; }

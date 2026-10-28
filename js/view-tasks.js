@@ -206,7 +206,7 @@
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
     if (!draft) h += actionsRow(acts, false);
-    return h;
+    return h + UI.idTag(it);
   }
   /* Each change undoes on its own, or says why it can't (the core's model) */
   function undoer(ch) { return function () { var why = ch.undo(); if (!why && root) render(); return why; }; }

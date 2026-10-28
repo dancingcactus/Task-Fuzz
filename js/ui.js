@@ -19,6 +19,11 @@
   /* Escape text, then turn `backticked` bits into inline code. */
   function text(s) { return esc(s).replace(/`([^`]+)`/g, '<code class="icode">$1</code>'); }
 
+  /* The id to quote when chasing a bug: the core's task id when it has one, else the page's own */
+  function idTag(it) {
+    return '<p class="taskid">' + (it.coreId != null ? 'Task #' + esc(it.coreId) : 'Local ' + esc(it.id)) + '</p>';
+  }
+
   /* Markdown the AI writes, drawn as HTML. Escaped first, so only these few forms become markup. */
   function inline(s) {
     var codes = [];
@@ -125,5 +130,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, text: text, md: md, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
 })();

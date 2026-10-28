@@ -395,7 +395,7 @@
     }
 
     if (isTask) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
-    h += contextHTML(it, isTask, isTask && !stale, it.entity === 'is_task');
+    h += contextHTML(it, isTask, isTask && !stale, it.entity === 'is_task') + UI.idTag(it);
     h += '<div class="stamp" aria-hidden="true">DONE</div>';
     return h;
   }
@@ -412,7 +412,7 @@
     h += '<section class="draft"><div class="draft-to">' + (r ? '<span>To</span> <strong>' + esc(r.to) + '</strong><span class="via">' + esc(r.via) + '</span>' : '<strong>Just for you</strong><span class="via">Nothing is sent anywhere</span>') + '</div>' +
       '<label class="sr" for="draft">' + (r ? 'Message to ' + esc(r.to) : 'Fuzz’s write-up') + '</label><textarea id="draft" rows="4">' + esc(val) + '</textarea></section>';
     h += '<div id="actions">' + actionsHTML(it) + '</div>';
-    h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + contextHTML(it, true);
+    h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + contextHTML(it, true) + UI.idTag(it);
     h += '<div class="stamp" aria-hidden="true">OK</div>';
     return h;
   }
