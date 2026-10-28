@@ -141,8 +141,10 @@
     function act(label, kind, fn, msg) { A.push({ label: label, kind: kind, fn: fn, msg: msg }); }
     var id = it.id, r = Store.recipient(it);
     if (it.state === 'review') {
-      if (r) act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Approved. Fuzz is sending it to ' + r.to + '.');
-      else act('Looks good', 'primary', function (text) { Store.accept(id, text); }, 'Approved and filed in Done.');
+      if (r) {
+        act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Approved. Fuzz is sending it to ' + r.to + '.');
+        act('Mark done', 'menu', function () { Store.done(id); }, 'Marked done. Fuzz won’t send the draft.');
+      } else act('Looks good', 'primary', function (text) { Store.accept(id, text); }, 'Approved and filed in Done.');
       if (!Store.inQueue(id)) act('Put it in triage', 'secondary', function () { Store.queueUp(Store.item(id), 'front'); }, 'It’s first in triage.');
     } else if (it.state === 'ai' || it.state === 'ai-queued') {
       act('Pull back into triage', 'secondary', function () { Store.bringBack(id, 'front'); }, 'Pulled back into triage.');
@@ -190,7 +192,15 @@
     return h;
   }
   function actionsRow(acts, revise) {
-    return '<div class="dlg-actions">' + acts.map(function (a, i) { return '<button type="button" class="btn ' + (a.kind === 'primary' ? 'primary' : '') + '" data-do="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+    /* A 'menu' action sits in a dropdown beside the primary one: on a draft, Mark done is for when you send it yourself */
+    var menu = acts.map(function (a, i) { return a.kind === 'menu' ? '<button type="button" role="menuitem" data-do="' + i + '"><b>' + esc(a.label) + '</b><span>You send it yourself. Fuzz won’t send this draft.</span></button>' : ''; }).join('');
+    return '<div class="dlg-actions">' + acts.map(function (a, i) {
+      if (a.kind === 'menu') return '';
+      var b = '<button type="button" class="btn ' + (a.kind === 'primary' ? 'primary' : '') + (a.kind === 'primary' && menu ? ' done-btn' : '') + '" data-do="' + i + '">' + esc(a.label) + '</button>';
+      if (a.kind !== 'primary' || !menu) return b;
+      return '<div class="split">' + b + '<button type="button" class="btn primary more-btn" data-dmore aria-haspopup="menu" aria-expanded="false" aria-label="Finish it another way" title="Finish it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
+        '<div class="menu" role="menu" id="dlg-menu" hidden aria-label="Finish it another way">' + menu + '</div></div>';
+    }).join('') +
       (revise ? '<button type="button" class="btn" data-revise aria-expanded="false" aria-controls="dlg-revise">Ask Fuzz to change it</button>' : '') + '</div>';
   }
   function detailHTML(it) {
@@ -222,6 +232,9 @@
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }
       var gp = e.target.closest('[data-group]');
       if (gp) { openGroup(gp.dataset.group, gp); return; }
+      var dm = d.querySelector('#dlg-menu'), mb = e.target.closest('[data-dmore]');
+      if (mb) { dm.hidden = !dm.hidden; mb.setAttribute('aria-expanded', String(!dm.hidden)); if (!dm.hidden) dm.querySelector('button').focus(); return; }
+      if (dm && !dm.hidden && !e.target.closest('#dlg-menu')) { dm.hidden = true; d.querySelector('[data-dmore]').setAttribute('aria-expanded', 'false'); }
       var rv = e.target.closest('[data-revise]');
       if (rv) { var f = d.querySelector('#dlg-revise'); f.hidden = !f.hidden; rv.setAttribute('aria-expanded', String(!f.hidden)); if (!f.hidden) d.querySelector('#dlg-revise-text').focus(); return; }
       var b = e.target.closest('[data-do]'); if (!b) return;

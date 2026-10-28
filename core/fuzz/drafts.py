@@ -237,6 +237,20 @@ def send_back(core, card, note):
                     log=("guidance", f"You sent the draft back: {note.strip()}"))
 
 
+def done_myself(core, card):
+    """You're sending it yourself: the draft is set aside unsent and the task is done."""
+    d = _draft(core, card)
+    t = tasks.require(core, d["task_id"])
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.draft(d["id"], status="withdrawn")
+        tasks.move(core, ch, t, "done", card=card, question=None)
+        cards.mark_answered(core, ch, card, "done")
+        events.emit(core, "task.done", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "by": "you"},
+                    log=("status", "You marked this done. You're sending it yourself, so Fuzz didn't."))
+        cards.sync(core, t["id"])
+
+
 def not_yet(core, card):
     d = _draft(core, card)
     t = tasks.require(core, d["task_id"])

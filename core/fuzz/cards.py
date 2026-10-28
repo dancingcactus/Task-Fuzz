@@ -15,7 +15,7 @@ OPTIONS = {
     "entity_person": ["same", "different", "not_sure"],
     "entity_term": ["define", "same_as", "not_sure"],
     "is_task": ["mine", "not_task", "someone_else", "not_sure"],
-    "draft": ["approve", "edit", "send_back", "schedule"],
+    "draft": ["approve", "edit", "send_back", "schedule", "done"],
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
 }

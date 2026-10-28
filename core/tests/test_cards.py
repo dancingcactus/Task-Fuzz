@@ -140,6 +140,15 @@ class CardTable(CoreCase):
         self.check(self.draft("note"), "approve", ["task.approved"], "done")
         self.check(self.draft(), "edit", ["task.draft_edited"], "review", value="Hi Elena, new text.")
         self.check(self.draft(), "send_back", ["task.sent_back"], "queued", value="Warmer, please")
+        self.check(self.draft(), "done", ["task.done"], "done")
+
+    def test_done_on_a_draft_means_you_sent_it_yourself(self):
+        tid, card = self.draft()
+        answers.answer(self.core, card["id"], "done")
+        self.assertEqual(self.core.one("SELECT status FROM drafts WHERE task_id=?", (tid,))["status"], "withdrawn",
+                         "Fuzz's sender never picks it up")
+        events.undo(self.core)
+        self.assertEqual(self.core.one("SELECT status FROM drafts WHERE task_id=?", (tid,))["status"], "pending")
 
     def test_not_now_on_a_draft_brings_it_back_for_your_ok(self):
         tid, card = self.draft()

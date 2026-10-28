@@ -117,6 +117,8 @@ def _draft(core, card, t, option, value):
         return drafts.send_back(core, card, value)
     if option == "not_yet":
         return drafts.not_yet(core, card)
+    if option == "done":   # you sent it yourself, so Fuzz doesn't
+        return drafts.done_myself(core, card)
     if option == "schedule":   # not now: the draft waits, and asks for your OK again at that time
         v = value if isinstance(value, dict) else {}
         return tasks.schedule(core, t["id"], v.get("anchor"), card=card)
