@@ -177,7 +177,7 @@
   /* Fuzz's background work never interrupts. Anything you need to know arrives as a card in the queue. */
   Store.on(updateCount);
   /* On Triage, Fuzz celebrates from the perch; anywhere else, the small Fuzz says it */
-  Store.on(function (e) { if (e.type === 'wrapped' && currentName !== 'triage') Say.tell('That wraps up ' + e.project.title + '. Every task in it is done.'); });
+  Store.on(function (e) { if (e.type === 'wrapped' && currentName !== 'triage') Say.tell('That wraps up ' + e.group.title + '. Every task in it is done.'); });
 
   /* Capture costs nothing: one key, from anywhere that isn't a text field. */
   document.addEventListener('keydown', function (e) {

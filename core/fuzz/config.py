@@ -21,6 +21,9 @@ DEFAULTS = {
     "setup": {"done": False},
     "presence": {"enabled": True, "away_minutes": 15},   # back-at-desk detection, on a Mac
     "files": {"max_mb": 25, "max_per_task": 10},
+    # Slack messages from one person, each within this many minutes of the one before (and nothing from
+    # you in between), are one origin, so their asks form a group.
+    "grouping": {"slack_burst_minutes": 10},
     # The connector tools the sender may call to send an approved draft, per client, as that client
     # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
     # hands each draft back.

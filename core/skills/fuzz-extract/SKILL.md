@@ -24,6 +24,8 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
      (`email:<conversationId>`, `slack:<channel>:<thread_ts>`, `meeting:<file>#<row slug>`),
      `message_ids` for email (this message's Message-ID plus In-Reply-To and References), `link`,
      `ts`, `from`, `people`, `links` (shared docs and tickets only) and a `quote` under 300 characters.
+     Add `title` for an email: its subject, without "Re:" or "Fw:". Fuzz names a group of asks from
+     one thread after it. A meeting's `from.name` is already its title.
    - `candidates`: one per **distinct ask** in the new text, each a short imperative the person would
      recognise ("Approve Sam's PTO request"), with `owner` (`me`, `unclear` or the person's name),
      `due` if stated, and `topics` (same spelling every time).

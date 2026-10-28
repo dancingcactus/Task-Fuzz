@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, scheduler, tasks
+from . import answers, cards, config, engine, events, groups, scheduler, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -122,6 +122,8 @@ class App:
             ("PUT", r"/setup/folder", self.setup_folder),
             ("POST", r"/setup/folder/choose", self.setup_choose_folder),
             ("POST", r"/setup/done", self.setup_done),
+            ("GET", r"/groups", self.list_groups),
+            ("POST", r"/groups/(\d+)/(rename|take_out|wrap)", self.group_action),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
@@ -270,6 +272,21 @@ class App:
                   "key": body.get("key") or timeres.moment_key(body["label"]), "cancelled": bool(body.get("cancelled"))}
         label = scheduler.suggest_schedule(core, tid, anchor, body.get("reason"), actor="human")
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
+
+    def list_groups(self, core, m, body, q):
+        return {"groups": groups.list_groups(core)}
+
+    def group_action(self, core, m, body, q):
+        gid, act = int(m.group(1)), m.group(2)
+        if act == "rename":
+            groups.rename(core, gid, body.get("title"))
+        elif act == "take_out":
+            if not isinstance(body.get("task_id"), int):
+                raise FuzzError("task_id is the task to take out", "task_id")
+            groups.take_out(core, gid, body["task_id"])
+        else:
+            groups.wrap(core, gid)
+        return groups.view(core, groups.require(core, gid))
 
     def list_cards(self, core, m, body, q):
         return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core)}

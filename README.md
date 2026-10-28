@@ -52,12 +52,12 @@ The demo queue has every card type from the mockups and the matching doc:
 - **Stale**: asks whether it still matters ("Quiet for 9 days. Nothing new has come up.") with Yes, keep it / Let it go.
 - **Handed back**: sits at the end of the queue, Fuzz looks sheepish and asks a quick either/or. Each answer has its own outcome: it replaces Fuzz's suggested instructions (anything you typed stays, after it), can change the draft and who it goes to, and "I'll find it" keeps the task with you, under Yours in Lineup, instead of handing it back to Fuzz.
 - **Entity check** (person and term): Same person / Different people, Save definition.
-- **Possible duplicate**: Same goal, separate tasks / Merge / Keep separate, with the reason shown. On the Priya card, **Same goal** turns the Slack ask into its own task and puts both under a new project, *Q4 readout for Priya*.
+- **Possible duplicate**: Merge / Keep separate, with the reason shown.
 - **Check-in**: comes back through the session, often at first and then less often (after 2 cleared cards, then after at least 2 more and 5 minutes, then 10, then 20), and never while time-sensitive cards are waiting. Good or Okay keeps the usual order, Tired brings gentle cards first (with an optional 5-minute break), Overloaded brings quick cards first (or holds the rest until tomorrow, except anything time-sensitive). When to ask is the UI's call; the answer is recorded once, with its follow-up, the way the core keeps it (`POST /checkin`). Once you answer, the other moods step aside and only one or two next steps remain. The spacing is `CI_FIRST` and `CI_GAP_MIN` in `js/view-triage.js`.
 
-## Projects
+## Groups
 
-Fuzz groups tasks that share a goal into a project, and you never have to make one (see "Tasks, steps and projects" in `docs/fuzz-core-design.md`). A project is only a **"Part of …" line**: on a Triage card (with "1 of 4 done"), on Lineup rows and in task detail. Tap it for the **project sheet**: the goal's done-when, the soonest deadline, each task with its state and done-when, the latest steps from all of them, and Rename, Take out and It's wrapped up, each with Undo. Taking a task out of a two-task project leaves the other on its own. When the last task is done, the project closes and Fuzz celebrates. Try *Team offsite next week* on the first card (headcount), or the duplicate card to make *Q4 readout for Priya*. Every task's detail also shows its **Done when** line.
+Tasks that came from the same place form a **group**: the asks in one email thread, the action items from one meeting's notes, or a quick run of Slack messages from one person (see "Groups" in `docs/fuzz-core-design.md`). The core makes groups from where tasks came from, and you never have to. A group is only a **"From …" line**: on a Triage card (with "1 of 3 done"), on Lineup rows and in task detail. Tap it for the **group sheet**: a link back to the email or meeting, each task with its state and done-when, the latest steps from all of them, and Rename, Take out and It's wrapped up, each with Undo. Taking a task out of a two-task group leaves the other on its own. When the last task is done, Fuzz celebrates. Try *Staff sync* on the room booking card. Every task's detail also shows its **Done when** line.
 
 Fuzz also works in the background: tasks you assign move through research and drafting on their own, finish as
 **Needs your OK** cards at the back of the triage queue (counted in Lineup under To decide; one you set aside with Not now moves to Yours), and one of them (the dashboard filter bug) gets stuck and comes back to your queue.
@@ -101,8 +101,8 @@ the MCP server for the AI roles, the HTTP API and the installer for Claude Code 
 (`http://127.0.0.1:8765/?token=…`). Open it once and the same screens run on your real queue
 (`js/live.js`): every decision goes to the core, Undo is the core's, Assign starts the executor right away,
 and what Fuzz does shows up as it happens through the event stream. Settings > Use demo data goes back to
-the demo. Projects, the conversation tab and code previews are demo-only for now, since the core doesn't
-have them yet.
+the demo. The conversation tab and code previews are demo-only for now, since the core doesn't have them
+yet.
 
 ## Layout of the code
 

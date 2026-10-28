@@ -12,7 +12,7 @@ import json
 import math
 from datetime import timedelta
 
-from .. import cards, events, states, tasks
+from .. import cards, events, groups, states, tasks
 from ..db import FuzzError, iso
 from . import entities, vectors
 
@@ -414,6 +414,7 @@ def create_task(ctx, cand, decision_id):
     core.q("INSERT INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) VALUES (?,?,?,?,?,?,?)",
            (_uid(ctx), tid, cand["id"], cand["signal_key"], "origin", _source_title(s), ctx.run_id))
     _add_anchors(ctx, tid, cand)
+    groups.place(core, tid, cand["signal_key"])
     return tid
 
 
@@ -649,4 +650,6 @@ def create_from_ask(ctx, ask, parent_id=None, links=None, people=None, due=None)
             ch = events.Changes()
             ch.task(tid, parent_id=parent_id)
             events.emit(core, "task.notes_saved", task_id=tid, changes=ch, data={"parent_id": parent_id})
+            if not tasks.get(core, tid).get("group_id"):
+                groups.join_parent(core, tid, parent_id)
     return {"outcome": next(iter(stats), None), "task_id": tid}

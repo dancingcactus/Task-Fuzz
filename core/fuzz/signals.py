@@ -53,6 +53,7 @@ SIGNAL = {
         "anchor": {"type": ["string", "null"]},
         "message_ids": {"type": "array", "items": {"type": "string"}},
         "link": {"type": ["string", "null"]},
+        "title": {"type": "string", "maxLength": 200},
         "ts": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$"},
         "from": PERSON,
         "people": {"type": "array", "items": PERSON},

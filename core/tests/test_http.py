@@ -80,6 +80,24 @@ class Api(Server):
         status, body = self.req("POST", "/checkin", {"answer": "meh"})
         self.assertEqual((status, body["field"]), (400, "answer"))
 
+    def test_groups(self):
+        sig = {"source": "email", "source_id": "m1", "anchor": "email:AAQk1", "ts": "2026-10-20T09:00:00Z",
+               "title": "Re: Offsite plan", "from": {"name": "Dana"}, "link": "https://mail/1",
+               "candidates": [{"ask": "Book the venue for the offsite"}, {"ask": "Order lunch for twelve"}]}
+        tools.submit_signals(self.core, [sig])
+        gs = self.req("GET", "/groups")[1]["groups"]
+        self.assertEqual([(g["title"], g["total"]) for g in gs], [("Offsite plan", 2)])
+        gid = gs[0]["id"]
+        listed = self.req("GET", "/tasks")[1]["tasks"]
+        self.assertEqual({t["group_id"] for t in listed}, {gid})
+        self.assertEqual(self.req("POST", f"/groups/{gid}/rename", {"title": "Team offsite"})[1]["title"], "Team offsite")
+        self.assertEqual(self.req("POST", f"/groups/{gid}/take_out", {"task_id": "x"})[0], 400)
+        self.assertEqual(self.req("POST", f"/groups/{gid}/wrap", {})[1]["wrapped"], True)
+        self.assertEqual(self.req("POST", "/groups/99/wrap", {})[0], 404)
+        out = self.req("POST", f"/groups/{gid}/take_out", {"task_id": listed[0]["id"]})[1]
+        self.assertEqual(out["tasks"], [])
+        self.assertEqual(self.req("GET", "/groups")[1]["groups"], [])
+
     def test_undo_list_says_what_is_blocked(self):
         tid = self.req("POST", "/tasks", {"text": "One"})[1]["task_id"]
         self.req("POST", f"/tasks/{tid}/park")

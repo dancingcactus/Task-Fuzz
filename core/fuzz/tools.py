@@ -9,7 +9,7 @@ it sends an approved draft with its client's own connector, then says so with ma
 import json
 from contextlib import contextmanager
 
-from . import adapters, drafts, events, matching, outputs, scheduler, signals, tasks, timeres
+from . import adapters, drafts, events, groups, matching, outputs, scheduler, signals, tasks, timeres
 from .db import FuzzError
 
 LOG_ON_GET = 8
@@ -73,6 +73,7 @@ def _task_brief(core, t):
             "output_dir": outputs.task_dir(core, t["id"], create=True),
             "output_files": [f["name"] for f in outputs.listing(core, t["id"])],
             "schedule_hints": t.get("schedule_hints") or [],
+            "group": groups.brief(core, t),
             "log": [{"kind": x["kind"], "text": x["text"]} for x in events.task_log(core, t["id"], LOG_ON_GET)]}
 
 
