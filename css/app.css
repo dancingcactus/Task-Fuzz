@@ -373,6 +373,11 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .md blockquote { padding: 2px 0 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
 .md hr { border: 0; border-top: var(--bw) solid var(--line); margin: 16px 0; }
 .md a { color: var(--link); }
+.tablewrap { overflow-x: auto; margin: 0 0 12px; }
+.md table { border-collapse: collapse; min-width: 100%; font-size: 14px; }
+.md th, .md td { padding: 7px 10px; border: var(--bw) solid var(--line); text-align: left; vertical-align: top; }
+.md th { background: var(--chip); font-weight: 600; }
+.md td > :last-child, .md th > :last-child { margin-bottom: 0; }
 .md-code { padding: 10px 12px; border-radius: 10px; background: var(--code-bg); border: 1px solid var(--code-line); overflow-x: auto; font-family: var(--font-code); font-size: 13px; line-height: 1.5; }
 .convo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .convo li { display: flex; flex-direction: column; gap: 4px; }
@@ -409,6 +414,29 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 /* ---------- Lineup ---------- */
 /* One page, by who has the ball (js/view-tasks.js) */
 .lineup { display: flex; flex-direction: column; gap: 18px; }
+.view--artifacts { max-width: 760px; }
+.artifacts .tasks-head .meta { margin: 4px 0 0; }
+.afilters .lcount { margin-left: 2px; }
+.arow { text-decoration: none; }
+.arow .rt { font-weight: 600; overflow-wrap: anywhere; }
+.arow .rs { font-size: 13px; color: var(--muted); }
+.arow-go { flex: none; display: inline-flex; color: var(--muted); }
+.arow:hover .arow-go { color: var(--ink); }
+.afile { flex: none; width: 44px; height: 52px; border-radius: 8px 14px 8px 8px; display: inline-flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; background: var(--chip); color: var(--ink); border: var(--bw) solid var(--line); }
+.afile--word { background: color-mix(in srgb, #2B5CC8 16%, var(--surface)); }
+.afile--slides { background: color-mix(in srgb, #C8572B 18%, var(--surface)); }
+.afile--pdf { background: color-mix(in srgb, #B8323A 15%, var(--surface)); }
+.afile--markdown { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.aempty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.aempty p { margin: 0; }
+@media (max-width: 760px) {
+  .lrow.arow { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "file main go" "file side go"; gap: 2px 12px; }
+  .arow .afile { grid-area: file; align-self: center; }
+  .arow .lrow-main { grid-area: main; }
+  .arow .lrow-side { grid-area: side; flex-direction: row; gap: 8px; max-width: none; justify-self: start; }
+  .arow .arow-go { grid-area: go; align-self: center; }
+}
 .tasks-head h1 { font-family: var(--font-display); font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
 .board { display: flex; flex-direction: column; gap: 26px; }
 .decide { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 10px 18px; border-radius: 16px; background: var(--surface); border: var(--bw) solid var(--line); color: var(--ink); text-decoration: none; box-shadow: var(--shadow); }

@@ -29,20 +29,39 @@
       .replace(/~~(.+?)~~/g, '<del>$1</del>');
     return s.replace(/\u0000(\d+)\u0000/g, function (m, i) { return '<code class="icode">' + codes[i] + '</code>'; });
   }
-  function md(src) {
-    var out = [], para = [], list = null, quote = [], fence = null;
+  /* A pipe table's cells: "| a | b |" -> ['a', 'b'] */
+  function cellsOf(l) { return l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) { return c.trim(); }); }
+  var TABLE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+  /* o.shift: how far headings move down (3 by default, so # sits under a card's own headings; 0 on a page of its own) */
+  function md(src, o) {
+    var shift = o && o.shift != null ? o.shift : 3;
+    var out = [], para = [], list = null, quote = [], fence = null, table = null, skip = false;
+    function flushTable() {
+      if (!table) return;
+      var al = function (i) { return table.align[i] ? ' style="text-align:' + table.align[i] + '"' : ''; };
+      out.push('<div class="tablewrap"><table><thead><tr>' + table.head.map(function (c, i) { return '<th' + al(i) + '>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        table.rows.map(function (r) { return '<tr>' + table.head.map(function (h, i) { return '<td' + al(i) + '>' + inline(r[i] || '') + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>');
+      table = null;
+    }
     function flushPara() { if (para.length) out.push('<p>' + para.map(inline).join(' ') + '</p>'); para = []; }
     function flushList() { if (list) out.push('<' + list.tag + '>' + list.items.join('') + '</' + list.tag + '>'); list = null; }
-    function flushQuote() { if (quote.length) out.push('<blockquote>' + md(quote.join('\n')) + '</blockquote>'); quote = []; }
-    function flush() { flushPara(); flushList(); flushQuote(); }
-    (src || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (l) {
+    function flushQuote() { if (quote.length) out.push('<blockquote>' + md(quote.join('\n'), o) + '</blockquote>'); quote = []; }
+    function flush() { flushPara(); flushList(); flushQuote(); flushTable(); }
+    (src || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (l, i, all) {
       var m;
+      if (skip) { skip = false; return; }
       if (fence) { if (/^\s*(```|~~~)/.test(l)) { out.push('<pre class="md-code"><code>' + esc(fence.join('\n')) + '</code></pre>'); fence = null; } else fence.push(l); return; }
       if (/^\s*(```|~~~)/.test(l)) { flush(); fence = []; return; }
       if ((m = l.match(/^\s*>\s?(.*)$/))) { flushPara(); flushList(); quote.push(m[1]); return; }
       flushQuote();
+      if (table) { if (l.indexOf('|') > -1 && l.trim()) { table.rows.push(cellsOf(l)); return; } flushTable(); }
+      if (l.indexOf('|') > -1 && TABLE_RULE.test(all[i + 1] || '') && all[i + 1].indexOf('-') > -1) {
+        flush(); skip = true;
+        table = { head: cellsOf(l), rows: [], align: cellsOf(all[i + 1]).map(function (c) { return /^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : /^:/.test(c) ? 'left' : ''; }) };
+        return;
+      }
       if (!l.trim()) { flushPara(); flushList(); return; }
-      if ((m = l.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/))) { flush(); var n = Math.min(m[1].length + 3, 6); out.push('<h' + n + '>' + inline(m[2]) + '</h' + n + '>'); return; }
+      if ((m = l.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/))) { flush(); var n = Math.min(m[1].length + shift, 6); out.push('<h' + n + '>' + inline(m[2]) + '</h' + n + '>'); return; }
       if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push('<hr>'); return; }
       if ((m = l.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
         flushPara();

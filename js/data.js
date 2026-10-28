@@ -341,6 +341,11 @@
       it.code = CODE[it.id] || [];
       it.conversation = it.conversation || [];
     });
+    /* Files Fuzz "wrote" for a task (js/samples.js) are among its sources, and open in the viewer */
+    (window.Samples || []).forEach(function (s) {
+      var it = items.filter(function (i) { return i.id === s.task; })[0];
+      if (it) it.sources.push({ type: 'Saved file', title: s.name, url: s.url });
+    });
 
     return {
       items: items,

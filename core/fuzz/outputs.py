@@ -7,12 +7,13 @@ You pick it in setup (config output.folder, like ~/Documents/Fuzz). Each task ge
 After a run, every file in a task's subfolder is recorded as a `sources` row with role `output`, so the
 card and the task sheet can link to it. Files are overwritten in place, and once written they stay:
 Undo doesn't remove them, since you may have opened or moved them. Approved notes and results are saved
-there too, as Markdown.
+there too, as Markdown. The Artifacts tab lists them all (artifacts()), and the viewer previews one.
 """
 
 import mimetypes
 import os
 import re
+from datetime import datetime, timezone
 
 from . import events, tasks
 
@@ -102,3 +103,52 @@ def save_markdown(core, task_id, name, body, actor="system"):
         f.write(body.rstrip() + "\n")
     record(core, task_id, actor=actor)
     return path
+
+
+def _kind(name, mime):
+    ext = os.path.splitext(name)[1].lower()
+    if ext in (".md", ".markdown"):
+        return "markdown"
+    if ext == ".docx":
+        return "word"
+    if ext == ".pptx":
+        return "slides"
+    if ext == ".pdf" or mime == "application/pdf":
+        return "pdf"
+    if (mime or "").startswith("image/"):
+        return "image"
+    if ext in (".html", ".htm"):
+        return "html"
+    if ext in (".csv", ".tsv"):
+        return "table"
+    if (mime or "").startswith("text/") or ext in (".json", ".txt", ".yaml", ".yml", ".py", ".js", ".ts", ".sql"):
+        return "text"
+    return "other"
+
+
+def _view(r):
+    try:
+        updated = os.path.getmtime(r["path"])
+    except OSError:
+        return None
+    return {"source_id": r["id"], "name": r["title"], "mime": r["mime"], "size": r["size"],
+            "kind": _kind(r["title"], r["mime"]), "role": r["role"],
+            "updated_at": datetime.fromtimestamp(updated, timezone.utc).isoformat(timespec="seconds"),
+            "task": {"id": r["task_id"], "title": r["task_title"], "state": r["task_state"]}}
+
+
+_Q = ("SELECT s.id, s.role, s.title, s.path, s.mime, s.size, s.task_id, t.title AS task_title, t.state AS task_state "
+      "FROM sources s JOIN tasks t ON t.id=s.task_id AND t.user_id=s.user_id "
+      "WHERE s.user_id=? AND s.withdrawn=0 AND s.path IS NOT NULL ")
+
+
+def artifacts(core):
+    """Every file Fuzz has written in your output folder, newest first, with the task it's for."""
+    rows = core.all(_Q + "AND s.role='output'", (core.user_id,))
+    return sorted(filter(None, map(_view, rows)), key=lambda a: a["updated_at"], reverse=True)
+
+
+def artifact(core, source_id):
+    """One output file, or an attachment you added, for the viewer. None when it's gone."""
+    r = core.one(_Q + "AND s.role IN ('attachment','output') AND s.id=?", (core.user_id, source_id))
+    return _view(r) if r else None

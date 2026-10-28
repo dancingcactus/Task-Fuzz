@@ -4,6 +4,7 @@
   var ROUTES = {
     triage: { view: window.TriageView, title: 'Triage' },
     tasks: { view: window.TasksView, title: 'Lineup' },
+    artifacts: { view: window.ArtifactsView, title: 'Artifacts' },
     capture: { view: window.CaptureView, title: 'New task' }
   };
   var PREF_KEY = 'fuzz.prefs.v1';
@@ -43,6 +44,7 @@
       '<nav class="mainnav" aria-label="Main">' +
         '<a href="#/triage" data-nav="triage">Triage<span class="navcount" id="navcount" aria-label="waiting"></span></a>' +
         '<a href="#/tasks" data-nav="tasks">Lineup</a>' +
+        '<a href="#/artifacts" data-nav="artifacts">Artifacts</a>' +
       '</nav></div>' +
       '<div class="hprog" id="hprog" hidden><span class="left" id="left" aria-hidden="true"></span>' + Progress.html('prog') + '</div>' +
       /* On narrow screens these collapse to icons (New task moves to the floating #fab); .lbl stays for screen readers. */
@@ -154,7 +156,7 @@
     document.getElementById('hprog').hidden = name !== 'triage';
     document.body.dataset.view = name;
     /* No floating New task button on capture (you're there) or triage (its actions sit at the bottom on phones) */
-    document.getElementById('fab').hidden = name !== 'tasks';
+    document.getElementById('fab').hidden = name !== 'tasks' && name !== 'artifacts';
     current.mount(main);
     document.title = ROUTES[name].title + ' · Fuzz';
     document.querySelectorAll('[data-nav]').forEach(function (a) { if (a.dataset.nav === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
