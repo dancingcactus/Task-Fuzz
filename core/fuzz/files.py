@@ -3,17 +3,23 @@
 Fuzz doesn't open them. The executor gets each file's path and reads it with its own client's file
 tools (a headless run may read only this user's files folder). The record is a `sources` row with
 role `attachment`, so attachments show up with the task's other sources.
+
+A task captured with documents gets a row per name at once, with no path. Each upload fills its row.
+When the UI says the files are coming (the uploading tag), Fuzz doesn't pick the task up until they're
+all in, or WAIT_SECONDS have passed.
 """
 
 import mimetypes
 import os
 import re
 import uuid
+from datetime import timedelta
 
 from . import events, tasks
-from .db import FuzzError
+from .db import FuzzError, parse_iso
 
 NAME_MAX = 120
+WAIT_SECONDS = 120
 
 
 def user_dir(core):
@@ -73,13 +79,27 @@ def attach(core, task_id, name, data, mime=None, actor="human"):
         f.write(data)
     os.replace(tmp, path)
     with core.tx(actor):
-        sid = core.q("INSERT INTO sources (user_id, task_id, role, title, path, mime, size) VALUES (?,?,?,?,?,?,?)",
-                     (core.user_id, t["id"], "attachment", final, path, mime, len(data))).lastrowid
+        named = core.one("SELECT id FROM sources WHERE task_id=? AND user_id=? AND role='attachment' AND path IS NULL "
+                         "AND withdrawn=0 AND title=? ORDER BY id LIMIT 1", (t["id"], core.user_id, name))
+        if named:   # the name you captured the task with
+            sid = named["id"]
+            core.q("UPDATE sources SET title=?, path=?, mime=?, size=? WHERE id=?", (final, path, mime, len(data), sid))
+        else:
+            sid = core.q("INSERT INTO sources (user_id, task_id, role, title, path, mime, size) VALUES (?,?,?,?,?,?,?)",
+                         (core.user_id, t["id"], "attachment", final, path, mime, len(data))).lastrowid
         who = "You" if actor == "human" else "Fuzz"
         events.emit(core, "task.file_attached", task_id=t["id"],
                     data={"source_id": sid, "name": final, "mime": mime, "size": len(data)},
                     log=("status", f"{who} attached {final}."))
     return get(core, sid)
+
+
+def waiting(core, t):
+    """How many files the task was captured with haven't arrived yet. 0 once WAIT_SECONDS have passed."""
+    if "uploading" not in (t.get("variant_tags") or []) or not t.get("created_at") or core.now() - parse_iso(t["created_at"]) > timedelta(seconds=WAIT_SECONDS):
+        return 0
+    return core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND user_id=? AND role='attachment' "
+                    "AND path IS NULL AND withdrawn=0", (t["id"], core.user_id))["n"]
 
 
 def get(core, source_id):

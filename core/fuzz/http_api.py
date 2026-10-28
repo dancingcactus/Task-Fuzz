@@ -64,7 +64,7 @@ def task_view(core, t, full=False):
         # newest first, each with its own time: the message's, or else when the run that found it started
         out["sources"] = tasks.one_per_message(core.all(
                                   "SELECT s.id, s.role, s.title, s.withdrawn, COALESCE(s.link, g.link) link, g.quote, "
-                                  "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg FROM sources s "
+                                  "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg, s.path IS NOT NULL has_file FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
                                   "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
@@ -161,7 +161,8 @@ class App:
 
     def capture(self, core, m, body, q):
         gather = config.gathers(core.config)
-        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"), gather=gather)
+        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"), gather=gather,
+                            uploading=bool(body.get("uploading")))
         if gather:
             kick_executor(self, core)
         return {"task_id": tid, "gathering": gather}, 201
@@ -204,6 +205,7 @@ class App:
         """The raw file is the body: POST /tasks/14/files?name=budget.pdf with its Content-Type."""
         from . import files
         f = files.attach(core, int(m.group(1)), q.get("name"), body["_raw"], body.get("_type"))
+        kick_executor(self, core)   # a task captured with files waits for them before it's gathered
         return {"source_id": f["id"], "name": f["title"], "mime": f["mime"], "size": f["size"]}, 201
 
     def remove_file(self, core, m, body, q):
@@ -558,7 +560,8 @@ def kick_sender(app, core, now=None):
 
 
 def gathers_waiting(core):
-    return any(scheduler.gathering(t) for t in core.all(
+    from . import files
+    return any(scheduler.gathering(t) and not files.waiting(core, t) for t in core.all(
         "SELECT * FROM tasks WHERE user_id=? AND state='queued' AND assignee='fuzz'", (core.user_id,)))
 
 

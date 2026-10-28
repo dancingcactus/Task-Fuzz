@@ -192,6 +192,30 @@ class HeadlessRuns(CoreCase):
         self.assertEqual(argv[argv.index("--tools") + 1], "")
         self.assertNotIn("--add-dir", argv)
 
+    def test_an_upload_fills_the_name_you_captured_with(self):
+        tid = tasks.capture(self.core, "", docs=["budget.pdf", "notes.txt"], uploading=True)
+        self.assertEqual(tasks.get(self.core, tid)["title"], "budget.pdf")
+        self.assertEqual(files.waiting(self.core, tasks.get(self.core, tid)), 2)
+        f = files.attach(self.core, tid, "budget.pdf", PDF)
+        rows = self.core.all("SELECT id, title, path FROM sources WHERE task_id=? AND role='attachment' ORDER BY id", (tid,))
+        self.assertEqual([(r["id"], r["title"], r["path"]) for r in rows],
+                         [(f["id"], "budget.pdf", f["path"]), (rows[1]["id"], "notes.txt", None)], "one row each, not two")
+        self.assertEqual(files.waiting(self.core, tasks.get(self.core, tid)), 1)
+
+    def test_fuzz_waits_for_the_files_then_gives_up_on_them(self):
+        from fuzz import scheduler
+        named = tasks.capture(self.core, "Do the training", docs=["Training link.pdf"], gather=True)
+        self.assertEqual(files.waiting(self.core, tasks.get(self.core, named)), 0, "a name alone isn't a file coming")
+        tid = tasks.capture(self.core, "Summarise the budget", docs=["budget.pdf"], gather=True, uploading=True)
+        self.assertEqual(scheduler.claim_next(self.core, tid)[0], None, "the file hasn't arrived")
+        files.attach(self.core, tid, "budget.pdf", PDF)
+        self.assertEqual(scheduler.claim_next(self.core, tid)[0]["id"], tid)
+        late = tasks.capture(self.core, "Read the deck", docs=["deck.pptx"], gather=True, uploading=True)
+        self.assertEqual(scheduler.claim_next(self.core, late)[0], None)
+        self.clock.advance(seconds=files.WAIT_SECONDS + 1)
+        self.assertEqual(files.waiting(self.core, tasks.get(self.core, late)), 0, "it never came")
+        self.assertEqual(scheduler.claim_next(self.core, late)[0]["id"], late)
+
 
 class Interfaces(CoreCase):
     def test_http_upload_list_and_remove_per_user(self):
@@ -221,6 +245,16 @@ class Interfaces(CoreCase):
         self.assertEqual(req("DELETE", f"/tasks/{tid}/files/{body['source_id']}", token=tok2)[0], 404)
         self.assertEqual(req("DELETE", f"/tasks/{tid}/files/{body['source_id']}")[0], 200)
         self.assertEqual(req("GET", f"/tasks/{tid}")[1]["files"], [])
+
+        # captured with a file: its source links to the viewer only once the file is in
+        status, body = req("POST", "/tasks", json.dumps({"text": "Read the deck", "docs": ["deck.pptx"], "uploading": True}).encode(),
+                           ctype="application/json")
+        tid = body["task_id"]
+        self.assertEqual([(s["title"], s["has_file"]) for s in req("GET", f"/tasks/{tid}")[1]["sources"]],
+                         [("deck.pptx", 0)])
+        req("POST", f"/tasks/{tid}/files?name=deck.pptx", b"PK", ctype="application/octet-stream")
+        self.assertEqual([(s["title"], s["has_file"]) for s in req("GET", f"/tasks/{tid}")[1]["sources"]],
+                         [("deck.pptx", 1)])
 
     def test_cli_capture_with_files_and_attach(self):
         src = Path(self.home, "budget.pdf")

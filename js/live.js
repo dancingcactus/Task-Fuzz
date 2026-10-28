@@ -178,7 +178,7 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : webUrl(s.link) }; }),
+      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
@@ -460,10 +460,10 @@
 
     /* Capture: in the queue at once, then given its core id */
     var capture = S.capture;
-    S.capture = function (text, docs) {
+    S.capture = function (text, docs, picked) {
       var it = capture.apply(S, arguments);
       gen++;
-      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [] }).then(function (r) { rename(it, r.task_id); if (r.gathering) gathering(it); }); });
+      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [], uploading: !!(picked && picked.length) }).then(function (r) { rename(it, r.task_id); if (r.gathering) gathering(it); return upload(r.task_id, picked || []); }); });
       return it;
     };
     var parkThought = S.parkThought;
@@ -512,6 +512,19 @@
     var st = Store.get();
     it.state = 'ai-queued'; it.gathering = true;
     st.queue = st.queue.filter(function (q) { return q !== it.id; });
+  }
+  /* The files you captured it with, one at a time, each filling the name the task was captured with.
+     One that fails doesn't stop the rest; the first failure is the one you hear about. */
+  function upload(tid, picked) {
+    var first = null;
+    return picked.reduce(function (p, f) {
+      return p.then(function () {
+        return fetch('/tasks/' + tid + '/files?name=' + encodeURIComponent(f.name), { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: f }).then(function (r) {
+          if (r.ok) return;
+          return r.json().catch(function () { return {}; }).then(function (j) { var e = new Error(f.name + ' didn’t upload: ' + (j.error || 'HTTP ' + r.status)); e.status = r.status; throw e; });
+        });
+      }).catch(function (e) { first = first || e; });
+    }, Promise.resolve()).then(function () { if (first) throw first; });
   }
   function rename(it, coreId) {
     var st = Store.get(), old = it.id, id = 't' + coreId;

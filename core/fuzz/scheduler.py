@@ -6,7 +6,7 @@ All deterministic: the scheduler picks the task, never the AI.
 import uuid
 from datetime import timedelta
 
-from . import cards, events, tasks, timeres
+from . import cards, events, files, tasks, timeres
 from .db import FuzzError, iso, parse_iso
 
 SESSION_OWNER = "session:" + uuid.uuid4().hex[:8]  # a chat with no run id leases as this process
@@ -193,7 +193,8 @@ def _eligible(core, task_id=None):
            + (" AND id=?" if task_id else ""))
     rows = core.all(sql, (core.user_id, task_id) if task_id else (core.user_id,))
     mine = _released_by_me(core)
-    rows = [t for t in rows if "needs_permission" not in (t.get("variant_tags") or []) and t["id"] not in mine]
+    rows = [t for t in rows if "needs_permission" not in (t.get("variant_tags") or []) and t["id"] not in mine
+            and not files.waiting(core, t)]
     # a task waiting to be gathered goes first: you're about to see it in triage
     rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
     return rows
