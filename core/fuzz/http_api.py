@@ -116,6 +116,7 @@ class App:
             ("GET", r"/files/(\d+)", self.download),
             ("GET", r"/artifacts", self.list_artifacts),
             ("GET", r"/artifacts/(\d+)", self.get_artifact),
+            ("DELETE", r"/artifacts/(\d+)", self.delete_artifact),
             ("GET", r"/setup", self.setup_get),
             ("POST", r"/setup/discover", self.setup_discover),
             ("PUT", r"/setup/tools", self.setup_tools),
@@ -213,6 +214,12 @@ class App:
         if a is None:
             raise FuzzError(f"No file {m.group(1)}", "source_id", 404)
         return a
+
+    def delete_artifact(self, core, m, body, q):
+        """Delete a file Fuzz wrote. It moves to your Trash rather than being erased."""
+        from . import outputs
+        outputs.delete(core, int(m.group(1)))
+        return {"deleted": int(m.group(1))}
 
     # ---- setup: who you are, the tools Fuzz can use, the output folder
     def setup_get(self, core, m, body, q):

@@ -223,7 +223,9 @@
     if (!on) return Promise.resolve();
     if (syncing || pending) { again = true; return Promise.resolve(); }
     syncing = true; var g = gen;
-    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'), api('GET', '/groups')]).then(function (r) {
+    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'),
+      /* A core from before groups has no /groups: the queue still loads, just without "From …" lines */
+      api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
@@ -303,9 +305,22 @@
   /* After an undo the card comes back, so the screen starts over from the core's queue */
   function syncThenRefresh() { unpin = true; sig = ''; return sync(); }
 
-  /* The event stream: any event means something changed. Reconnects on its own. */
+  /* The event stream: any event means something changed. Reconnects on its own.
+     One tab per browser holds it and passes each new event id to the others. A stream keeps its connection
+     open, and the browser allows only six to the core, so a stream per tab left nothing for the requests
+     themselves once a few tabs were open. Whichever tab holds the lock streams; when it closes, another
+     takes over from the last id it heard. */
+  function moved() { soon(); listeners.slice().forEach(function (fn) { fn(); }); }
   function listen() {
     if (!on || !window.fetch || !window.ReadableStream) return setInterval(function () { soon(0); }, 5000);
+    if (!navigator.locks || !window.BroadcastChannel) return stream(null);
+    var ch = new BroadcastChannel('fuzz.events');
+    ch.onmessage = function (e) { if (e.data > lastId) { lastId = e.data; moved(); } };
+    navigator.locks.request('fuzz.events', function () {
+      return new Promise(function () { stream(ch); });   /* held until this tab closes */
+    });
+  }
+  function stream(ch) {
     var dec = new TextDecoder(), buf = '';
     fetch('/events/stream?after=' + lastId, { headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
       if (!r.ok) throw new Error('stream ' + r.status);
@@ -315,14 +330,14 @@
           if (x.done) throw new Error('stream ended');
           buf += dec.decode(x.value, { stream: true });
           var frames = buf.split('\n\n'); buf = frames.pop();
-          var moved = false;
-          frames.forEach(function (f) { var m = /^id: (\d+)/m.exec(f); if (m) { lastId = Math.max(lastId, +m[1]); moved = true; } });
-          if (moved) { soon(); listeners.slice().forEach(function (fn) { fn(); }); }
+          var was = lastId;
+          frames.forEach(function (f) { var m = /^id: (\d+)/m.exec(f); if (m) lastId = Math.max(lastId, +m[1]); });
+          if (lastId > was) { moved(); if (ch) ch.postMessage(lastId); }
           pump();
         }).catch(retry);
       })();
     }).catch(retry);
-    function retry() { if (on) setTimeout(listen, 3000); }
+    function retry() { if (on) setTimeout(function () { stream(ch); }, 3000); }
   }
 
   /* ---------- Store, wired to the core ---------- */

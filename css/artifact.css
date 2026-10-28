@@ -7,7 +7,8 @@
 .av-title .meta { margin: 0; font-size: 13px; }
 .av-task { color: var(--ink); font-weight: 600; }
 .av-bar .appbar-right { grid-column: 2; }
-.av-dl { text-decoration: none; color: var(--ink); }
+.av-del--go { color: var(--danger); border-color: var(--danger); }
+.av-ask { font-size: 13px; color: var(--muted); }
 
 .av { max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; display: flex; flex-direction: column; gap: 14px; }
 .av:focus { outline: none; }
@@ -31,7 +32,6 @@
 .av-pic img { max-width: 100%; height: auto; border-radius: 12px; border: var(--bw) solid var(--line); background: #fff; }
 .av-msg { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 64px 16px; color: var(--muted); }
 .av-msg p { margin: 0; max-width: 420px; font-size: 16px; color: var(--ink); }
-.av-msg .btn { text-decoration: none; color: var(--ink); }
 
 /* Slides: each drawn at its own aspect ratio; text sizes are in container units, so they scale with the slide */
 .av-slides { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
@@ -58,7 +58,9 @@
   .av { padding: 16px 16px 48px; }
   .av-doc { padding: 20px 18px; border-radius: 14px; }
   .av-title h1 { font-size: 16px; }
-  .av-dl span, .av-back .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .av-dl { width: 44px; padding: 0; }
+  .av-dl span, .av-del span, .av-back .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .av-dl, .av-del { width: 44px; padding: 0; }
+  .av-bar .appbar-right [data-no] { width: auto; padding: 0 14px; }
+  .av-ask[role="status"] { display: none; }   /* the question; the red Delete and Keep say enough there. An error still shows */
   .av-frame { height: calc(100vh - 150px); }
 }
