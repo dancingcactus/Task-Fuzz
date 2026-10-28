@@ -115,6 +115,15 @@
     if (d.toDateString() === y.toDateString()) return 'Yesterday';
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
+  /* A source's own time, to the minute: "Today, 9:14 AM", "Oct 27, 4:12 PM" */
+  function stampOf(s) {
+    var t = ts(s); if (!t) return '';
+    var d = new Date(t), now = new Date(), y = new Date(); y.setDate(now.getDate() - 1);
+    var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return 'Today, ' + time;
+    if (d.toDateString() === y.toDateString()) return 'Yesterday, ' + time;
+    return d.toLocaleDateString([], d.getFullYear() === now.getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + time;
+  }
   function whenText(fire) {
     var t = ts(fire); if (!t) return 'when you’re back at your desk';
     return Sched.hint({ anchor: {}, fire_at: new Date(t).toISOString() }).replace(/^Today, /, 'today at ').replace(/^Tomorrow, /, 'tomorrow at ');
@@ -169,7 +178,7 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : webUrl(s.link) }; }),
+      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : webUrl(s.link) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
