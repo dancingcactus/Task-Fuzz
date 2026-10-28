@@ -6,18 +6,22 @@ You pick it in setup (config output.folder, like ~/Documents/Fuzz). Each task ge
 
 After a run, every file in a task's subfolder is recorded as a `sources` row with role `output`, so the
 card and the task sheet can link to it. Files are overwritten in place, and once written they stay:
-Undo doesn't remove them, since you may have opened or moved them. Approved notes and results are saved
+Undo doesn't remove them, since you may have opened or moved them. You can delete one from the viewer
+(delete()): it goes to your Trash, so it can still come back from there. Approved notes and results are saved
 there too, as Markdown. The Artifacts tab lists them all (artifacts()), and the viewer previews one.
 """
 
 import mimetypes
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 
 from . import events, tasks
+from .db import FuzzError
 
 TITLE_MAX = 60
+TRASH = "~/.Trash"
 
 
 def folder(core):
@@ -152,3 +156,30 @@ def artifact(core, source_id):
     """One output file, or an attachment you added, for the viewer. None when it's gone."""
     r = core.one(_Q + "AND s.role IN ('attachment','output') AND s.id=?", (core.user_id, source_id))
     return _view(r) if r else None
+
+
+def _to_trash(path):
+    """Move a file to the Trash under a name that's free there. Without a Trash, it's removed."""
+    trash = os.path.expanduser(TRASH)
+    if not os.path.isdir(trash):
+        os.remove(path)
+        return None
+    stem, ext = os.path.splitext(os.path.basename(path))
+    dest, n = os.path.join(trash, stem + ext), 2
+    while os.path.exists(dest):
+        dest, n = os.path.join(trash, f"{stem} {n}{ext}"), n + 1
+    shutil.move(path, dest)
+    return dest
+
+
+def delete(core, source_id, actor="human"):
+    """Delete a file Fuzz wrote: it leaves the Artifacts tab and the task, and moves to your Trash."""
+    s = core.one("SELECT * FROM sources WHERE id=? AND user_id=? AND role='output' AND withdrawn=0 "
+                 "AND path IS NOT NULL", (source_id, core.user_id))
+    if s is None:
+        raise FuzzError(f"No file {source_id}", "source_id", 404)
+    with core.tx(actor):
+        core.q("UPDATE sources SET withdrawn=1 WHERE id=?", (s["id"],))
+        events.emit(core, "task.file_deleted", task_id=s["task_id"], data={"source_id": s["id"], "name": s["title"]},
+                    log=("status", f"You deleted {s['title']}. It's in your Trash."))
+    return _to_trash(s["path"]) if os.path.isfile(s["path"]) else None

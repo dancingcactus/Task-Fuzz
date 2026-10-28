@@ -191,6 +191,21 @@ class Api(Server):
         self.assertEqual([a["name"] for a in self.req("GET", "/artifacts")[1]["artifacts"]], ["list.md"],
                          "a file that's gone leaves the tab")
 
+        trash = os.path.join(os.path.dirname(out), "Trash")
+        os.makedirs(trash)
+        with open(os.path.join(trash, "list.md"), "w") as f:
+            f.write("older")
+        from unittest import mock
+        with mock.patch.object(outputs, "TRASH", trash):
+            self.assertEqual(self.req("DELETE", f"/artifacts/{sid}"), (200, {"deleted": sid}))
+            self.assertEqual(self.req("DELETE", f"/artifacts/{sid}")[0], 404, "already deleted")
+        self.assertFalse(os.path.exists(os.path.join(d, "list.md")))
+        with open(os.path.join(trash, "list 2.md")) as f:
+            self.assertEqual(f.read(), "- [ ] One", "it moves to the Trash beside what's already there")
+        self.assertEqual(self.req("GET", "/artifacts")[1]["artifacts"], [])
+        self.assertEqual(self.req("GET", f"/files/{sid}")[0], 404)
+        self.assertEqual(outputs.record(core, tid), [], "a deleted file doesn't come back by itself")
+
     def test_settings_edit_who_you_are(self):
         self.assertEqual(self.req("GET", "/me")[1]["emails"], ["jgrover@adobe.com"])
         status, body = self.req("PUT", "/me", {"emails": ["jgrover@adobe.com", "Justin@Home.example"]})

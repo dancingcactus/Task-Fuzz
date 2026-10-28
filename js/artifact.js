@@ -9,6 +9,7 @@
   var esc = UI.esc;
   var LABEL = { markdown: 'Markdown', word: 'Word document', slides: 'Slides', pdf: 'PDF', image: 'Picture', html: 'Web page', table: 'Table', text: 'Text', other: 'File' };
   var ICON_BACK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+  var ICON_TRASH = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
   var ICON_DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
   var main = document.getElementById('av'), bar = document.getElementById('av-bar');
   var q = new URLSearchParams(location.search), token = null;
@@ -48,7 +49,7 @@
     return fetch('/artifacts/' + id, auth).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (!r.ok) throw new Error(r.status === 404 ? 'This file isn’t in your Fuzz folder any more.' : r.status === 401 ? 'Fuzz didn’t recognise this browser. Open the link `fuzz serve` prints, then try again.' : (j.error || 'Fuzz couldn’t open it.'));
-        return { name: j.name, kind: j.kind || kindOf(j.name), size: j.size, updated: Date.parse(j.updated_at), task: j.task && j.task.title,
+        return { id: id, name: j.name, kind: j.kind || kindOf(j.name), size: j.size, updated: Date.parse(j.updated_at), task: j.task && j.task.title,
           url: '/files/' + id + '?token=' + encodeURIComponent(token), get: function () { return fetch('/files/' + id, auth); } };
       });
     });
@@ -61,12 +62,41 @@
     var meta = [LABEL[f.kind] || 'File', sizeText(f.size), f.updated ? 'Updated ' + agoText(f.updated) : ''].filter(Boolean).join(' · ');
     bar.innerHTML = '<div class="av-left"><a class="themebtn av-back" href="index.html#/artifacts">' + ICON_BACK + '<span class="lbl">Artifacts</span></a>' +
       '<div class="av-title"><h1>' + esc(f.name) + '</h1><p class="meta">' + esc(meta) + (f.task ? ' · For <span class="av-task">' + esc(f.task) + '</span>' : '') + '</p></div></div>' +
-      '<div class="appbar-right"><a class="btn small av-dl" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download</span></a></div>';
+      '<div class="appbar-right">' + (f.id ? '<button type="button" class="themebtn av-del" data-del>' + ICON_TRASH + '<span>Delete</span></button>' : '') +
+      '<a class="themebtn av-dl" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download</span></a></div>';
     document.title = f.name + ' · Fuzz';
+    if (f.id) bar.querySelector('[data-del]').addEventListener('click', function () { ask(f); });
+  }
+
+  /* ---------- Deleting ---------- */
+  /* Asks once, in place of the buttons. The core moves the file to your Trash, so it isn't gone for good. */
+  function ask(f) {
+    var right = bar.querySelector('.appbar-right');
+    right.innerHTML = '<span class="av-ask" role="status">Move it to your Trash?</span>' +
+      '<button type="button" class="themebtn av-del av-del--go" data-yes>' + ICON_TRASH + '<span>Delete</span></button>' +
+      '<button type="button" class="themebtn" data-no>Keep</button>';
+    right.querySelector('[data-no]').addEventListener('click', function () { header(f); bar.querySelector('[data-del]').focus(); });
+    right.querySelector('[data-yes]').addEventListener('click', function (e) { e.currentTarget.disabled = true; remove(f); });
+    right.querySelector('[data-no]').focus();
+  }
+  function remove(f) {
+    fetch('/artifacts/' + f.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok && r.status !== 404) throw new Error(j.error || 'Fuzz couldn’t delete it (' + r.status + ').');
+      });
+    }).then(function () {
+      bar.querySelector('.appbar-right').innerHTML = '';
+      main.className = 'av';
+      main.innerHTML = '<div class="av-msg"><img src="assets/fuzz-mark.svg" alt="" width="56" height="56"><p>' + esc(f.name) + ' is in your Trash. You can put it back from there.</p>' +
+        '<a class="themebtn" href="index.html#/artifacts">Go to Artifacts</a></div>';
+    }).catch(function (e) {
+      header(f);
+      bar.querySelector('.appbar-right').insertAdjacentHTML('afterbegin', '<span class="av-ask" role="alert">' + esc(e.message) + '</span>');
+    });
   }
   function fail(msg, f) {
     main.innerHTML = '<div class="av-msg"><img src="assets/fuzz-mark.svg" alt="" width="56" height="56"><p>' + UI.text(msg) + '</p>' +
-      (f ? '<a class="btn small" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download it instead</span></a>' : '<a class="btn small" href="index.html#/artifacts">Go to Artifacts</a>') + '</div>';
+      (f ? '<a class="themebtn" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download it instead</span></a>' : '<a class="themebtn" href="index.html#/artifacts">Go to Artifacts</a>') + '</div>';
   }
 
   var RENDER = {
