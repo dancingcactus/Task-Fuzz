@@ -178,7 +178,7 @@ python3 -m unittest discover core/tests
 
 They cover replay against the live tables, every card kind and answer (including Undo), postpone
 and expiry, check-in spacing, the brief fields, the time resolver on a fixed clock, the scheduler
-(five at a time, leases, the budget), role scoping and the MCP contract (in-process and over stdio),
+(two at a time by default, leases, the budget), role scoping and the MCP contract (in-process and over stdio),
 the spike's two-day scenario through the extractor tools, the HTTP API and event stream, two-user
 isolation, and the installer and adapters against a fake home folder with stub `claude` and
 `copilot` executables.

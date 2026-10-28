@@ -6,7 +6,7 @@
   var root, openId = null, dlg = null, unsub = null, timer = 0;
 
   var TABS = {
-    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz runs up to five at once.' },
+    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
     parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
     waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'With someone else. Fuzz watches for replies and drafts nudges for your OK. Replies go straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
@@ -32,7 +32,6 @@
 
   /* ---------- One page, by who has the ball ---------- */
   var departed = {}, prevLane = null, openSecs = {};
-  var LANE_MAX = 5;
 
   function rowHTML(it, status, tone, sub, cls) {
     return '<li><button type="button" class="lrow' + (cls ? ' ' + cls : '') + '" data-open="' + it.id + '">' +
@@ -75,11 +74,11 @@
     prevLane = ids;
     var out = Object.keys(departed).filter(function (id) { if (departed[id].until < now) { delete departed[id]; return false; } return true; });
 
-    var busy = run.length, pips = '';
-    for (var i = 0; i < LANE_MAX; i++) pips += '<i class="' + (i < busy ? 'on' : '') + '"></i>';
+    var busy = run.length, slots = Store.slots(), pips = '';
+    for (var i = 0; i < slots; i++) pips += '<i class="' + (i < busy ? 'on' : '') + '"></i>';
     var h = '<section class="lane" aria-labelledby="sec-fuzz"><div class="lane-head">' + Fuzz.mini(busy ? 'think' : 'good', { cls: 'lane-av' + (busy ? ' working' : '') }) +
       '<div class="lane-titles"><h2 id="sec-fuzz">With Fuzz' + (ids.length ? ' <span class="lcount">' + ids.length + '</span>' : '') + '</h2>' +
-      '<p class="lane-slots"><span class="pips" aria-hidden="true">' + pips + '</span>' + busy + ' of ' + LANE_MAX + ' slots busy' + (next.length ? ', ' + next.length + ' next up' : '') + '</p></div></div>';
+      '<p class="lane-slots"><span class="pips" aria-hidden="true">' + pips + '</span>' + busy + ' of ' + slots + ' slots busy' + (next.length ? ', ' + next.length + ' next up' : '') + '</p></div></div>';
     if (!ids.length && !out.length) return h + '<p class="lempty lane-idle">Nothing on my desk. Assign me something from Triage.</p></section>';
     h += '<ul class="lrows lane-rows">';
     run.forEach(function (it) {

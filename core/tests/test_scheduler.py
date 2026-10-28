@@ -1,4 +1,4 @@
-"""Choosing the next task: at most five working, deterministic order, leases and the step budget."""
+"""Choosing the next task: at most two working (the default budget), deterministic order, leases and the step budget."""
 
 import unittest
 
@@ -17,15 +17,15 @@ class Claiming(CoreCase):
             out.append(tid)
         return out
 
-    def test_at_most_five_working(self):
-        ids = self.queued(6)
-        for i in range(5):
+    def test_at_most_two_working(self):
+        ids = self.queued(3)
+        for i in range(2):
             t, why = scheduler.claim_next(self.core)
             self.assertEqual(t["id"], ids[i])
         t, why = scheduler.claim_next(self.core)
         self.assertIsNone(t)
-        self.assertIn("5 tasks are already running", why)
-        self.assertEqual(self.task(ids[5])["state"], "queued", "the sixth is Next up")
+        self.assertIn("2 tasks are already running", why)
+        self.assertEqual(self.task(ids[2])["state"], "queued", "the third is Next up")
 
     def test_deadline_first_then_order(self):
         plain = self.queued(1)[0]
