@@ -213,6 +213,16 @@ class TwoDays(CoreCase):
             self.answer_in_thread({"name": "Justin"}, candidates=[{"ask": "Send the deck"}])
         self.assertEqual(e.exception.field, "signals[0].answers")
 
+    def test_an_email_read_again_is_not_new(self):
+        msg = {"source": "email", "source_id": "<m1@acme.example>", "version": "2026-10-20T08:00:00Z",
+               "anchor": "email:conv-Q", "ts": "2026-10-20T08:00:00Z", "from": {"name": "Dana"},
+               "quote": "Can you send the Q4 numbers?", "candidates": [{"ask": "Send Dana the Q4 numbers"}]}
+        tools.submit_signals(self.core, [msg])
+        out = tools.submit_signals(self.core, [dict(msg, version="2026-10-20T11:30:00Z")])   # opened, so modified
+        self.assertEqual(out["skipped"], 1)
+        t = self.by_title("Q4 numbers")
+        self.assertEqual(self.sources(t["id"]), 1)
+
     def test_a_candidate_can_carry_a_brief(self):
         tools.submit_signals(self.core, [{
             "source": "email", "source_id": "hr-1", "anchor": "email:hr", "ts": "2026-10-20T08:00:00Z",

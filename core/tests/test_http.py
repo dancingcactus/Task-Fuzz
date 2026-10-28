@@ -92,6 +92,22 @@ class Api(Server):
         self.assertEqual([(s["role"], s["ts"]) for s in src],
                          [("update", "2026-10-20T08:45:00Z"), ("origin", "2026-10-20T08:00:00Z")])
 
+    def test_a_message_read_twice_is_one_source(self):
+        core = self.srv.app.core(1)
+        ask = {"source": "slack", "source_id": "C1:1.0", "version": "1.0", "anchor": "slack:C1:1.0",
+               "ts": "2026-10-20T08:00:00Z", "from": {"name": "Dana"}, "quote": "Can you send the Q4 numbers?",
+               "candidates": [{"ask": "Send Dana the Q4 numbers"}]}
+        reply = {"source": "slack", "source_id": "C1:2.0", "version": "2.0", "anchor": "slack:C1:1.0",
+                 "ts": "2026-10-20T08:45:00Z", "from": {"name": "Dana"}, "quote": "Any update?", "candidates": []}
+        tools.submit_signals(core, [ask, reply])
+        tools.submit_signals(core, [dict(reply, version="2.1", quote="Any update? (edited)"),   # edited, so new
+                                    dict(ask, version="1.1", candidates=[])])   # the ask again, as an update
+        tid = tasks.list_tasks(core)[0]["id"]
+        src = self.req("GET", f"/tasks/{tid}")[1]["sources"]
+        self.assertEqual([(s["role"], s["quote"]) for s in src],
+                         [("update", "Any update? (edited)"), ("origin", "Can you send the Q4 numbers?")])
+        self.assertEqual(len(tools._task_brief(core, tasks.live(core, tid))["sources"]), 2, "the executor sees it once too")
+
     def test_checkin_is_recorded_not_raised(self):
         self.req("POST", "/tasks", {"text": "One"})
         status, body = self.req("POST", "/checkin", {"answer": "tired"})

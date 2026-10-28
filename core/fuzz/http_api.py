@@ -62,11 +62,12 @@ def task_view(core, t, full=False):
     if full:
         out["log"] = events.task_log(core, t["id"])
         # newest first, each with its own time: the message's, or else when the run that found it started
-        out["sources"] = core.all("SELECT s.id, s.role, s.title, s.withdrawn, COALESCE(s.link, g.link) link, g.quote, "
-                                  "COALESCE(g.ts, r.started_at) ts FROM sources s "
+        out["sources"] = tasks.one_per_message(core.all(
+                                  "SELECT s.id, s.role, s.title, s.withdrawn, COALESCE(s.link, g.link) link, g.quote, "
+                                  "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
-                                  "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id))
+                                  "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
         out["files"] = files.listing(core, t["id"])

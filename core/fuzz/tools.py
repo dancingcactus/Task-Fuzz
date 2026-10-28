@@ -60,8 +60,10 @@ def claim_next_task(core, task_id=None):
 
 
 def _task_brief(core, t):
-    srcs = core.all("SELECT id, role, title, withdrawn, path, mime, size, link FROM sources WHERE task_id=? AND user_id=? "
-                    "AND role!='ignored'", (t["id"], core.user_id))
+    srcs = tasks.one_per_message(core.all(
+        "SELECT s.id, s.role, s.title, s.withdrawn, s.path, s.mime, s.size, s.link, g.source || ':' || g.source_id msg "
+        "FROM sources s LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
+        "WHERE s.task_id=? AND s.user_id=? AND s.role!='ignored' ORDER BY s.id", (t["id"], core.user_id)))
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"], "gathering": scheduler.gathering(t),

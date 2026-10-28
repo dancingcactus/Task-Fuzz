@@ -479,6 +479,25 @@ def _link_source(core, task_id, title, link, run_id):
                   (core.user_id, task_id, "link", title, link, run_id)).lastrowid, True
 
 
+def one_per_message(rows):
+    """Each message once. One read again by a later run may sit on a task twice: keep the copy that counts
+    (not ignored or withdrawn), the one the task came from if it's among them, else the latest. Rows carry
+    `msg` (source:source_id, None when there's no message behind it), dropped here. Order is kept."""
+    best = {}
+    for r in rows:
+        if r["msg"] is None:
+            continue
+        rank = (r["role"] != "ignored" and not r["withdrawn"], r["role"] == "origin", r["id"])
+        if r["msg"] not in best or rank > best[r["msg"]][0]:
+            best[r["msg"]] = (rank, r["id"])
+    keep = {i for _, i in best.values()}
+    out = []
+    for r in rows:
+        if r["msg"] is None or r["id"] in keep:
+            out.append({k: v for k, v in r.items() if k != "msg"})
+    return out
+
+
 def add_links(core, task_id, links, run_id=None):
     """The docs and tickets an email or message linked to join the task's sources with it, quietly."""
     for url in links or []:

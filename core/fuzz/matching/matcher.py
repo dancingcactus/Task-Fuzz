@@ -38,6 +38,7 @@ ANSWERED_CLOSES = ("triage", "queued", "scheduled", "parked", "session")
 MERGE_CONF = 0.85
 DUP_CONF = 0.60
 
+UNCHANGING = ("email",)   # sources whose messages are never edited: one signal each, whatever the version
 SOURCE_LABEL = {"email": "Email", "slack": "Slack", "meeting": "Meeting", "calendar": "Calendar", "fuzz": "Fuzz"}
 BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy")
 
@@ -83,12 +84,21 @@ def signal_key(s):
     return f"{s['source']}:{s['source_id']}:{s.get('version', '1')}"
 
 
+def _seen(ctx, s, key):
+    """Already recorded. An email never changes once sent, so any version of it counts: a client's version
+    can be its last-modified time, which moves when it's read or flagged, and each run re-reads six hours."""
+    if s["source"] in UNCHANGING:
+        return ctx.core.q("SELECT 1 FROM signals WHERE user_id=? AND source=? AND source_id=?",
+                          (_uid(ctx), s["source"], s["source_id"])).fetchone()
+    return ctx.core.q("SELECT 1 FROM signals WHERE user_id=? AND key=?", (_uid(ctx), key)).fetchone()
+
+
 def ingest(ctx, signals):
     core = ctx.core
     counts = {"signals": 0, "skipped": 0, "candidates": 0, "withdrawn": 0}
     for s in signals:
         key = signal_key(s)
-        if core.q("SELECT 1 FROM signals WHERE user_id=? AND key=?", (_uid(ctx), key)).fetchone():
+        if _seen(ctx, s, key):
             counts["skipped"] += 1
             continue
         core.q("INSERT INTO signals VALUES (?,?,?,?,?,?,?,?,?,?,?)",

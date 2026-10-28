@@ -185,10 +185,10 @@ class Doctor(FakeHome):
         self.assertEqual(c["summary"], "ready", c["fixes"])
         self.assertEqual([m["tools"] for m in c["mcp"]], [15, 5, 4], "each role's server starts with its tools")
         skill = Path(self.fake, ".claude", "skills", "fuzz-extract", "SKILL.md")
-        skill.write_text(skill.read_text().replace("extract-0.4", "extract-0.0"))
+        skill.write_text(skill.read_text().replace("extract-0.5", "extract-0.0"))
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "needs_attention")
-        self.assertIn("extract-0.0 → extract-0.4", c["first_fix"])
+        self.assertIn("extract-0.0 → extract-0.5", c["first_fix"])
         engine.action(self.core, "claude-code", "update")
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "ready")
