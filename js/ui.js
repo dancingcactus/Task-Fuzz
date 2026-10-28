@@ -16,8 +16,16 @@
     tone = tone || 'muted'; var ic = STATUS_ICON[tone];
     return '<span class="pill pill--' + tone + (ic ? ' pill--icon' : '') + '">' + (ic || '') + esc(text) + '</span>';
   }
-  /* Escape text, then turn `backticked` bits into inline code. */
-  function text(s) { return esc(s).replace(/`([^`]+)`/g, '<code class="icode">$1</code>'); }
+  /* Escape text, then turn `backticked` bits into inline code and bare URLs into links.
+     o.links false keeps URLs plain, for text that sits inside a button. */
+  function text(s, o) {
+    return esc(s).split(/(`[^`]+`)/).map(function (part, i) {
+      if (i % 2) return '<code class="icode">' + part.slice(1, -1) + '</code>';
+      if (o && o.links === false) return part;
+      /* Trailing punctuation ends the sentence, not the URL */
+      return part.replace(/https?:\/\/(?:&amp;|[^\s<>&])*(?:&amp;|[^\s<>&.,;:!?)\]])/g, '<a href="$&" target="_blank" rel="noopener">$&</a>');
+    }).join('');
+  }
 
   /* The id to quote when chasing a bug: the core's task id when it has one, else the page's own */
   function idTag(it) {

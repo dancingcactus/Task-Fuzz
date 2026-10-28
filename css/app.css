@@ -215,7 +215,7 @@ html.calm .pg-seg { transition: none; }
 @keyframes echo-in { from { opacity: 0; transform: translate(-50%, -6px); } }
 html.calm .echo { animation: none; }
 /* the card (extends fuzz.css) */
-.card { gap: 14px; background: var(--surface); }
+.card { gap: 14px; background: var(--surface); overflow-wrap: anywhere; }
 .card hr { width: 100%; }
 .stale { background: var(--field); border: 2px dashed var(--line); border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .stale[hidden] { display: none; }

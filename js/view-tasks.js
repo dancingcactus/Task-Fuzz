@@ -109,7 +109,7 @@
       var p = Store.progress(it), dots = '';
       for (var j = 0; j < p.total; j++) dots += '<i class="' + (j < p.done ? 'on' : '') + '"></i>';
       h += '<li><button type="button" class="lrow lane-row" data-open="' + it.id + '"><span class="lrow-main"><span class="rt">' + esc(it.title) + '</span>' +
-        '<span class="lane-step">' + UI.text(Store.nowText(it)) + '</span></span>' +
+        '<span class="lane-step">' + UI.text(Store.nowText(it), { links: false }) + '</span></span>' +
         '<span class="lrow-side"><span class="steps" role="img" aria-label="Step ' + Math.min(p.done + 1, p.total) + ' of ' + p.total + '">' + dots + '</span>' + (it.dueAt ? UI.pill('Rush', 'accent') : '') + '</span></button></li>';
     });
     next.forEach(function (it) { h += rowHTML(it, 'Next up', 'muted', 'Starts when a slot opens', 'lane-row'); });
