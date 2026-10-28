@@ -413,6 +413,7 @@ def create_task(ctx, cand, decision_id):
     _moments(core, tid, cand)
     core.q("INSERT INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) VALUES (?,?,?,?,?,?,?)",
            (_uid(ctx), tid, cand["id"], cand["signal_key"], "origin", _source_title(s), ctx.run_id))
+    tasks.add_links(core, tid, _links(cand, s), ctx.run_id)
     _add_anchors(ctx, tid, cand)
     groups.place(core, tid, cand["signal_key"])
     return tid
@@ -427,6 +428,12 @@ def _moments(core, tid, cand):
             scheduler.suggest_schedule(core, tid, dict(m, type="moment"), m.get("reason"), actor=None)
         except FuzzError:
             pass
+
+
+def _links(cand, s):
+    """The candidate's own links first, then the signal's, each once."""
+    c = json.loads(cand["payload"]) if isinstance(cand["payload"], str) else (cand["payload"] or {})
+    return list(dict.fromkeys((c.get("links") or []) + (s.get("links") or [])))
 
 
 def _source_title(s):
@@ -447,6 +454,8 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
     s = _signal(ctx, cand)
     core.q("INSERT OR IGNORE INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) "
            "VALUES (?,?,?,?,?,?,?)", (_uid(ctx), tid, cand["id"], cand["signal_key"], role, _source_title(s), ctx.run_id))
+    if role != "ignored":
+        tasks.add_links(core, tid, _links(cand, s), ctx.run_id)
     _add_anchors(ctx, tid, cand)
     who = (s.get("from") or {}).get("name") or "Someone"
     where = SOURCE_LABEL.get(s["source"], s["source"])

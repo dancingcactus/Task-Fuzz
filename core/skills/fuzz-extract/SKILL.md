@@ -1,7 +1,7 @@
 ---
 name: fuzz-extract
 description: Run Fuzz extraction. Reads the person's email, Slack and meeting summaries since the last run with your own connectors, turns each ask into a signal, and judges which existing Fuzz task each ask belongs to. Use when asked to "run Fuzz extraction", "pull my asks into Fuzz" or "update Fuzz from email and Slack".
-prompt_version: extract-0.2
+prompt_version: extract-0.3
 ---
 
 # Fuzz extraction
@@ -13,7 +13,7 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
 
 ## Steps
 
-1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.2`). It returns the person's
+1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.3`). It returns the person's
    names, email addresses, Slack IDs and the folders to read. Use these; never guess who they are.
 2. **`get_cursors`**: where to start reading each source. Read from there to now.
 3. **Read the sources** with your connectors: email (inbox and sent), Slack (mentions, DMs and
@@ -24,6 +24,8 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
      (`email:<conversationId>`, `slack:<channel>:<thread_ts>`, `meeting:<file>#<row slug>`),
      `message_ids` for email (this message's Message-ID plus In-Reply-To and References), `link`,
      `ts`, `from`, `people`, `links` (shared docs and tickets only) and a `quote` under 300 characters.
+     Put every doc, wiki page or ticket the message links to in `links`, as its full URL: each one joins
+     the task's Sources, so the person and the executor can open it from there.
      Add `title` for an email: its subject, without "Re:" or "Fw:". Fuzz names a group of asks from
      one thread after it. A meeting's `from.name` is already its title.
    - `candidates`: one per **distinct ask** in the new text, each a short imperative the person would

@@ -5,6 +5,7 @@ here, so HTTP, MCP and the CLI all call the same code.
 """
 
 import re
+from urllib.parse import unquote_plus, urlparse
 
 from . import cards, events, states
 from .db import FuzzError, parse_iso
@@ -300,20 +301,66 @@ def save_notes(core, task_id, text, actor="fuzz:executor"):
         events.emit(core, "task.notes_saved", task_id=t["id"], changes=ch)
 
 
+LINK_RE = re.compile(r"^https?://\S+$", re.I)
+_URL_VERBS = {"edit", "view", "preview", "browse", "pages", "spaces", "display", "d", "u", "0", "1"}
+_GOOGLE = {"document": "Google Doc", "presentation": "Google Slides", "spreadsheets": "Google Sheet",
+           "forms": "Google Form"}
+
+
+def link_title(url):
+    """A readable name from a link alone: the page's slug ("Experimentation Knowledge Base - Use Cases Queries"),
+    a ticket key, the kind of Google file, or else its site."""
+    p = urlparse(url)
+    segs = [s for s in p.path.split("/") if s]
+    for i in range(len(segs) - 1, -1, -1):
+        name = unquote_plus(segs[i]).strip()
+        if name in _GOOGLE and (p.hostname or "").endswith("google.com"):
+            return _GOOGLE[name]
+        if i and segs[i - 1] == "d":   # /d/<id>/: a Google file's id
+            continue
+        if name.lower() in _URL_VERBS or len(name) < 3 or not re.search(r"[A-Za-z]", name):
+            continue
+        if len(name) > 20 and not re.search(r"[\s_-]", name):   # a document id, not a name
+            continue
+        return name
+    return p.hostname or url
+
+
+def _same_page(link):
+    """What makes two links one source: a Google file's id or a ticket key, else the address without its #part."""
+    from .matching.entities import normalize_url
+    ident = normalize_url(link)
+    return ident if ident.startswith(("gdoc:", "ticket:")) else link.split("#")[0].rstrip("/")
+
+
+def _link_source(core, task_id, title, link, run_id):
+    for s in core.all("SELECT id, link FROM sources WHERE task_id=? AND user_id=? AND role='link' AND withdrawn=0",
+                      (task_id, core.user_id)):
+        if _same_page(s["link"]) == _same_page(link):
+            return s["id"], False
+    return core.q("INSERT INTO sources (user_id, task_id, role, title, link, added_run) VALUES (?,?,?,?,?,?)",
+                  (core.user_id, task_id, "link", title, link, run_id)).lastrowid, True
+
+
+def add_links(core, task_id, links, run_id=None):
+    """The docs and tickets an email or message linked to join the task's sources with it, quietly."""
+    for url in links or []:
+        url = (url or "").strip()
+        if LINK_RE.match(url):
+            _link_source(core, task_id, link_title(url), url, run_id)
+
+
 def add_link(core, task_id, title, link, actor="fuzz:executor"):
     """A web page that belongs with the task (a wiki, a doc) becomes one of its sources. The same link twice is one source."""
     t = require(core, task_id)
     link = (link or "").strip()
-    if not re.match(r"^https?://\S+$", link, re.I):
+    if not LINK_RE.match(link):
         raise FuzzError("link is the page's full http(s) address", "link")
-    title = (title or "").strip() or link
-    have = core.one("SELECT id FROM sources WHERE task_id=? AND user_id=? AND role='link' AND link=? AND withdrawn=0",
-                    (t["id"], core.user_id, link))
-    if have:
-        return have["id"], False
+    title = (title or "").strip() or link_title(link)
     with core.tx(actor):
-        sid = core.q("INSERT INTO sources (user_id, task_id, role, title, link, added_run) VALUES (?,?,?,?,?,?)",
-                     (core.user_id, t["id"], "link", title, link, (core.run or {}).get("id"))).lastrowid
+        sid, added = _link_source(core, t["id"], title, link, (core.run or {}).get("id"))
+        if not added:
+            return sid, False
         who = "You" if actor == "human" else "Fuzz"
         events.emit(core, "task.link_added", task_id=t["id"], data={"source_id": sid, "title": title, "link": link},
                     log=("status", f"{who} added {title} as a source."))

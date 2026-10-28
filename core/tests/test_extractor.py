@@ -40,7 +40,27 @@ class TwoDays(CoreCase):
         return rows[0]
 
     def sources(self, tid):
-        return self.core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND role!='ignored'", (tid,))["n"]
+        return self.core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND role NOT IN ('ignored','link')",
+                             (tid,))["n"]
+
+    def test_the_docs_a_message_links_join_the_sources(self):
+        self.day("day1.json")
+        deck = self.by_title("Review the Q4 pricing deck")
+        links = self.core.all("SELECT title, link FROM sources WHERE task_id=? AND role='link'", (deck["id"],))
+        self.assertEqual([(s["title"], s["link"]) for s in links],
+                         [("Google Slides", "https://docs.google.com/presentation/d/PRICINGDECK123/edit")])
+        self.day("day2.json")
+        self.assertEqual(len(self.core.all("SELECT id FROM sources WHERE task_id=? AND role='link'", (deck["id"],))),
+                         1, "the same link from a later message is still one source")
+
+    def test_a_link_is_named_from_its_address(self):
+        for url, want in [
+                ("https://wiki.corp.example.com/spaces/EXO/pages/4041045840/Experimentation+Knowledge+Base+-+Use+Cases+Queries",
+                 "Experimentation Knowledge Base - Use Cases Queries"),
+                ("https://acme.atlassian.net/browse/TAPER-8461", "TAPER-8461"),
+                ("https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdef/edit", "Google Doc"),
+                ("https://example.com/", "example.com")]:
+            self.assertEqual(tasks.link_title(url), want)
 
     def test_day1(self):
         out = self.day("day1.json")
