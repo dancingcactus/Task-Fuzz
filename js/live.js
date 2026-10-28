@@ -223,7 +223,9 @@
     if (!on) return Promise.resolve();
     if (syncing || pending) { again = true; return Promise.resolve(); }
     syncing = true; var g = gen;
-    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'), api('GET', '/groups')]).then(function (r) {
+    return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'),
+      /* A core from before groups has no /groups: the queue still loads, just without "From …" lines */
+      api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
