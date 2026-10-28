@@ -160,7 +160,8 @@ def moment(core):
 
 
 def queue(core):
-    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order."""
+    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order.
+    A card you sent to the end of the list waits behind all of them, deadline or not."""
     from . import tasks
     m = moment(core)
     cards = core.all("SELECT * FROM cards WHERE user_id=? AND status='open'", (core.user_id,))
@@ -175,7 +176,8 @@ def queue(core):
             fits = 0 if (t and (t.get("effort_mins") or 99) <= 5) else 1
         elif m == "low":
             fits = 0 if (t and t.get("energy") == "low") else 1
-        k = (urgent, back, fits, c["order_key"] or 0)
+        at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
+        k = (at_end, urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
     keyed.sort(key=lambda x: x[0])
     return [(c, t) for _, c, t in keyed]

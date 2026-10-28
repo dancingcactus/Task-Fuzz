@@ -322,6 +322,24 @@ def bring_back(core, task_id, where="back", reason=None, type="task.came_back", 
     return eid
 
 
+def to_back(core, task_id):
+    """Not now, but not at a time either: the task stays where it is and its card goes to the end of the
+    queue, behind handbacks and anything due soon too. It comes up again once you've been through the rest."""
+    t = require(core, task_id)
+    open_ = cards.open_cards(core, t["id"])
+    if not open_:
+        raise FuzzError("This task has no card in triage to move", "task_id", 409)
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], order_key=next_order(core))
+        for c in open_:
+            ch.card(c["id"], postponed=c["postponed"] + 1, order_key=cards.next_order(core),
+                    payload=dict(c.get("payload") or {}, at_end=True))
+        events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": open_[0]["kind"], "to": "back"},
+                    log=("status", "You moved this to the end of the list."))
+    return t["id"]
+
+
 def reopen(core, task_id, reason, actor="system"):
     return bring_back(core, task_id, where="back", reason=reason, type="task.reopened", actor=actor,
                       tags=("reopened",), log=("status", reason))

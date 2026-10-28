@@ -285,6 +285,9 @@ class Api(Server):
         self.assertEqual(self.req("POST", f"/tasks/{tid}/park", {})[1]["state"], "parked")
         self.assertEqual([t["id"] for t in self.req("GET", "/tasks?state=parked")[1]["tasks"]], [tid])
         self.assertEqual(self.req("POST", f"/tasks/{tid}/reopen", {"where": "front"})[1]["state"], "triage")
+        self.assertEqual(self.req("POST", f"/tasks/{tid}/back", {})[1]["state"], "triage")
+        tasks.park(self.core, tid)
+        self.assertEqual(self.req("POST", f"/tasks/{tid}/back", {})[0], 409)
 
     def test_engine_status(self):
         st = self.req("GET", "/engine")[1]

@@ -233,6 +233,18 @@ class QueueRules(CoreCase):
         self.assertEqual(order[:2], [urgent, quick], "overloaded brings quick ones first")
         self.assertLess(order.index(quick), order.index(plain))
 
+    def test_end_of_the_list(self):
+        first = tasks.capture(self.core, "First", due="2026-10-20T11:00:00Z")
+        tasks.capture(self.core, "Second")
+        back = self.claimed_and_handed_back()
+        tasks.to_back(self.core, first)
+        order = [c["task_id"] for c in self.open_cards()]
+        self.assertEqual(order[-1], first, "behind handbacks too, even though it's due soon")
+        self.assertLess(order.index(back), order.index(first))
+        self.assertEqual(self.task(first)["state"], "triage", "no time, no state change")
+        events.undo(self.core)
+        self.assertEqual([c["task_id"] for c in self.open_cards()][0], first)
+
     def claimed_and_handed_back(self):
         tid = tasks.capture(self.core, "Handed back one")
         tasks.assign(self.core, tid)

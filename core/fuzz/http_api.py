@@ -110,7 +110,7 @@ class App:
             ("POST", r"/tasks", self.capture),
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
-            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule)", self.task_action),
+            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule|back)", self.task_action),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
@@ -184,6 +184,8 @@ class App:
             tasks.schedule(core, tid, body.get("anchor"), instructions=body.get("instructions"),
                            gather=config.gathers(core.config))
             kick_executor(self, core)
+        elif act == "back":
+            tasks.to_back(core, tid)
         elif act == "reopen":
             where = body.get("where", "front")
             if where not in ("front", "back"):

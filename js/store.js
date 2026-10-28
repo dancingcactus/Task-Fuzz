@@ -144,14 +144,15 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        var kx = [x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
     },
     setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
-    toBack: function (id) { var it = S.item(id); it.order = ++state.maxOrder; S.sortQueue(); },
+    /* End of the list: behind everything, deadlines too, until it next leaves triage */
+    toBack: function (id, text) { var it = S.item(id); if (text != null) it.draft = text; if (it.kind === 'task') it.atEnd = true; it.order = ++state.maxOrder; S.sortQueue(); },
     enqueue: function (it, where) { it.state = 'triage'; S.queueUp(it, where); },
     /* Into the triage queue without changing state: a draft waiting for your OK stays "review". */
     queueUp: function (it, where) {
@@ -160,7 +161,7 @@
       S.sortQueue();
     },
     inQueue: function (id) { return state.queue.indexOf(id) > -1; },
-    leave: function (id) { state.queue = state.queue.filter(function (q) { return q !== id; }); },
+    leave: function (id) { var it = S.item(id); if (it) it.atEnd = false; state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
     assign: function (id, instructions) {

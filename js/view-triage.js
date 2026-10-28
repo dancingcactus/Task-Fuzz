@@ -153,7 +153,7 @@
     var g = [
       ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
-      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
+      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
       ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
@@ -253,6 +253,8 @@
       /* Three likely times first. The rest, and an exact time, wait behind More times. */
       var all = schedOpts(it), opts = schedMore ? all : all.slice(0, 3);
       var tiles = opts.map(function (o, n) { return '<button type="button" class="when" data-when="' + n + '" aria-keyshortcuts="' + (n + 1) + '"><span>' + esc(o.label) + kbd(n + 1) + '</span><small>' + esc(Sched.hint(o)) + '</small></button>'; });
+      /* No time at all: it stays in triage and comes up after everything else */
+      tiles.push('<button type="button" class="when" data-sched="back" aria-keyshortcuts="E"><span>End of the list' + kbd('E') + '</span><small>After everything else waiting here</small></button>');
       if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
       var meta = it.state === 'review' ? 'Pick a rough time. The draft waits, unsent, and comes back then for your OK.'
         : 'Pick a rough time. Fuzz finds the right moment around your day. Anything you wrote in the instructions, Fuzz looks into before it comes back.';
@@ -928,6 +930,7 @@
       var sb = card.querySelector(review ? '[data-act="notnow"]' : '[data-act="schedule"]'); if (sb) { sb.disabled = false; sb.focus(); }
       return;
     }
+    if (pickedIdx === -2) return toEnd(it, review ? edits[it.id + ':draft'] : undefined);
     var w = pickedIdx === 99 ? exactOpt : schedOpts(it)[pickedIdx], when = w.label.charAt(0).toLowerCase() + w.label.slice(1);
     var btn = card.querySelector('[data-when="' + pickedIdx + '"]'); if (btn) btn.classList.add('picked');
     card.querySelectorAll('[data-when],[data-sched]').forEach(function (b) { b.disabled = true; });
@@ -954,6 +957,26 @@
     await showNext(shown);
   }
   var schedResolve = null, exactOpt = null;
+  /* End of the list: no time, it stays as it is and waits behind the rest of the queue. A draft keeps your edits. */
+  async function toEnd(it, text) {
+    var b = card.querySelector('[data-sched="back"]'); if (b) b.classList.add('picked');
+    card.querySelectorAll('[data-when],[data-sched]').forEach(function (x) { x.disabled = true; });
+    /* It goes behind tasks with deadlines too, so say so when its own is close */
+    if (it.dueAt && it.dueAt - Date.now() < 24 * 3600000) {
+      Fuzz.setMood('worried'); Fuzz.say('Heads up, this is due soon. Moving it to the end anyway.');
+      Say.announce('Heads up, this is due soon. Moving it to the end anyway.');
+      await sleep(2000);
+    }
+    Fuzz.setMood('happy'); Fuzz.pAnim('hop');
+    Fuzz.say(it.state === 'review' ? 'Okay. Nothing goes out. It’s at the end of the list.' : 'Sure. It’s at the end of the list, after everything else.');
+    offer('Moved “' + it.title + '” to the end of the list.', Store.track([it.id], function () { Store.toBack(it.id, text); }));
+    forgetEdits(it.id);
+    var shown = null, exit = sleep(400).then(function () { return fly(card, Progress.target(), { scale: 0.06, rot: 8, dur: 520 }); }).then(function () { shown = bringNext(); });
+    await Promise.all([exit, sleep(1050)]);
+    stats();
+    Fuzz.setMood('idle');
+    await showNext(shown);
+  }
   function renderCardKeep() { var it = cur(); if (!it) return; $('#actions').innerHTML = (it.review && !scheduling) || it.checkBack ? '' : actionsHTML(it); var st = card.querySelector('.stale'); if (st && scheduling) st.hidden = true; else if (st) st.hidden = false; }
 
   /* Approve a draft. Fuzz then sends it with its own connected tools; Undo takes the approval back
@@ -1098,6 +1121,7 @@
       if (t.dataset.when !== undefined) { if (schedResolve) schedResolve(parseInt(t.dataset.when, 10)); return; }
       if (t.dataset.sched) {
         if (t.dataset.sched === 'cancel') { if (schedResolve) schedResolve(-1); }
+        else if (t.dataset.sched === 'back') { if (schedResolve) schedResolve(-2); }
         else if (t.dataset.sched === 'more') { schedMore = true; renderCardKeep(); var nx = card.querySelectorAll('[data-when]')[3]; if (nx) nx.focus(); }
         else if (t.dataset.sched === 'exact') { var ex = $('#exact'); ex.hidden = !ex.hidden; var dt = $('#exact-dt'); if (!dt.value) { var d = new Date(Date.now() + 3600000); d.setMinutes(0, 0, 0); dt.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); } }
         else if (t.dataset.sched === 'exact-go') {
@@ -1191,6 +1215,7 @@
       } else if (scheduling) {
         if (n > -1) b = card.querySelectorAll('[data-when]')[n];
         else if (k === 'm') b = card.querySelector('[data-sched="more"]');
+        else if (k === 'e') b = card.querySelector('[data-sched="back"]');
         else if (k === 'escape') b = card.querySelector('[data-sched="cancel"]');
       } else if (REVIEW[k] && card.querySelector('.actions.review')) {
         b = card.querySelector('[data-act="' + REVIEW[k] + '"]');

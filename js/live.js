@@ -409,10 +409,12 @@
       var it = S.item(id);
       return then(editFirst(it, text), decide(it, 'send_back', note), function () { return kick(it); });
     });
-    /* Not now on a question: postpone it in the core too. On a draft it only moves the card back here. */
-    wrap('toBack', function (id) {
+    /* Not now on a question: postpone it in the core too. A task (End of the list) goes to the back of the
+       core's queue, a draft you edited saved first. */
+    wrap('toBack', function (id, text) {
       var it = S.item(id);
-      return it && QUESTION[it.cardKind] && (it.cardOptions || []).indexOf('not_sure') > -1 ? decide(it, 'not_sure') : null;
+      if (it && QUESTION[it.cardKind] && (it.cardOptions || []).indexOf('not_sure') > -1) return decide(it, 'not_sure');
+      return it && it.kind === 'task' && it.coreId ? then(editFirst(it, text), decide(it, null, undefined, 'back')) : null;
     });
     /* The group sheet: the core makes groups; renaming one, taking a task out and wrapping it up are yours */
     function groupCall(g, what, body) { var gid = g && g.coreId; return gid ? function () { return api('POST', '/groups/' + gid + '/' + what, body || {}); } : null; }
