@@ -14,7 +14,7 @@
   var KEY = 'fuzz.token';
   var token = null, on = false, quiet = 0, gen = 0, pending = 0, chain = Promise.resolve(), recording = null;
   var unpin = false, extra = null, syncing = false, again = false, syncTimer = 0, detail = {}, sig = '', undoBlocked = {}, lastId = 0, said = {};
-  var base = {};
+  var base = {}, listeners = [];
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
@@ -35,8 +35,8 @@
   }
   function forget() { try { localStorage.removeItem(KEY); } catch (e) {} token = null; }
 
-  /* A file opens in a new tab, so its link carries the token the way the event stream does */
-  function fileUrl(sid) { return '/files/' + sid + '?token=' + encodeURIComponent(token || ''); }
+  /* A file opens in the viewer, in a new tab (artifact.html), which reads it with this browser's token */
+  function fileUrl(sid) { return 'artifact.html?id=' + sid; }
   /* A source's link opens where it lives (the email, the Slack thread), but only a web address */
   function webUrl(link) { return /^https?:\/\//i.test(link || '') ? link : null; }
   function api(method, path, body) {
@@ -312,7 +312,7 @@
           var frames = buf.split('\n\n'); buf = frames.pop();
           var moved = false;
           frames.forEach(function (f) { var m = /^id: (\d+)/m.exec(f); if (m) { lastId = Math.max(lastId, +m[1]); moved = true; } });
-          if (moved) soon();
+          if (moved) { soon(); listeners.slice().forEach(function (fn) { fn(); }); }
           pump();
         }).catch(retry);
       })();
@@ -472,6 +472,9 @@
     chooseFolder: function (start) { return api('POST', '/setup/folder/choose', { start: start || null }); },
     saveFolder: function (folder) { return api('PUT', '/setup/folder', { folder: folder || null }); },
     setupDone: function () { return api('POST', '/setup/done', {}); },
+    /* The Artifacts tab: what Fuzz wrote in your output folder, and a call whenever the core's events move */
+    artifacts: function () { return api('GET', '/artifacts'); },
+    onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {
       if (location.protocol === 'file:' || !readToken()) return start();

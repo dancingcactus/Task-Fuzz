@@ -22,6 +22,9 @@ from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
 STATIC_DIRS = ("js", "css", "assets")
+STATIC_PAGES = ("index.html", "artifact.html")
+# A file Fuzz wrote that a browser would run as a page: served sandboxed, so its scripts get no origin
+ACTIVE_TYPES = {"text/html", "application/xhtml+xml", "image/svg+xml", "text/xml", "application/xml"}
 SSE_HEARTBEAT = 15
 TICK_SECONDS = 60
 
@@ -111,6 +114,8 @@ class App:
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
             ("GET", r"/files/(\d+)", self.download),
+            ("GET", r"/artifacts", self.list_artifacts),
+            ("GET", r"/artifacts/(\d+)", self.get_artifact),
             ("GET", r"/setup", self.setup_get),
             ("POST", r"/setup/discover", self.setup_discover),
             ("PUT", r"/setup/tools", self.setup_tools),
@@ -193,6 +198,19 @@ class App:
         if s is None or not os.path.isfile(s["path"]):
             raise FuzzError(f"No file {m.group(1)}", "source_id", 404)
         return {"_file": s["path"], "_name": os.path.basename(s["path"]), "_type": s["mime"]}
+
+    def list_artifacts(self, core, m, body, q):
+        """What Fuzz wrote in your output folder, for the Artifacts tab. folder is null when there's none."""
+        from . import outputs
+        return {"folder": outputs.folder(core), "artifacts": outputs.artifacts(core)}
+
+    def get_artifact(self, core, m, body, q):
+        """One file's name, type and task, for the viewer (artifact.html). The bytes come from /files/<id>."""
+        from . import outputs
+        a = outputs.artifact(core, int(m.group(1)))
+        if a is None:
+            raise FuzzError(f"No file {m.group(1)}", "source_id", 404)
+        return a
 
     # ---- setup: who you are, the tools Fuzz can use, the output folder
     def setup_get(self, core, m, body, q):
@@ -348,6 +366,9 @@ def make_handler(app):
             self.send_header("Content-Type", res.get("_type") or "application/octet-stream")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Content-Disposition", "inline; filename*=UTF-8''" + quote(res["_name"]))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if (res.get("_type") or "").split(";")[0].strip() in ACTIVE_TYPES:   # opened on its own, it can't reach your token
+                self.send_header("Content-Security-Policy", "sandbox")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
@@ -417,7 +438,7 @@ def make_handler(app):
 
         def _static(self, path):
             rel = "index.html" if path == "/" else path.lstrip("/")
-            if rel != "index.html" and rel.split("/")[0] not in STATIC_DIRS:
+            if rel not in STATIC_PAGES and rel.split("/")[0] not in STATIC_DIRS:
                 return self._send(404, {"error": f"No route {path}"})
             p = (UI_ROOT / rel).resolve()
             if UI_ROOT not in p.parents or not p.is_file():

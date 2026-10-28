@@ -46,6 +46,7 @@ class Api(Server):
         self.assertEqual(status, 200)
         self.assertIn(b"<html", body.lower())
         self.assertEqual(self.req("GET", "/js/store.js", token=False, raw=True)[0], 200)
+        self.assertEqual(self.req("GET", "/artifact.html", token=False, raw=True)[0], 200)
         self.assertEqual(self.req("GET", "/../README.md", token=False)[0], 404)
         self.assertEqual(self.req("GET", "/core/fuzz/db.py", token=False)[0], 404)
 
@@ -150,6 +151,27 @@ class Api(Server):
         self.assertEqual(self.req("GET", f"/files/{sid}", raw=True), (200, b"- [ ] One"))
         self.assertEqual(self.req("GET", f"/files/{sid}", token=False)[0], 401)
         self.assertEqual(self.req("GET", "/files/999")[0], 404)
+
+        with open(os.path.join(d, "page.html"), "w") as f:
+            f.write("<script>alert(1)</script>")
+        outputs.record(core, tid)
+        status, body = self.req("GET", "/artifacts")
+        self.assertEqual((status, body["folder"]), (200, out))
+        self.assertEqual(sorted((a["name"], a["kind"]) for a in body["artifacts"]), [("list.md", "markdown"),
+                                                                                       ("page.html", "html")])
+        self.assertEqual(body["artifacts"][0]["task"], {"id": tid, "title": "Make a checklist", "state": "working"})
+        status, a = self.req("GET", f"/artifacts/{sid}")
+        self.assertEqual((status, a["name"], a["source_id"]), (200, "list.md", sid))
+        self.assertEqual(self.req("GET", "/artifacts/999")[0], 404)
+        hid = [x for x in body["artifacts"] if x["name"] == "page.html"][0]["source_id"]
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}/files/{hid}?token={self.token}")
+        with urllib.request.urlopen(r, timeout=10) as resp:
+            self.assertEqual(resp.headers["Content-Security-Policy"], "sandbox", "an HTML output can't reach the token")
+            self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
+        os.remove(os.path.join(d, "page.html"))
+        outputs.record(core, tid)
+        self.assertEqual([a["name"] for a in self.req("GET", "/artifacts")[1]["artifacts"]], ["list.md"],
+                         "a file that's gone leaves the tab")
 
     def test_settings_edit_who_you_are(self):
         self.assertEqual(self.req("GET", "/me")[1]["emails"], ["jgrover@adobe.com"])

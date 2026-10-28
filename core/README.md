@@ -87,7 +87,11 @@ of `--deny-tool write` (`write(<folder>)` alone matches nothing inside it). Noth
 
 Whatever a run leaves in a task's subfolder is recorded on the task (a `sources` row with role
 `output`, and a `task.file_written` event), and the card and task sheet link to it through
-`GET /files/<source id>`. Files are overwritten in place; once written they stay, and Undo doesn't
+`GET /files/<source id>`. `GET /artifacts` lists them all, newest first, with each one's task and `kind`
+(markdown, word, slides, pdf, image, html, table, text or other) for the UI's Artifacts tab, and
+`GET /artifacts/<source id>` gives one to the viewer (`artifact.html`), which previews it in the browser.
+A file a browser would run as a page (HTML, SVG, XML) is served with `Content-Security-Policy: sandbox`,
+so opening it can't reach your token. Files are overwritten in place; once written they stay, and Undo doesn't
 remove them. Approved notes (`Note.md`) and results (`Result.md`) are saved there too. A draft can
 name files in its subfolder in `attach`; the sender gets their paths, may read that folder, and
 attaches them, or reports that its tool can't.
@@ -123,6 +127,7 @@ GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, do
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
 POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
+GET  /files/{source_id}        GET  /artifacts           GET  /artifacts/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
 GET  /undo                     POST /undo {group?}       (each command undoes on its own; see Undo)
 POST /checkin {answer, follow_up?}
