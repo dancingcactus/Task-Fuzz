@@ -692,7 +692,7 @@ replied" are not cards. They are things Fuzz says, through the
 
 | Family | Kind | The decision | Answers |
 | --- | --- | --- | --- |
-| **Routing** | `task` | What should happen to this work? | Assign to Fuzz · Work in Claude · Schedule · Done, plus Park it · Waiting on someone · Drop |
+| **Routing** | `task` | What should happen to this work? | Assign to Fuzz · Work in Claude · Schedule · Done, plus Park it · Waiting on someone · Not mine · Drop |
 | **Questions** | `duplicate` | Are these the same task? | Merge · Keep separate · Not sure yet |
 | | `entity_person` | Are these the same person? | Same person · Different people · Not sure yet |
 | | `entity_term` | What is this? | Save definition · Same as an existing project · Not sure yet |
@@ -768,6 +768,7 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Done | `task.done` | `done` |
 | | Park it | `task.parked` | `parked` |
 | | Waiting on someone `{who}` | `task.waiting` | `waiting`, with a check-back time. Needs a who. With an executor, Fuzz first picks the time from the context (within a week unless there's strong evidence), else three business days |
+| | Not mine `{who?}` | `task.let_go` | `letgo`, tagged `theirs`: Fuzz doesn't track other people's work. A new ask that needs you brings it back |
 | | Drop | `task.let_go` | `letgo` |
 | | Stale: Yes, keep it | `card.answered` | Stays, stale clock resets |
 | | Parked review: Keep it parked | `task.kept_parked` | Back to `parked`; not asked again for `review.again_days` |

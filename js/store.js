@@ -238,6 +238,7 @@
         .forEach(function (n) { n = (n || '').trim(); if (n && n !== 'Someone' && n !== 'You' && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; out.push(n); } });
       return out.slice(0, 4);
     },
+    theirs: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.theirs = true; it.doneAgo = 'Today'; it.now = 'Someone else’s'; S.log(it, 'status', 'You said this is someone else’s, not yours.'); wrapCheck(it); },
     letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
     drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },
     /* A duplicate card's answers: primary, Merge; secondary, Keep separate */

@@ -40,6 +40,8 @@ def _task_answer(core, card, t, option, value):
     if option == "wait":
         return tasks.wait(core, t["id"], on=value if isinstance(value, str) else None, card=card,
                           plan=gathers(core.config))
+    if option == "someone_else":
+        return tasks.theirs(core, t["id"], on=value if isinstance(value, str) else None, card=card)
     if option == "drop":
         return tasks.let_go(core, t["id"], card=card)
     if option == "keep":

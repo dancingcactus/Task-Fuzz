@@ -66,6 +66,15 @@ class Waiting(CoreCase):
         self.assertEqual(t["state"], "queued")
         self.assertIn("nudge to Dana", t["notes"])
 
+    def test_not_mine_from_the_task_card(self):
+        tid, card = self.captured("Fix the dashboard filter bug")
+        self.assertIn("someone_else", cards.view(self.core, card)["options"])
+        answers.answer(self.core, card["id"], "someone_else")
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["variant_tags"], t["reason"]),
+                         ("letgo", ["theirs"], "You said this is someone else's, not yours."))
+        self.assertFalse([c for c in self.open_cards() if c["task_id"] == tid])
+
     def test_someone_elses_task_is_let_go_not_tracked(self):
         tid, card = self.captured("Ship the Q4 dashboard")
         tasks.theirs(self.core, tid, on="Priya", card=card)   # "It's someone else's" on an is_task card

@@ -406,6 +406,7 @@
     wrap('gotIt', function (id) { return decide(S.item(id), 'got_it'); });
     wrap('keepWaiting', function (id) { return decide(S.item(id), 'keep_waiting'); });
     wrap('nudgeThem', function (id) { var it = S.item(id); return then(decide(it, 'nudge'), function () { return kick(it); }); });
+    wrap('theirs', function (id) { return decide(S.item(id), 'someone_else', undefined, 'theirs'); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     /* instr: what Fuzz should look into before it comes back */
