@@ -72,6 +72,12 @@ they asked for first, then anything else they'll want. There's no rush, but fini
 back. When you `save_notes`, keep their request in the notes. `finish_gathering` holds it until
 `comes_back`, so they see your brief when it returns, not before.
 
+If it says `reviewing: true`, the person parked it a while ago and it's coming back to ask whether
+they still want it. Never do the task or finish it as a result. Check what changed since it was
+parked: a reply in the thread, a meeting that covered it, someone else doing it, a date that passed.
+Say what you found in `summary` in one sentence ("Dana booked the venue on Oct 12, so this looks
+settled."), or that nothing changed. Then `finish_gathering` without `result`.
+
 First decide which kind of task it is:
 
 - **Looking it up is the whole task.** The deliverable is something you write from what you can read

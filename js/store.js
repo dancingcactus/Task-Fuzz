@@ -214,6 +214,10 @@
       return { change: ch, held: held.length };
     },
     park: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You parked this from triage.'); },
+    /* The parked review: a parked task came back to ask "Still want this?" */
+    keepParked: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.review = false; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You kept this parked.'); },
+    /* You want it now: it stays first in triage as an ordinary card, so you decide what happens next */
+    clarify: function (id) { var it = S.item(id); it.review = false; it.leansGo = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', 'You brought this back from Parked.'); },
     wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
     letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
     drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },

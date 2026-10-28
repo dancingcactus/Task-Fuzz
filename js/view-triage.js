@@ -153,7 +153,7 @@
     var g = [
       ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
-      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card'], ['L', 'Let a stale card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
+      ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
       ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
@@ -369,7 +369,8 @@
   function cardHTML(it) {
     if (it.state === 'review') return reviewHTML(it);
     var isTask = it.kind === 'task';
-    var stale = isTask && it.stage === 'stale' && !keptStale[it.id] && !scheduling;
+    var parkrev = isTask && it.review;
+    var stale = isTask && !parkrev && it.stage === 'stale' && !keptStale[it.id] && !scheduling;
     var h = tagrow(it) + askHTML(it.ask) + titleHTML(it) + duePanel(it);
     /* What Fuzz found comes before what you tell him to do, so you edit with the answer in view */
     if (isTask && !stale && it.aiNote) h += findingHTML(it);
@@ -377,7 +378,18 @@
       h += '<div class="quick" role="group" aria-label="Quick answers">' + it.quick.map(function (q, i) { return '<button type="button" class="chip" data-quick="' + i + '" aria-keyshortcuts="' + (i + 1) + '">' + esc(q.label || q) + kbd(i + 1) + '</button>'; }).join('') + '</div>';
     }
 
-    if (stale) {
+    if (parkrev) {
+      /* The parked review (GTD's look at Someday/Maybe): one question, four answers. What Fuzz found, if
+         anything, reads above. Bring it back turns this into an ordinary card, first in line. */
+      var go = it.leansGo;
+      h += '<section class="stale parkrev"' + (scheduling ? ' hidden' : '') + '><div class="stale-top"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M5 7v12h14V7M9 11h6M4 3h16v4H4z"/></svg><div><h3>From Parked</h3><p>' +
+        (go ? 'You’ve kept this a few times. Letting it go is fine, and you can bring it back from Let go anytime.' : 'Parked tasks never nag, so now and then Fuzz asks. Keep it, do it, give it a time or let it go.') + '</p></div></div>' +
+        '<div class="stale-btns"><button type="button" class="btn' + (go ? '' : ' primary') + '" data-act="keepparked" aria-keyshortcuts="K">Keep it parked' + kbd('K') + '</button>' +
+        '<button type="button" class="btn" data-act="clarify" aria-keyshortcuts="B">Bring it back' + kbd('B') + '</button>' +
+        '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S">Give it a time' + kbd('S') + '</button>' +
+        '<button type="button" class="btn' + (go ? ' primary' : ' dark') + '" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>' +
+        '<div id="actions">' + (scheduling ? actionsHTML(it) : '') + '</div>';
+    } else if (stale) {
       /* One decision at a time: the usual actions wait until you say you still care. */
       h += '<section class="stale"><div class="stale-top"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/></svg><div><h3>Quiet for ' + esc(it.age) + '</h3><p>Nothing new has come up. Letting it go is fine. It moves to Let go, where you can bring it back anytime.</p></div></div>' +
         '<div class="stale-btns"><button type="button" class="btn" data-act="keep" aria-keyshortcuts="K">Yes, keep it' + kbd('K') + '</button><button type="button" class="btn dark" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>';
@@ -394,7 +406,7 @@
         '<button type="button" class="btn" data-act="ent-later" aria-keyshortcuts="' + (it.third ? 4 : 3) + '">Not sure yet' + kbd(it.third ? 4 : 3) + '</button></div>';
     }
 
-    if (isTask) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
+    if (isTask && !parkrev) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
     h += contextHTML(it, isTask, isTask && !stale, it.entity === 'is_task') + UI.idTag(it);
     h += '<div class="stamp" aria-hidden="true">DONE</div>';
     return h;
@@ -925,7 +937,7 @@
     await showNext(shown);
   }
   var schedResolve = null, exactOpt = null;
-  function renderCardKeep() { var it = cur(); if (!it) return; $('#actions').innerHTML = actionsHTML(it); var st = card.querySelector('.stale'); if (st && scheduling) st.hidden = true; else if (st) st.hidden = false; }
+  function renderCardKeep() { var it = cur(); if (!it) return; $('#actions').innerHTML = it.review && !scheduling ? '' : actionsHTML(it); var st = card.querySelector('.stale'); if (st && scheduling) st.hidden = true; else if (st) st.hidden = false; }
 
   /* Approve a draft. Fuzz then sends it with its own connected tools; Undo takes the approval back
      until it has gone out, and not after. A draft just for you is only filed. */
@@ -1085,6 +1097,8 @@
       else if (a === 'park') moment(function () { return quickClear('Parked', 'Parked “' + cur().title + '”. Find it in Lineup, under Parked.', function (i) { Store.park(i.id); }, 'Parked. No date, no pressure.'); });
       else if (a === 'waiting') moment(function () { return quickClear('Waiting on someone:', 'Moved to Waiting on others. Fuzz will watch for a reply.', function (i) { Store.wait(i.id); }, 'I’ll watch for the reply.'); });
       else if (a === 'letgo') moment(function () { return quickClear('Let go of', 'Let go. You can bring it back from Let go.', function (i) { Store.letGo(i.id); }, 'Let go. That one’s off your plate.', 'sleepy'); });
+      else if (a === 'keepparked') moment(function () { return quickClear('Kept parked', 'Kept “' + cur().title + '” parked. Fuzz won’t ask again for a few weeks.', function (i) { Store.keepParked(i.id); }, 'Kept. It stays parked, no pressure.'); });
+      else if (a === 'clarify') { var ci = cur(); Store.clarify(ci.id); renderCard(cur()); refocus(landing()); Fuzz.setMood('eager'); Fuzz.pAnim('hop'); Fuzz.say('Back on your list. What should happen to it?', { type: false }); }
       else if (a === 'keep') { keptStale[cur().id] = true; renderCard(cur()); refocus(landing()); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Kept. It stays on your list.', { type: false }); setTimeout(function () { if (alive && Fuzz.mood() === 'happy') Fuzz.setMood('idle'); }, 1500); }
       else if (a === 'send') moment(sendDraft);
       else if (a === 'sentself') moment(done);
@@ -1118,7 +1132,7 @@
        (A assign, D done, S schedule, P park; K keep and L let go on a stale card). Numbers pick
        from whatever choice is on screen: a time while scheduling, an answer on an entity or duplicate
        card, a quick answer on a handback, a mood (then a follow-up) on a check-in. Escape backs out. */
-    var KEYS = { a: 'assign', d: 'done', s: 'schedule', p: 'park', c: 'claude', w: 'waiting' }, STALE = { k: 'keep', l: 'letgo' }, REVIEW = { r: 'revise', l: 'notnow', d: 'sentself' };
+    var KEYS = { a: 'assign', d: 'done', s: 'schedule', p: 'park', c: 'claude', w: 'waiting' }, STALE = { k: 'keep', l: 'letgo' }, PARKREV = { k: 'keepparked', b: 'clarify', l: 'letgo' }, REVIEW = { r: 'revise', l: 'notnow', d: 'sentself' };
     docKey = function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
@@ -1148,6 +1162,8 @@
         else if (k === 'escape') b = card.querySelector('[data-sched="cancel"]');
       } else if (REVIEW[k] && card.querySelector('.actions.review')) {
         b = card.querySelector('[data-act="' + REVIEW[k] + '"]');
+      } else if (PARKREV[k] && card.querySelector('.parkrev:not([hidden])')) {
+        b = card.querySelector('[data-act="' + PARKREV[k] + '"]');
       } else if (STALE[k] && card.querySelector('.stale:not([hidden])')) {
         b = card.querySelector('[data-act="' + STALE[k] + '"]');
       } else if (KEYS[k]) {

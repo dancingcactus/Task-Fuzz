@@ -65,7 +65,8 @@ def _task_brief(core, t):
     b = core.config["budget"]
     return {"id": t["id"], "title": t["title"], "ask": t["ask"], "state": t["state"], "due": t["due"],
             "created_at": t["created_at"], "gathering": scheduler.gathering(t),
-            "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"],
+            "reviewing": scheduler.gathering(t) and "review" in (t.get("variant_tags") or []),
+            "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"] and "review" not in (t.get("variant_tags") or []),
             "comes_back": timeres.label(core, t["schedule_anchor"]) if scheduler.gathering(t) and t.get("schedule_anchor") else None,
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],

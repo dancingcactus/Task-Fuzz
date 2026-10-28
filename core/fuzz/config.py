@@ -11,6 +11,12 @@ DEFAULTS = {
     "budget": {"max_working": 2, "max_steps": 20, "max_attempts": 3, "lease_minutes": 10},
     "tz": "local",
     "stale_days": 7,
+    # The parked review: a few parked tasks a day come back to ask "Still want this?", how many by your
+    # last check-in that day (none without one), at most `weekly` in any 7 days. A task is asked about
+    # once it has sat `rest_days`, then again `again_days` after you keep it. After `let_go_after` keeps,
+    # the card suggests letting it go.
+    "review": {"enabled": True, "weekly": 7, "per_day": {"good": 3, "okay": 1}, "rest_days": 7,
+               "again_days": 28, "let_go_after": 3},
     # A task you capture goes to Fuzz first, to look it up with the read tools below, then to triage.
     # minutes: how long it may wait for a run before it comes to you without. finish_results: when
     # looking it up is the whole task (a summary, an agenda), Fuzz does it then and it arrives done.

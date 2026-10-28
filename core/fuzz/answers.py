@@ -43,6 +43,10 @@ def _task_answer(core, card, t, option, value):
         return tasks.let_go(core, t["id"], card=card)
     if option == "keep":
         return tasks.keep_stale(core, t["id"], card)
+    if option == "keep_parked":
+        return tasks.keep_parked(core, t["id"], card)
+    if option == "now":
+        return tasks.clarify(core, t["id"], card)
 
 
 def _duplicate(core, card, t, option, value):

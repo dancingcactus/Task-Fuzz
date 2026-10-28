@@ -20,6 +20,7 @@ OPTIONS = {
     "permission": ["allow_once", "always_allow", "deny"],
 }
 TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "drop"]
+REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
@@ -37,7 +38,7 @@ PROMPTS = {
 }
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review"}
 
 
 def open_cards(core, task_id):
@@ -103,7 +104,7 @@ def sync(core, task_id, where="back"):
     if t["state"] == "triage" and not open_:
         kind = "is_task" if "unconfirmed" in tags else "task"
         return create(core, kind, task_id, reason=t.get("reason"),
-                      suggested="keep" if "stale" in tags else "done" if "result" in tags
+                      suggested=review_suggests(core, t) if "review" in tags else "keep" if "stale" in tags else "done" if "result" in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
@@ -123,8 +124,15 @@ def refresh_schedule_options(core, ch, task_id):
             ch.card(c["id"], schedule_options=timeres.build_options(core, t))
 
 
+def review_suggests(core, t):
+    """Kept parked through enough reviews already: the card leans toward letting it go."""
+    return "drop" if (t.get("reviews") or 0) >= core.config["review"]["let_go_after"] else "keep_parked"
+
+
 def task_options(task):
     tags = task.get("variant_tags") or []
+    if "review" in tags:
+        return list(REVIEW_OPTIONS)
     opts = list(TASK_OPTIONS)
     if "stale" in tags:
         opts.insert(0, "keep")

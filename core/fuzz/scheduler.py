@@ -119,6 +119,7 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
     if not gathering(t):
         raise FuzzError(f"Task {t['id']} isn't being gathered", "task_id", 409)
     held = hold and holding(core, t)
+    result = result and "review" not in (t.get("variant_tags") or [])   # a parked review only asks; you decide
     back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
     if result:
         if not core.config["gather"]["finish_results"]:
@@ -292,6 +293,7 @@ def suggest_schedule(core, task_id, anchor, reason, actor="fuzz:executor"):
 
 def tick(core):
     """Run every minute by `fuzz serve` (and by `fuzz tick`). Returns what moved."""
+    from . import review
     out = {"released": expire_leases(core), "came_back": 0, "deadline": 0, "stale": 0, "gather_timeout": 0}
     now = core.now_iso()
     # Gathering never keeps a task from you for long: no run picked it up in time, so it goes to triage as is
@@ -304,6 +306,10 @@ def tick(core):
                 continue
             lab = timeres.label(core, t["schedule_anchor"])
             log = f"Fuzz didn't get to this before {lab[0].lower() + lab[1:]}, so it came back as it was."
+        elif "review" in (t.get("variant_tags") or []):   # a parked task back to ask: its clock starts then
+            if (t.get("reviewed_at") or "") >= late:
+                continue
+            log = "Fuzz didn't get to look before asking, so it came back as it was."
         elif t["created_at"] < late:
             log = "Fuzz didn't get to this in time, so it came to you as captured."
         else:
@@ -338,6 +344,7 @@ def tick(core):
                     ch.card(c["id"], suggested="keep")
             events.emit(core, "task.stale", task_id=t["id"], changes=ch)
         out["stale"] += 1
+    out["review"] = review.release(core)
     return out
 
 

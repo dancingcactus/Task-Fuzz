@@ -221,6 +221,7 @@ task.handed_back task.scheduled  task.woke        task.parked      task.waiting
 task.done       task.let_go      task.restored    task.stale       task.deadline_level
 task.reopened   task.reply_in    task.came_back   task.anchor_moved task.anchor_lost
 task.confirmed  task.draft_edited task.sent_back task.send_failed
+task.review_due task.kept_parked
 group.created   group.linked     group.unlinked   group.renamed    group.wrapped
 entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
@@ -769,6 +770,8 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Waiting on someone | `task.waiting` | `waiting` |
 | | Drop | `task.let_go` | `letgo` |
 | | Stale: Yes, keep it | `card.answered` | Stays, stale clock resets |
+| | Parked review: Keep it parked | `task.kept_parked` | Back to `parked`; not asked again for `review.again_days` |
+| | Parked review: Bring it back | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
 | | Handed back: quick answer `{text}` | `card.answered`, `task.assigned` | Back to `queued` with the answer in its notes |
 | `duplicate` | Merge | `task.merged` | The other task redirects. Logged in `feedback` |
 | | Keep separate | `card.answered` | A `kept_separate` link, so Fuzz won't ask again. Logged in `feedback` |

@@ -157,7 +157,7 @@
       age: ago(t.created_at) || 'Just now', stage: tags.indexOf('stale') > -1 ? 'stale' : 'fresh',
       mins: t.effort_mins || 5, energy: t.energy || 'normal',
       incoming: t.reason || (t.ask && t.ask !== t.title ? t.ask : origin ? '' : 'You captured this.'),
-      ask: (c && c.prompt) || t.question || 'What should happen to this?',
+      ask: (tags.indexOf('review') > -1 && t.reason) || (c && c.prompt) || t.question || 'What should happen to this?',
       hint: '', instr: it.instr && it.coreId === t.id ? it.instr : '',
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
@@ -170,6 +170,8 @@
       quick: tags.indexOf('handed_back') > -1 && t.quick_answers && t.quick_answers.length ? t.quick_answers : null,
       updated: tags.indexOf('returning') > -1 || tags.indexOf('reopened') > -1 || tags.indexOf('woke') > -1,
       woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1,
+      /* A parked task back to ask if you still want it; after a few keeps the card leans toward letting go */
+      review: tags.indexOf('review') > -1 && state === 'triage', leansGo: !!(c && c.suggested === 'drop'),
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
       waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
@@ -377,6 +379,8 @@
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('markDone', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('park', function (id) { return decide(S.item(id), 'park', undefined, 'park'); });
+    wrap('keepParked', function (id) { return decide(S.item(id), 'keep_parked'); });
+    wrap('clarify', function (id) { return decide(S.item(id), 'now'); });
     wrap('wait', function (id) { return decide(S.item(id), 'wait', undefined, 'wait'); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });

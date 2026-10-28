@@ -282,6 +282,28 @@ def keep_stale(core, task_id, card):
         cards.sync(core, t["id"])
 
 
+def keep_parked(core, task_id, card):
+    """The parked review asked and you still want it someday: back to Parked, not asked again for a while."""
+    t = require(core, task_id)
+    return _one(core, "human", "task.kept_parked", t, "parked", ("status", "You kept this parked."), card=card,
+                option="keep_parked", question=None, reviewed_at=core.now_iso(), reviews=(t.get("reviews") or 0) + 1)
+
+
+def clarify(core, task_id, card):
+    """The parked review asked and you want it now: it stays in triage, first in line, as a fresh task card
+    so you decide what happens to it next."""
+    t = require(core, task_id)
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], variant_tags=_tags(t, remove=("review",)), order_key=next_order(core, "front"),
+                reason=None, reviewed_at=core.now_iso())
+        _answered(core, ch, card, "now")
+        events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": "now"},
+                    log=("status", "You brought this back from Parked."))
+        cards.sync(core, t["id"], "front")
+    return t["id"]
+
+
 # ---------------------------------------------------------------- the AI's writes
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,

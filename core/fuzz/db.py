@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   summary TEXT,                    -- a sentence or two on what the AI did or found, shown above the brief
   question TEXT,                   -- the one question the AI is asking the human now
   quick_answers TEXT,              -- json list, from a handback
-  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed
+  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed, review
   reason TEXT,                     -- why it is back: "Priya asked for the deck again on Slack"
   effort_mins INTEGER,
   energy TEXT,                     -- low | normal | high
@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   merged_into INTEGER,
   parent_id INTEGER,
   group_id INTEGER,                -- the tasks that came from the same place (groups.py)
+  reviewed_at TEXT,                -- the last time a parked review asked about it (review.py)
+  reviews INTEGER,                 -- how many times you kept it parked when asked
   title_history TEXT,              -- json list
   created_at TEXT,
   state_changed_at TEXT,
@@ -338,7 +340,7 @@ def connect(home):
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
-              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER")]}
+              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER")]}
 
 
 def _migrate(conn):
