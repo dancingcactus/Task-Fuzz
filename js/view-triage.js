@@ -18,7 +18,7 @@
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
-  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false;
+  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, attachOpen = {};
   var docClick = null, docKey = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
@@ -131,6 +131,8 @@
       /* A finished draft arrives as its own card at the back of the queue, with no announcement. */
       stats(); updateStack(true);
       if (card.style.display === 'none' && !ciOpen) showNext();
+    } else if (e.type === 'attach') {
+      var it = cur(); if (it && it.id === e.id && $('#rich')) { tab = 'sources'; $('#rich').innerHTML = richHTML(it); }
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
       if (card.style.display === 'none' && !ciOpen) showNext();
@@ -283,6 +285,21 @@
         '</div></div>' + (res ? assignBtn : '') + '</div>';
   }
 
+  /* Extra context for Fuzz: folded away until you want it, so the card stays one decision */
+  function attachHTML(it) {
+    return '<details class="attach" id="attach"' + (attachOpen[it.id] ? ' open' : '') + '><summary><b>Add files</b> <span>Optional. More for Fuzz to read.</span></summary>' +
+      '<div class="drop" id="adrop"><button type="button" class="dropbtn" id="adropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
+        '<span class="droptxt"><b>Drop files here</b><small>Fuzz reads them with this task. They show up under Sources.</small></span><span class="droplink">Choose files</span></button>' +
+        '<input type="file" id="afile" multiple hidden></div></details>';
+  }
+  function addFiles(list) {
+    var it = cur(), picked = Array.prototype.slice.call(list || []);
+    if (!it || !picked.length) return;
+    Store.attach(it.id, picked);
+    var line = picked.length === 1 ? 'Got ' + picked[0].name + '. I’ll read it with the task.' : 'Got ' + picked.length + ' files. I’ll read them with the task.';
+    Fuzz.say(line, { type: false }); Say.announce(line);
+  }
+
   function richAvail(it) {
     var a = [];
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
@@ -411,6 +428,7 @@
     } else if (isTask) {
       var val = edits[it.id + ':instr'] !== undefined ? edits[it.id + ':instr'] : (it.instr || it.hint || '');
       h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><textarea id="instr" rows="3">' + esc(val) + '</textarea></div>';
+      h += attachHTML(it);
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
@@ -1078,7 +1096,13 @@
       if (e.target.id === 'wait-who') edits[it.id + ':who'] = e.target.value;
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
+    /* Add files: the button opens the picker, a drop lands on the task */
+    card.addEventListener('toggle', function (e) { var it = cur(); if (e.target.id === 'attach' && it) attachOpen[it.id] = e.target.open; }, true);
+    card.addEventListener('change', function (e) { if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; } });
+    ['dragenter', 'dragover'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (d) { e.preventDefault(); d.classList.add('over'); } }); });
+    ['dragleave', 'drop'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (!d) return; e.preventDefault(); d.classList.remove('over'); if (n === 'drop' && e.dataTransfer) addFiles(e.dataTransfer.files); }); });
     card.addEventListener('click', function (e) {
+      if (e.target.closest('#adropbtn')) { $('#afile').click(); return; }
       var t = e.target.closest('[data-act],[data-when],[data-tab],[data-quick],[data-sched],[data-who]');
       if (!t || !card.contains(t)) return;
       if (t.dataset.who) { waitOn(t.dataset.who); return; }

@@ -395,6 +395,7 @@
       return then(decide(it, 'assign', { instructions: text }, 'assign', { instructions: text }), function () { return kick(it); });
     });
     wrap('handToFuzz', function (id) { var it = S.item(id); return then(decide(it, 'assign', {}, 'assign'), function () { return kick(it); }); });
+    wrap('attach', function (id, files) { var it = S.item(id); return function () { return upload(it.coreId, files); }; });
     wrap('mine', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('session', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });

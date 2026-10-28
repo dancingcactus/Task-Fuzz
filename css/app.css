@@ -228,6 +228,12 @@ html.calm .echo { animation: none; }
 .instr-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
 .instr-top label { margin: 0; }
 .instr-top span { font-size: 12.5px; color: var(--muted); }
+.attach { margin: -10px 0 -6px; } /* sits close under the instructions it adds to */
+.attach summary { cursor: pointer; list-style: none; min-height: 32px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; padding: 4px 0; font-size: 14px; }
+.attach summary::-webkit-details-marker { display: none; }
+.attach summary b { font-weight: 600; color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.attach summary span { font-size: 12.5px; color: var(--muted); }
+.attach[open] summary { padding-bottom: 6px; }
 .actions .btn { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; }
 .actions .btn.primary { min-height: 50px; box-shadow: 0 4px 10px -4px color-mix(in srgb, #000 30%, transparent); }
 .actions.ent { grid-template-columns: repeat(2, 1fr); }

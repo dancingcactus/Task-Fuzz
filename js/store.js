@@ -359,6 +359,12 @@
       emit({ type: 'capture', item: it });
       return it;
     },
+    /* Files you add to a task in triage: more for Fuzz to read. They join its Sources. */
+    attach: function (id, files) {
+      var it = S.item(id);
+      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      emit({ type: 'attach', id: id });
+    },
     parkThought: function (text) {
       var id = 'thought' + (++captureN);
       var it = {
