@@ -4,7 +4,8 @@ import unittest
 
 from helpers import CoreCase, fixture
 
-from fuzz import answers, cards, tasks, tools
+from fuzz import answers, cards, events, tasks, tools
+from fuzz.db import FuzzError
 
 # What a judge says about each day-2 ask (the spike's table): ask keyword -> (target title keyword, verdict, conf, new_ask, new_title)
 JUDGE = {
@@ -177,6 +178,40 @@ class TwoDays(CoreCase):
         self.assertEqual(t["state"], "parked")
         self.assertIn("woke", t["variant_tags"])
         self.assertFalse(self.open_cards() and [c for c in self.open_cards() if c["task_id"] == contract["id"]])
+
+    def answer_in_thread(self, frm, sid="msg-b13", **extra):
+        tools.submit_signals(self.core, [dict({
+            "source": "email", "source_id": sid, "anchor": "email:conv-B", "ts": "2026-10-20T09:30:00Z",
+            "from": frm, "quote": "Signed and sent back.", "answers": True, "candidates": []}, **extra)])
+
+    def test_your_own_reply_that_answers_closes_the_task(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        self.answer_in_thread({"name": "Justin Grover"})   # Slack gives the full name; me.names has "Justin"
+        t = self.task(contract["id"])
+        self.assertEqual(t["state"], "done")
+        self.assertFalse([c for c in self.open_cards() if c["task_id"] == contract["id"]])
+        log = [x["text"] for x in events.task_log(self.core, contract["id"], 1)]
+        self.assertIn("You answered in Email", log[0])
+
+    def test_someone_elses_answer_does_not_close_it(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        self.answer_in_thread({"name": "Marco Diaz", "email": "marco@acme.example"})
+        self.answer_in_thread({"name": "Justin Smith", "email": "jsmith@acme.example"}, sid="msg-b14")
+        self.assertEqual(self.task(contract["id"])["state"], "triage")
+
+    def test_your_answer_leaves_a_task_you_wait_on_open(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "wait", "Marco Diaz")
+        self.answer_in_thread({"name": "Justin", "email": "jgrover@adobe.com"})
+        self.assertEqual(self.task(contract["id"])["state"], "waiting")
+
+    def test_an_answer_carries_no_asks(self):
+        with self.assertRaises(FuzzError) as e:
+            self.answer_in_thread({"name": "Justin"}, candidates=[{"ask": "Send the deck"}])
+        self.assertEqual(e.exception.field, "signals[0].answers")
 
     def test_a_candidate_can_carry_a_brief(self):
         tools.submit_signals(self.core, [{

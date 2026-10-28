@@ -31,6 +31,10 @@ ANCHOR_SEM_FLOOR = {"hash": 0.10, "ollama": 0.45}
 TYPE_WEIGHT = {"ticket": 3.0, "document": 3.0, "person": 1.0, "term": 1.0, "org": 0.3}
 STRENGTH_WEIGHT = {"id": 1.0, "alias": 0.5, "provisional": 0.0}
 
+# Your own reply that answers the thread closes the task, if it's still waiting on you. Waiting tasks wait on
+# someone else, and Fuzz's own work in flight finishes or comes back to you.
+ANSWERED_CLOSES = ("triage", "queued", "scheduled", "parked", "session")
+
 MERGE_CONF = 0.85
 DUP_CONF = 0.60
 
@@ -466,6 +470,8 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
     ch = events.Changes()
     new_ask = cand["kind"] == "ask"
     back = None   # (type, reason, tag) when the task returns to triage
+    answered = (role == "update" and not new_ask and s.get("answers") and t["state"] in ANSWERED_CLOSES
+                and entities.sent_by_me(s.get("from") or {}, ctx.cfg.get("me", {})))
     if role == "update":
         if new_title:
             tasks.retitle(core, ch, t, new_title)
@@ -486,7 +492,7 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
                     "returning")
         elif t["state"] == "waiting" and (new_ask or _from_waited_on(t, s)):
             back = ("task.reply_in", f"Reply came in from {who}", "returning")
-        elif t["state"] == "parked":
+        elif t["state"] == "parked" and not answered:
             if new_ask:
                 back = ("task.reopened", f"{who} asked something new about this", "reopened")
             else:
@@ -501,6 +507,13 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
         events.emit(core, typ, task_id=tid, changes=ch, log=("status", f"{text}. {why}."),
                     data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id})
         cards.sync(core, tid, "front" if typ == "task.reply_in" else "back")
+    elif answered:
+        tasks.move(core, ch, t, "done", question=None)
+        quote = (s.get("quote") or "").strip()[:160]
+        events.emit(core, "task.done", task_id=tid, changes=ch,
+                    log=("status", f"You answered in {where}" + (f": “{quote}”" if quote else "") + ". Fuzz marked this done."),
+                    data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id, "by": "reply"})
+        cards.sync(core, tid)
     else:
         events.emit(core, "task.reply_in", task_id=tid, changes=ch, log=("status", text),
                     data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id})

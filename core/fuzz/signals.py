@@ -60,6 +60,7 @@ SIGNAL = {
         "links": {"type": "array", "items": {"type": "string"}},
         "quote": {"type": "string", "maxLength": 600},
         "withdrawn": {"type": "boolean"},
+        "answers": {"type": "boolean"},   # the person's own reply, doing what the thread asked of them
         "candidates": {"type": "array", "items": CANDIDATE},
     },
     "additionalProperties": False,
@@ -110,6 +111,9 @@ def check_signals(signals):
     for i, s in enumerate(signals):
         if s.get("withdrawn") and s.get("candidates"):
             raise FuzzError(f"signals[{i}]: a withdrawn signal has no candidates", f"signals[{i}].candidates")
+        if s.get("answers") and s.get("candidates"):
+            raise FuzzError(f"signals[{i}]: a reply that answers the thread has no candidates; send a new ask "
+                            "in it as its own signal", f"signals[{i}].answers")
 
 
 def check_verdicts(verdicts):

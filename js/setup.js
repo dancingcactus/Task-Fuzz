@@ -58,7 +58,7 @@
     var other = v.tools.length - look.length - send.length;
     var n = Object.keys(p.read).length;
     return h + '<p class="meta">Listed ' + esc(new Date(v.discovered_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '. ' + again + '</p>' +
-      '<div class="setup-subrow"><h4 class="setup-sub">Look things up</h4>' + (look.length ? allBtn('read', look, p) : '') + '</div><p class="meta">The executor runs these without asking, so only tools that read are suggested.</p>' +
+      '<div class="setup-subrow"><h4 class="setup-sub">Look things up</h4>' + (look.length ? allBtn('read', look, p) : '') + '</div><p class="meta">The executor and extractor run these without asking, so only tools that read are suggested.</p>' +
       (look.length ? '<ul class="setup-tools">' + look.map(function (t) { return toolRow(t, 'read', p.read[t.allow]); }).join('') + '</ul>' : '<p class="meta">None found.</p>') +
       '<div class="setup-subrow"><h4 class="setup-sub">Send</h4>' + (send.length ? allBtn('send', send, p) : '') + '</div><p class="meta">The sender uses these only for drafts you approved. None is ticked for you.</p>' +
       (send.length ? '<ul class="setup-tools">' + send.map(function (t) { return toolRow(t, 'send', p.send[t.allow]); }).join('') + '</ul>' : '<p class="meta">None found.</p>') +

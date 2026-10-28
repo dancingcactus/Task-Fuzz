@@ -152,7 +152,7 @@ class HeadlessRuns(CoreCase):
         i = argv.index("--allowedTools")
         self.assertEqual(argv[i + 1:i + 3], ["mcp__fuzz-executor__*"] + read)
         se = adapters.get("claude-code").headless_command("sender", "/tmp/run.json", read_tools=read)
-        self.assertNotIn(read[0], se, "only the executor gets lookup tools")
+        self.assertNotIn(read[0], se, "the sender gets no lookup tools")
         cp = adapters.get("copilot").headless_command("executor", "/tmp/run.json", read_tools=["Glean"])
         self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"], ["fuzz-executor", "Glean"])
         self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--deny-tool"], ["shell", "write"])
@@ -173,6 +173,19 @@ class HeadlessRuns(CoreCase):
         self.assertEqual(available(se), ["fuzz-sender", "slack-send_message"], "no lookup tools, no files")
         self.assertNotIn("--available-tools", cp.headless_command("extractor", "/tmp/run.json"),
                          "the extractor reads your sources with your own connectors")
+
+    def test_the_extractor_may_call_the_lookup_tools_you_listed(self):
+        cc = adapters.get("claude-code").headless_command("extractor", "/tmp/run.json",
+                                                          read_tools=["mcp__fluffyjaws__slack_search"])
+        i = cc.index("--allowedTools")
+        self.assertEqual(cc[i + 1:i + 3], ["mcp__fuzz-extractor__*", "mcp__fluffyjaws__slack_search"])
+        self.assertNotIn("--strict-mcp-config", cc, "it reads your sources with your own connectors")
+        cp = adapters.get("copilot").headless_command("extractor", "/tmp/run.json",
+                                                      read_tools=["fluffyjaws(slack_search)", "Glean"])
+        self.assertEqual([cp[i + 1] for i, x in enumerate(cp) if x == "--allow-tool"],
+                         ["fuzz-extractor", "fluffyjaws(slack_search)", "Glean"],
+                         "nobody is there to approve a tool it wasn't allowed")
+        self.assertNotIn("--available-tools", cp)
 
     def test_the_extractor_gets_no_files(self):
         argv = adapters.get("claude-code").headless_command("extractor", "/tmp/run.json")

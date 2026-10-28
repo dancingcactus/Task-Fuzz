@@ -85,8 +85,9 @@ def _headless(core, adapter, role, rid, model, task_id, verbose, say):
     if role == "sender":   # the connector tools you allowed for sending, as this client names them
         send_tools = list(((core.config.get("send") or {}).get("tools") or {}).get(adapter.name) or [])
         files_dir = out    # it may attach what the executor saved there
-    if role == "executor":   # and the ones you allowed for looking things up, and the folder it may write to
+    if role in ("executor", "extractor"):   # the ones you allowed for looking things up: Slack, mail, docs
         read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(adapter.name) or [])
+    if role == "executor":   # and the folder it may write to
         write_dir = out
     argv = adapter.headless_command(role, cfg_path, model, task_id, verbose, files_dir, send_tools=send_tools,
                                     read_tools=read_tools, write_dir=write_dir)
