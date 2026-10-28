@@ -69,6 +69,13 @@ def build(core, role):
             return _call(tools.read_source, core, source_id)
 
         @srv.tool()
+        def add_source(task_id: int, title: str, link: str) -> dict:
+            """Add a web page (a wiki, a doc, a ticket) to the task's Sources, when the person asks for it or
+            it's what the task hangs on. link: its full http(s) address; title: its name as the page shows it.
+            The same link twice is one source. Doesn't count against the step budget."""
+            return _call(tools.add_source, core, task_id, title, link)
+
+        @srv.tool()
         def log_step(task_id: int, kind: str, text: str) -> dict:
             """Add one line to the task's "Done so far". kind: research, action or guidance. Each call counts
             against the step budget."""

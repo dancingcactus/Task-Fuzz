@@ -4,6 +4,8 @@ Human decisions (assign, done, park...) and the AI's writes (log_step, update_br
 here, so HTTP, MCP and the CLI all call the same code.
 """
 
+import re
+
 from . import cards, events, states
 from .db import FuzzError, parse_iso
 
@@ -296,6 +298,26 @@ def save_notes(core, task_id, text, actor="fuzz:executor"):
         ch = events.Changes()
         ch.task(t["id"], notes=(text or "").strip() or None)
         events.emit(core, "task.notes_saved", task_id=t["id"], changes=ch)
+
+
+def add_link(core, task_id, title, link, actor="fuzz:executor"):
+    """A web page that belongs with the task (a wiki, a doc) becomes one of its sources. The same link twice is one source."""
+    t = require(core, task_id)
+    link = (link or "").strip()
+    if not re.match(r"^https?://\S+$", link, re.I):
+        raise FuzzError("link is the page's full http(s) address", "link")
+    title = (title or "").strip() or link
+    have = core.one("SELECT id FROM sources WHERE task_id=? AND user_id=? AND role='link' AND link=? AND withdrawn=0",
+                    (t["id"], core.user_id, link))
+    if have:
+        return have["id"], False
+    with core.tx(actor):
+        sid = core.q("INSERT INTO sources (user_id, task_id, role, title, link, added_run) VALUES (?,?,?,?,?,?)",
+                     (core.user_id, t["id"], "link", title, link, (core.run or {}).get("id"))).lastrowid
+        who = "You" if actor == "human" else "Fuzz"
+        events.emit(core, "task.link_added", task_id=t["id"], data={"source_id": sid, "title": title, "link": link},
+                    log=("status", f"{who} added {title} as a source."))
+    return sid, True
 
 
 def rename(core, task_id, title=None, ask=None, actor="fuzz:executor"):

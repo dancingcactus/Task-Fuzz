@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.11
+prompt_version: executor-0.12
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.11`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.12`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -109,6 +109,10 @@ they assign it to you.
 - **Attachments are files the person added.** `get_task` lists each one with its `path`, type and
   size. Open them with your own file tools, and only at those paths. How to read a format is up to
   you.
+- **Web pages can be sources too.** When the person asks you to add a page as a source, or the task
+  hangs on one (the wiki or doc an email links to), call `add_source` with its full link and its
+  title as the page shows it. It shows up in their Sources and in `get_task` with its `link`. Don't
+  just paste the link into the brief instead.
 - **Some tasks come in a group.** When one email, meeting or run of Slack messages brought several
   asks, `get_task` gives a `group`: its name and the other tasks in it, with their states. Use it
   for context, such as what the meeting was about or what another task already settled. Work only

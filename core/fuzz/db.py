@@ -224,9 +224,10 @@ CREATE TABLE IF NOT EXISTS sources (
   task_id INTEGER NOT NULL,
   candidate_id INTEGER,            -- null for an attachment you added
   signal_key TEXT,
-  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment | output
+  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment | output | link
   title TEXT,
   path TEXT,                       -- an attachment's file, in files/u<user>/t<task>/, or an output's
+  link TEXT,                       -- a web page the executor added as a source (add_source)
   mime TEXT,
   size INTEGER,
   added_run INTEGER,
@@ -334,7 +335,7 @@ def connect(home):
     return conn
 
 
-MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")],
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER")]}
 

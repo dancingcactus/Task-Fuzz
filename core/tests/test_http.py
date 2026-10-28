@@ -71,6 +71,14 @@ class Api(Server):
         self.assertEqual(full["state"], "review")
         self.assertTrue(full["log"] and full["drafts"] and full["cards"])
 
+    def test_a_source_link_reaches_the_page(self):
+        core = self.srv.app.core(1)
+        tid = tasks.capture(core, "Follow up with the KB team")
+        tasks.add_link(core, tid, "KB use cases", "https://wiki.example.com/kb")
+        src = self.req("GET", f"/tasks/{tid}")[1]["sources"]
+        self.assertEqual([(s["role"], s["title"], s["link"]) for s in src],
+                         [("link", "KB use cases", "https://wiki.example.com/kb")])
+
     def test_checkin_is_recorded_not_raised(self):
         self.req("POST", "/tasks", {"text": "One"})
         status, body = self.req("POST", "/checkin", {"answer": "tired"})

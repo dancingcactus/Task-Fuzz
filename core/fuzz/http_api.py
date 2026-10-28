@@ -61,7 +61,7 @@ def task_view(core, t, full=False):
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
     if full:
         out["log"] = events.task_log(core, t["id"])
-        out["sources"] = core.all("SELECT s.id, s.role, s.title, s.withdrawn, g.link, g.quote FROM sources s "
+        out["sources"] = core.all("SELECT s.id, s.role, s.title, s.withdrawn, COALESCE(s.link, g.link) link, g.quote FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "WHERE s.task_id=? AND s.user_id=?", (t["id"], core.user_id))
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]

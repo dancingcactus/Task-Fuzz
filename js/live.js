@@ -18,7 +18,7 @@
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
-  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File', output: 'Saved file' };
+  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File', output: 'Saved file', link: 'Link' };
 
   /* ---------- Talking to the core ---------- */
   function readToken() {
