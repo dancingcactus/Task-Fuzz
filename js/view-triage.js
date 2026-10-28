@@ -18,7 +18,7 @@
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
-  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, awayOpen = false;
+  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false;
   var docClick = null, docKey = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
@@ -69,7 +69,7 @@
   function release() { if (busy) lock(false); }
 
   V.mount = function (container) {
-    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; awayOpen = false; scheduling = false; askingWho = false; tab = null; streak = 0;
+    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; tab = null; streak = 0;
     root = container;
     root.innerHTML = layout();
     card = $('#card'); stack = $('#stack'); stage = $('#stage');
@@ -80,8 +80,8 @@
     ambientTimer = setInterval(ambient, 45000);
     V.tickTimer = setInterval(function () { var t = cur(); if (t && t.dueAt && card.style.display !== 'none' && !ciOpen) paintDue(t); }, 1000);
     stats();
-    if (!greeted) { greeted = true; greet(); showAway(); return; }
-    Fuzz.say('Back to the queue.', { type: false });
+    if (!greeted) { greeted = true; greet(); }
+    else Fuzz.say('Back to the queue.', { type: false });
     booting = true; showNext(); booting = false;
     /* The router focuses the heading on arrival unless something on the page already has focus */
     var l = landing(); if (l && l.tagName === 'TEXTAREA') { l.focus({ preventScroll: true }); l.selectionStart = l.selectionEnd = l.value.length; }
@@ -101,7 +101,6 @@
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
-    if (awayOpen) { awayOpen = false; $('#away').hidden = true; }
     lock(false); stats(); showNext();
   };
 
@@ -127,17 +126,17 @@
     if (e.type === 'handback') {
       stats(); updateStack(true);
       /* No announcement: the handback waits as its own card at the back of the queue. */
-      if (card.style.display === 'none' && !ciOpen && !awayOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen) showNext();
     } else if (e.type === 'review') {
       /* A finished draft arrives as its own card at the back of the queue, with no announcement. */
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen && !awayOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen) showNext();
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen && !awayOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen) showNext();
     } else if (e.type === 'work') {
       stats();
-      if (card.style.display === 'none' && !ciOpen && !awayOpen) renderEmpty();
+      if (card.style.display === 'none' && !ciOpen) renderEmpty();
     } else if (e.type === 'wrapped') {
       /* The last task in a group finished, so the group is finished too. Worth a small party. */
       Fuzz.setMood('proud'); Fuzz.pAnim('hop'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
@@ -177,10 +176,6 @@
         '<div class="echo" id="echo" aria-hidden="true" hidden>' + Fuzz.mini('good', { cls: 'echo-av' }) + '<span id="echo-t"></span></div>' +
         '<div class="stack" id="stack">' +
           '<article class="card" id="card"></article>' +
-          /* Coming back: what moved while you were gone, before the first card (principle 12) */
-          '<article class="card away" id="away" hidden><div class="tagrow"><span class="src">While you were away</span></div>' +
-            '<h2 id="away-h" tabindex="-1">Here’s where things stand</h2><ul class="away-list" id="away-list"></ul>' +
-            '<button type="button" class="btn primary" id="away-go" aria-keyshortcuts="Enter">Start with the first card' + kbd('Enter') + '</button></article>' +
           '<article class="card checkin" id="checkin" hidden>' +
             '<div class="tagrow"><span class="src">Quick pause</span></div>' +
             '<h2 id="ci-h" tabindex="-1">How are you doing?</h2><p class="meta">Totally optional. It takes about five seconds.</p>' +
@@ -685,36 +680,6 @@
   ];
   /* "A while" is time on the clock, not cards cleared: half an hour in. */
   function longSession() { return Date.now() - sessionAt >= 30 * 60000; }
-  /* ---------- Coming back (principle 12: easy re-entry) ---------- */
-  function awayLines() {
-    var q = Store.queue(), rush = q.filter(function (i) { return i.dueAt; }).length, back = q.filter(function (i) { return i.handedBack; }).length;
-    var review = Store.inState('review').length, run = Store.inState('ai', 'ai-queued').length, wait = Store.inState('waiting').length;
-    var L = [];
-    if (q.length) L.push(['queue', q.length + (q.length === 1 ? ' card waits' : ' cards wait') + ' for you' + (rush ? ', ' + rush + ' with a deadline today' : '') + '.']);
-    if (review) L.push(['draft', 'Fuzz finished ' + review + (review === 1 ? ' draft' : ' drafts') + ' for your OK.']);
-    if (back) L.push(['back', back + (back === 1 ? ' came' : ' came') + ' back to you with a question.']);
-    if (run) L.push(['run', 'Fuzz is still working on ' + run + '.']);
-    if (wait) L.push(['wait', 'You’re waiting on someone for ' + wait + (wait === 1 ? ' task' : ' tasks') + '. Fuzz checks back.']);
-    return L;
-  }
-  function showAway() {
-    awayOpen = true;
-    card.style.display = 'none'; $('#dropbtn').hidden = true;
-    $('#away-list').innerHTML = awayLines().map(function (l) { return '<li class="away-' + l[0] + '">' + esc(l[1]) + '</li>'; }).join('');
-    var a = $('#away'); a.hidden = false; a.className = 'card away enter';
-    updateStack(false);
-    $('#away-go').focus({ preventScroll: true });
-  }
-  async function startFromAway() {
-    if (!awayOpen) return;
-    awayOpen = false;
-    var a = $('#away');
-    if (!Fuzz.isCalm()) await a.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-10px) scale(.98)' }], { duration: 200, easing: 'ease-in' }).finished.catch(function () {});
-    if (!alive) return;
-    a.hidden = true;
-    await showNext();
-    refocus(landing());
-  }
   function openKeys() { var d = $('#keysdlg'); if (d && !d.open) d.showModal(); }
 
   function showCheckin(demo) {
@@ -1100,7 +1065,6 @@
   /* ---------- Wiring ---------- */
   function wire() {
     offSay = Fuzz.onSay(echo);
-    $('#away-go').addEventListener('click', startFromAway);
     $('#keysbtn').addEventListener('click', openKeys);
     $('#keysdlg').addEventListener('click', function (e) { if (e.target === e.currentTarget || e.target.closest('[data-close]')) e.currentTarget.close(); });
     $('#keysdlg').addEventListener('close', function () { var b = $('#keysbtn'); if (b && b.offsetParent) b.focus(); });
@@ -1199,9 +1163,8 @@
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }
-      /* T parks a stray thought from any card, the welcome-back one too, without leaving it */
+      /* T parks a stray thought from any card without leaving it */
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
-      if (awayOpen) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#away-go').click(); } return; }
       var mm = $('#moremenu');
       if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;

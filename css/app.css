@@ -309,17 +309,6 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .pseen { font-size: 13px; color: var(--muted); }
 .mentions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mentions li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); }
-/* While you were away: a short list of what moved, then one way in */
-.away h2 { font-family: var(--font-display); font-size: 23px; line-height: 1.25; }
-.away h2:focus { outline: none; }
-.away-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.away-list li { display: flex; gap: 10px; align-items: baseline; line-height: 1.5; }
-.away-list li::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transform: translateY(-1px); }
-.away-list .away-queue::before { background: var(--accent); }
-.away-list .away-draft::before { background: var(--warn); }
-.away-list .away-back::before { background: var(--link); }
-.away-list .away-run::before { background: var(--ok); }
-.away .btn.primary { min-height: 50px; margin-top: 4px; }
 /* The session recap on the empty queue */
 .recap { margin: 2px 0 4px; font-weight: 600; }
 /* Key guide */
@@ -358,7 +347,7 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .tabbody:focus-visible { outline-offset: 6px; border-radius: 8px; }
 .ask:focus, .task-title:focus, #ci-h:focus, #sched-h:focus, .empty h2:focus { outline: none; }
 /* Headings take focus when a card changes; a soft ring marks the spot without looking like a text field */
-.ask:focus-visible, #ci-h:focus-visible, #sched-h:focus-visible, #away-h:focus-visible, .empty h2:focus-visible { outline: 2px solid color-mix(in srgb, var(--link) 40%, transparent); outline-offset: 6px; border-radius: 8px; }
+.ask:focus-visible, #ci-h:focus-visible, #sched-h:focus-visible, .empty h2:focus-visible { outline: 2px solid color-mix(in srgb, var(--link) 40%, transparent); outline-offset: 6px; border-radius: 8px; }
 .ctx { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .ctx li { display: flex; gap: 12px; align-items: flex-start; line-height: 1.55; }
 .ctx i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 8px; }
