@@ -212,13 +212,33 @@ def _write_launchd(core, prior=None):
     paths = []
     for label, d in jobs.items():
         p = agents / f"{label}.plist"
-        with open(p, "wb") as f:
-            plistlib.dump(d, f)
+        new = plistlib.dumps(d)
+        changed = not p.exists() or p.read_bytes() != new
+        if changed:
+            p.write_bytes(new)
         paths.append(str(p))
-        if shutil.which("launchctl"):   # unload first, or launchd keeps the job it already has
-            subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
-            subprocess.run(["launchctl", "load", "-w", str(p)], capture_output=True)
+        _reload(label, str(p), changed)
     return {"plists": paths, "created": created}
+
+
+def _reload(label, path, changed):
+    """Load a job, or reload it when its plist changed (unload first, or launchd keeps the job it already
+    has). A job that's loaded and unchanged is left running."""
+    if not shutil.which("launchctl"):
+        return
+    loaded = subprocess.run(["launchctl", "list", label], capture_output=True).returncode == 0
+    if loaded and not changed:
+        return
+    if loaded and os.environ.get("XPC_SERVICE_NAME") == label:
+        # This process is that job (`fuzz serve`, updating from Settings): unloading it ends this process
+        # before load runs, so a detached shell does both once the request has had its answer.
+        subprocess.Popen(["/bin/sh", "-c", 'sleep 1; launchctl unload "$0"; launchctl load -w "$0"', path],
+                         start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        return
+    if loaded:
+        subprocess.run(["launchctl", "unload", path], capture_output=True)
+    subprocess.run(["launchctl", "load", "-w", path], capture_output=True)
 
 
 def _remove_launchd(rec):
