@@ -50,13 +50,20 @@
     });
   }
 
-  /* Writes go one at a time, in the order you made them. A failed write says why and puts the screen
-     back the way the core has it. */
-  function write(fn) {
+  /* Writes go one at a time, in the order you made them. A failed write says why, about which task, and
+     puts the screen back the way the core has it. It stays on screen until you dismiss it, since the
+     card coming back on its own is otherwise all you'd see. */
+  function failed(e, title) {
+    var what = title ? 'Your change to “' + title + '” didn’t go through' : 'That didn’t go through';
+    if (e instanceof TypeError) return what + ': Fuzz’s server isn’t answering. Check that fuzz serve is running, then try again.';
+    if (e.status === 404 && /^No route /.test(e.message)) return what + ': Fuzz’s server is running older code than this page. Restart fuzz serve, then try again.';
+    return what + ': ' + e.message.replace(/\.?$/, '.') + ' It’s back the way Fuzz has it.';
+  }
+  function write(fn, title) {
     pending++;
     var p = chain.then(fn);
     chain = p.catch(function (e) {
-      Say.tell('That didn’t reach Fuzz: ' + e.message);
+      Say.tell(failed(e, title), { stay: true });
       console.error('[fuzz live]', e);
     }).then(function () { pending--; soon(0); });
     if (recording) recording.push(p);
@@ -358,9 +365,9 @@
   function wrap(name, ops) {
     base[name] = Store[name];
     Store[name] = function () {
-      var f = !quiet && ops.apply(null, arguments);
+      var f = !quiet && ops.apply(null, arguments), it = f && Store.item(arguments[0]);
       var res = base[name].apply(Store, arguments);
-      if (f) { gen++; write(f); }
+      if (f) { gen++; write(f, it && it.title); }
       return res;
     };
   }

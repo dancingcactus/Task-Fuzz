@@ -5,7 +5,7 @@
    otherwise replace the bubble within a second or two), and the latest also as a button in the bubble. */
 (function () {
   var S = {};
-  var dockTimer = 0, undoTimer = 0, history = [], busyFn = null, listeners = [];
+  var dockTimer = 0, stuck = false, undoTimer = 0, history = [], busyFn = null, listeners = [];
 
   function dock() { return document.getElementById('fuzz-dock'); }
   function button(label, fn) {
@@ -57,7 +57,7 @@
   S.setBusyCheck = function (fn) { busyFn = fn; };
 
   /* ---------- Speaking ---------- */
-  S.hideDock = function () { clearTimeout(dockTimer); var d = dock(); if (d) { d.hidden = true; d.innerHTML = ''; } };
+  S.hideDock = function () { stuck = false; clearTimeout(dockTimer); var d = dock(); if (d) { d.hidden = true; d.innerHTML = ''; } };
 
   function onPerch(text, o, tries) {
     if (busyFn && busyFn() && tries < 20) { setTimeout(function () { if (Fuzz.mounted()) onPerch(text, o, tries + 1); else onDock(text, o); }, 800); return; }
@@ -67,21 +67,26 @@
   }
   function onDock(text, o) {
     var d = dock(); if (!d) return;
+    if (stuck && !o.stay) return;   /* a problem you haven't dismissed yet isn't talked over */
+    stuck = !!o.stay;
     clearTimeout(dockTimer);
     d.innerHTML = '';
     var bub = document.createElement('div'); bub.className = 'bubble pop';
     var span = document.createElement('span'); span.textContent = text; bub.appendChild(span);
     if (o.undo && history[0]) bub.appendChild(button('Undo', history[0].run));
     var close = button('Dismiss', S.hideDock); close.className = 'dock-x'; close.setAttribute('aria-label', 'Dismiss'); close.innerHTML = '&times;'; bub.appendChild(close);
-    var av = document.createElement('div'); av.className = 'dock-av'; av.innerHTML = Fuzz.mini('good', { cls: 'dock-fz' });
+    var av = document.createElement('div'); av.className = 'dock-av'; av.innerHTML = Fuzz.mini(o.stay ? 'okay' : 'good', { cls: 'dock-fz' });
     d.appendChild(bub); d.appendChild(av); d.hidden = false;
-    dockTimer = setTimeout(S.hideDock, o.ms || (o.undo ? 12000 : 7000));
+    if (!o.stay) dockTimer = setTimeout(S.hideDock, o.ms || (o.undo ? 12000 : 7000));
   }
 
-  /* o: { undo: fn, blocked: fn, label: name in the Undo list (defaults to text), ms } */
+  /* o: { undo: fn, blocked: fn, label: name in the Undo list (defaults to text), ms,
+         stay: something went wrong; it waits in the corner until you dismiss it, even on Triage,
+         where the perch's next line would replace it before you could read it } */
   S.tell = function (text, o) {
     o = o || {};
     if (o.undo) setUndo(o.label || text, o.undo, o.blocked);
+    if (o.stay) { onDock(text, o); S.announce(text); return; }
     if (window.Fuzz && Fuzz.mounted()) { onPerch(text, o, 0); S.announce(text); } else onDock(text, o);
   };
 
