@@ -82,7 +82,7 @@
     document.getElementById('themepop').addEventListener('click', function (e) {
       e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
       var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup]'); if (!t) return;
-      if (t.dataset.disconnect) { Live.disconnect(); return; }
+      if (t.dataset.disconnect) { Live.switchAccount(); return; }
       if (t.dataset.setup) { togglePopover(false); Setup.open(); return; }
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
@@ -136,8 +136,8 @@
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
       (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Use demo data</button></div>'
-        : '<h2>Demo</h2><button type="button" class="btn small" data-reset="1">Reset demo data</button>');
+        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
+        : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
     if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }
 
@@ -194,7 +194,7 @@
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;
-  /* With a token from `fuzz serve`, the screens show your real queue (js/live.js); otherwise the demo data */
+  /* Me shows your real queue from `fuzz serve` (js/live.js), Demo the invented data; js/account.js asks which */
   Live.boot(function () {
     if (!Live.on()) { Store.reset(); Store.startWork(); }
     buildHeader();

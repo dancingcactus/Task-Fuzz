@@ -136,6 +136,20 @@ textarea { resize: vertical; }
 .view--triage { max-width: 640px; }
 .view--capture { max-width: 640px; }
 .view--tasks { max-width: 760px; }
+.view--account { max-width: 520px; }
+.account { display: flex; flex-direction: column; gap: 16px; padding-top: 8vh; }
+.account h1 { font-family: var(--font-display); font-size: 27px; font-weight: 800; line-height: 1.2; }
+.acct-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.acct-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 18px; min-height: 110px; text-align: left; cursor: pointer;
+  background: var(--surface); border: var(--bw2) solid var(--line); border-radius: 20px; box-shadow: var(--shadow); color: var(--ink); }
+.acct-pick:hover, .acct-pick:focus-visible { border-color: var(--accent); }
+.acct-n { font-family: var(--font-display); font-weight: 800; font-size: 20px; }
+.acct-d { color: var(--muted); font-size: 14px; line-height: 1.45; }
+.acct-key { display: flex; flex-direction: column; gap: 10px; }
+.acct-key[hidden] { display: none; }
+.acct-help { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.acct-err { margin: 0; color: var(--blocked); font-weight: 600; }
+.acct-err:empty { display: none; }
 .view h1:focus { outline: none; }
 
 /* ---------- Shared bits ---------- */
