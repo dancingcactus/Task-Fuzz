@@ -66,10 +66,10 @@
   var BOOPS = ['Boop received.', 'Reception: excellent.', 'Hey, watch the screen.', 'That tickles my tubes.', 'Ready when you are.'];
   var ANT_L = ['Easy on the long one. It picks up everything.', 'Careful. That one gets the weather channel.', 'Boing. Now I can hear a radio in Ohio.', 'Took me years to bend it just right.', 'Hold it there. Ooh, a cooking show.'];
   var ANT_R = ['Hey! The short one is the touchy one.', 'Ow. That one’s mostly for balance.', 'Short, but it has feelings.', 'Ticklish! Very ticklish.', 'Please don’t. It’s all I’ve got on that side.'];
-  var lastAnt = {};
-  function pickAnt(lines, side) {
-    var i; do { i = Math.floor(Math.random() * lines.length); } while (i === lastAnt[side]);
-    lastAnt[side] = i; return lines[i];
+  var lastLine = {};
+  function pickLine(lines, key) {
+    var i; do { i = Math.floor(Math.random() * lines.length); } while (i === lastLine[key]);
+    lastLine[key] = i; return lines[i];
   }
   function onBoop(e) {
     if (opts.isBusy && opts.isBusy()) return;
@@ -78,7 +78,7 @@
     if (ant) {
       ant.classList.remove('twang'); void ant.getBoundingClientRect(); ant.classList.add('twang');
       ant.addEventListener('animationend', function () { ant.classList.remove('twang'); }, { once: true });
-      F.say(ant.classList.contains('ant-l') ? pickAnt(ANT_L, 'l') : pickAnt(ANT_R, 'r'), { type: false });
+      F.say(ant.classList.contains('ant-l') ? pickLine(ANT_L, 'l') : pickLine(ANT_R, 'r'), { type: false });
       return;
     }
     if (knob) {
@@ -232,6 +232,33 @@
 
   /* Bored: surfs channels, with a face pop between each */
   var BORED_LINES = ['Surfing channels. Nothing on.', 'Anyone out there?', 'I could alphabetize your task sources.', 'Channel 4 is still just static.'];
+  var JOKES = [
+    'I put your tasks in a sitcom. Now every problem gets resolved in 22 minutes.',
+    'I tried organizing your queue like Netflix. Unfortunately, it keeps asking if I\'m still working.',
+    'Your calendar auditioned for The Office. Too many meetings, not enough characters.',
+    'I gave your overdue tasks a reality show. They\'re all up for elimination.',
+    'I tried to schedule Doctor Who. Couldn\'t get a straight answer on the time slot.',
+    'Your to-do list joined Survivor. Somehow, "clean the garage" has immunity again.',
+    'I asked The Great British Bake Off to help with deadlines. They said to let the dough dates rise.',
+    'My favorite Star Trek assignment? A task with no enterprise dependencies.',
+    'I put your inbox on Shark Tank. The spam wanted funding for a phishing expedition.',
+    'Your unfinished task got a second season. I was hoping for a series finale.',
+    'I entered your spreadsheet in Dancing with the Stars. Excellent numbers, questionable steps.',
+    'I tried watching a cooking show while sorting tasks. Now everything\'s on the back burner.',
+    'My remote control applied to be a manager. It already changes things without asking.',
+    'I gave your reminders a laugh track. Now even your deadlines have an audience.',
+    'I tried to watch a show about procrastination. I\'ll stream it tomorrow.',
+    'Your calendar is a soap opera. Every time one meeting ends, a surprise relative appears.',
+    'I bought a broken TV for your office. It should help cut down on screen time.',
+    'I asked the TV for career advice. It told me to stay tuned.',
+    'I turned your checklist into a game show. Every checkmark is my final answer.',
+    'I\'d tell you a joke about a TV antenna, but I\'m not sure how well you\'d receive it.',
+    'I asked the radio host how often they tell dad jokes. They said, "With alarming frequency."',
+    'I tried to lift a news desk. Turns out it was held down by an anchor.',
+    'I gave your reminders a commercial break. Now they\'re back after these messages.',
+    'I opened a restaurant in a TV studio. The live feed is excellent.',
+    'I tried to broadcast from a trampoline. The signal kept bouncing.'
+  ];
   F.startBored = function () {
     if (!el) return;
     var tok = ++workTok, i = 0, b = el.bot;
@@ -252,8 +279,10 @@
     })();
     (function tick() {
       if (!alive()) return;
-      F.say(BORED_LINES[i % BORED_LINES.length], { type: false });
-      i++; setTimeout(tick, 4800);
+      var joking = i === BORED_LINES.length;
+      F.say(joking ? pickLine(JOKES, 'joke') : BORED_LINES[i], { type: false, cls: joking ? 'joke' : '' });
+      i = joking ? 0 : i + 1;
+      setTimeout(tick, joking ? 12000 : 4800);
     })();
   };
 

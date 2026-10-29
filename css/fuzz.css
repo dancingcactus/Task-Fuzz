@@ -19,6 +19,8 @@
    Lines are written to fit; a long task title is trimmed rather than growing the bubble. */
 .perch .bubble{min-width:0;height:calc(2.7em + 18px + 2 * var(--bw));min-height:0;flex-wrap:nowrap;line-height:1.35;overflow:hidden}
 .perch .bubble .line{flex:1 1 auto;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.perch .bubble.joke{height:auto;min-height:calc(2.7em + 18px + 2 * var(--bw))}
+.perch .bubble.joke .line{-webkit-line-clamp:unset}
 .perch .bubble button{flex:none}
 .bubble.pop{animation:bpop .35s cubic-bezier(.3,1.6,.5,1)}
 .bubble.sign{transform:rotate(-2deg);border-color:var(--terra);border-width:2px;font-family:var(--font-display);font-weight:800;color:var(--terra)}
