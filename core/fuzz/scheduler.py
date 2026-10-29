@@ -331,6 +331,47 @@ def suggest_schedule(core, task_id, anchor, reason, actor="fuzz:executor"):
     return lab
 
 
+def _plain(s):
+    return " ".join((s or "").lower().replace("’", "'").replace("“", '"').replace("”", '"').split()).strip(" .!?\"'")
+
+
+def your_words(core, t):
+    """What you said about this task: your instructions and answers, and the ask if you captured it."""
+    said = [x["text"] for x in events.task_log(core, t["id"]) if x["actor"] == "human" and x["kind"] == "guidance"]
+    if core.one("SELECT id FROM events WHERE user_id=? AND task_id=? AND type='task.captured' AND actor='human'",
+                (core.user_id, t["id"])):
+        said.append(t.get("ask") or "")
+    return said
+
+
+def check_asked(core, t, you_said):
+    """Fuzz may put a task off only when you asked it to: you_said must be your own words on this task."""
+    quote = _plain(you_said)
+    if len(quote) < 8:
+        raise FuzzError("you_said quotes what the person said when they asked to put this off", "you_said")
+    if not any(quote in _plain(s) for s in your_words(core, t)):
+        raise FuzzError("you_said isn't something the person said on this task. Only put a task off when they "
+                        "asked you to; otherwise suggest the time and let them pick it", "you_said")
+    return you_said.strip()[:200]
+
+
+def put_off(core, task_id, anchor, you_said, actor="fuzz:executor"):
+    """You asked for it later ("bring this up next week"): Fuzz schedules it on the anchor it suggested.
+    It waits as scheduled and comes back to triage at that time, like one you scheduled."""
+    t = require_lease(core, task_id)
+    fire = timeres.resolve(core, anchor, t)
+    when = timeres.label(core, anchor)
+    with core.tx(actor):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "scheduled", schedule_anchor=anchor, schedule_fire_at=fire and iso(fire),
+                   question=None, attempts=0)
+        events.emit(core, "task.scheduled", task_id=t["id"], changes=ch,
+                    data={"anchor": anchor, "source": "fuzz", "line": timeres.line(core, anchor), "you_said": you_said},
+                    log=("status", f"Fuzz put this off as you asked (“{you_said}”). It comes back "
+                                   f"{when[0].lower() + when[1:]}."))
+    return when
+
+
 # ---------------------------------------------------------------- the clock
 
 def tick(core):

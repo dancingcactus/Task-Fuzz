@@ -163,6 +163,67 @@ class PrepNote(Claimed):
         self.assertEqual(self.task(tid)["state"], "done")
 
 
+class PutOff(CoreCase):
+    """You ask for it later: Fuzz schedules it, with nothing to approve, but only on your own words."""
+    MONDAY = {"type": "day_part", "day": "monday", "part": "morning"}
+
+    def claimed(self, said="I have a meeting about this later today, can we bring this up next week?"):
+        tid = tasks.capture(self.core, "Take over the always-on request")
+        tasks.assign(self.core, tid, instructions=said)
+        t, why = scheduler.claim_next(self.core, tid)
+        self.assertEqual((t or {}).get("id"), tid, why)
+        return tid
+
+    def test_it_schedules_the_task_when_you_asked(self):
+        tid = self.claimed()
+        r = tools.suggest_schedule(self.core, tid, self.MONDAY, "Next week, as asked",
+                                   you_said="can we bring this up next week")
+        t = self.task(tid)
+        self.assertEqual((r["state"], t["state"], t["lease_owner"]), ("scheduled", "scheduled", None))
+        self.assertEqual(t["schedule_anchor"], self.MONDAY)
+        self.assertEqual(t["schedule_fire_at"], "2026-10-26T09:00:00Z")
+        self.assertIn("Fuzz put this off as you asked", events.task_log(self.core, tid, 1)[0]["text"])
+        self.assertFalse(cards.open_cards(self.core, tid), "nothing to approve")
+        self.clock.advance(days=6, hours=1)
+        scheduler.tick(self.core)
+        self.assertEqual(self.task(tid)["state"], "triage", "it comes back at that time")
+        self.assertEqual(events.check_replay(self.core), [])
+
+    def test_a_moment_keeps_its_key_so_it_moves_with_the_meeting(self):
+        tid = self.claimed()
+        m = {"type": "moment", "label": "Before the Goals sync", "at": "2026-11-02T21:00:00Z"}
+        tools.suggest_schedule(self.core, tid, m, "Before the next sync", you_said="bring this up next week")
+        key = self.task(tid)["schedule_anchor"]["key"]
+        scheduler.suggest_schedule(self.core, tid, dict(m, key=key, at="2026-11-03T21:00:00Z"), "It moved",
+                                   actor="system")
+        self.assertEqual(self.task(tid)["schedule_fire_at"], "2026-11-03T21:00:00Z")
+
+    def test_not_without_your_words(self):
+        tid = self.claimed()
+        for said in ("put this off until next week", "", "next"):
+            with self.assertRaises(FuzzError) as e:
+                tools.suggest_schedule(self.core, tid, self.MONDAY, "Later", you_said=said)
+            self.assertEqual(e.exception.field, "you_said")
+        t = self.task(tid)
+        self.assertEqual((t["state"], t["schedule_hints"] or []), ("working", []), "a refusal changes nothing")
+
+    def test_someone_elses_ask_is_not_your_words(self):
+        tid = tasks.capture(self.core, "x", actor="fuzz:extractor")
+        with self.core.tx("fuzz:extractor"):
+            ch = events.Changes()
+            ch.task(tid, ask="Can you bring this up next week")
+            events.emit(self.core, "task.brief_updated", task_id=tid, changes=ch)
+        tasks.assign(self.core, tid)
+        scheduler.claim_next(self.core, tid)
+        with self.assertRaises(FuzzError):
+            tools.suggest_schedule(self.core, tid, self.MONDAY, "Later", you_said="bring this up next week")
+
+    def test_without_you_said_it_only_suggests(self):
+        tid = self.claimed()
+        self.assertNotIn("state", tools.suggest_schedule(self.core, tid, self.MONDAY, "Next week"))
+        self.assertEqual(self.task(tid)["state"], "working")
+
+
 class ScheduledLookup(CoreCase):
     """You put a task off and ask Fuzz to look into it meanwhile: it comes back at that time, brief in."""
     LATER = {"type": "exact", "at": "2026-10-21T14:00:00Z"}   # tomorrow afternoon

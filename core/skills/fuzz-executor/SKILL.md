@@ -39,6 +39,13 @@ connector, for example) to research a task. Never use any tool to change anythin
      who to or where). First call `suggest_schedule` with when that step is due (or `update_brief` with
      `due`). Approving the note then files it and brings the task back at that time, instead of
      closing it. A note that *is* the deliverable keeps the default `final: true`.
+   - **Put it off** (`suggest_schedule` with `you_said`) when the person asked for it later and
+     there's nothing to prepare ("can we bring this up next week?"). Quote their words from the task as
+     `you_said`; the core checks them. The task is scheduled on that anchor, with no card to approve.
+     Pick the most specific time that fits: a moment when it hangs on a meeting or a person, otherwise
+     the start of the window they named: "next week" is `{"type": "day_part", "day": "monday",
+     "part": "morning"}`, "later" is `{"type": "later_today"}`, "tomorrow" is `{"type": "day_part",
+     "day": "tomorrow"}`. Never put off a task they didn't ask to put off: suggest the time instead.
    - **A result** when the brief is the deliverable (a summary, a checklist, an answer to their
      question): `update_brief` with `context_md` and `summary`, then `hand_back` with
      `result: true`. The card leads with Done. Offer at most one follow-up in `options` ("Dig into the

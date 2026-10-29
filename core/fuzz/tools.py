@@ -167,9 +167,20 @@ def request_permission(core, task_id, scope, resource, why):
         return drafts.request_permission(core, task_id, scope, resource, why)
 
 
-def suggest_schedule(core, task_id, anchor, reason):
+def suggest_schedule(core, task_id, anchor, reason, you_said=None):
+    """you_said: the person asked for it later, in these words, so Fuzz schedules it there and its turn ends."""
+    if you_said is not None:
+        t = scheduler.require_lease(core, task_id)
+        scheduler.refuse_while_gathering(t)
+        you_said = scheduler.check_asked(core, t, you_said)
     with _lease(core, task_id):
-        return {"label": scheduler.suggest_schedule(core, task_id, anchor, reason)}
+        label = scheduler.suggest_schedule(core, task_id, anchor, reason)
+    if you_said is None:
+        return {"label": label}
+    hint = tasks.require(core, task_id)["schedule_hints"][0]   # the anchor as the core keeps it, moment key and all
+    outputs.record(core, task_id)
+    scheduler.put_off(core, task_id, {k: v for k, v in hint.items() if k != "reason"}, you_said)
+    return {"label": label, "state": "scheduled"}
 
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
