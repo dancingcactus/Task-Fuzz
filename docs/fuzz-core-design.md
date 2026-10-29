@@ -741,7 +741,7 @@ This rule lives in the core, as code. Most of it is already in the matching spik
 | --- | --- | --- |
 | Done | History only | Back to Triage, tagged Reopened |
 | Let go | History only | Back to Triage, tagged Reopened, only if the ask came after you let it go |
-| Parked | History only, and "Woke up" in the Parked list. No card: Parked never nags | Back to Triage, tagged Reopened |
+| Parked | "Woke up" in the Parked list, no card: Parked never nags. A follow-up from someone else (a signal marked `nudge`, or a second mention after it woke) brings it back to Triage, tagged Reopened. Your own messages don't wake it | Back to Triage, tagged Reopened |
 | Scheduled | History only | Stays scheduled. An earlier deadline pulls it forward |
 | Waiting | History only, unless it's from the person you're waiting on: then back to Triage as "Reply came in" | Back to Triage |
 

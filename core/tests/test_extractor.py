@@ -238,3 +238,39 @@ class TwoDays(CoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def park_contract(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "park")
+        return contract["id"]
+
+    def mention(self, n, quote, sender=None, **extra):
+        tools.submit_signals(self.core, [dict({
+            "source": "email", "source_id": f"msg-n{n}", "anchor": "email:conv-B", "ts": f"2026-10-2{n}T08:30:00Z",
+            "from": sender or {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": quote,
+            "candidates": []}, **extra)])
+
+    def test_parked_comes_back_on_a_nudge(self):
+        tid = self.park_contract()
+        self.mention(1, "Any update on the contract?", nudge=True)
+        t = self.task(tid)
+        self.assertEqual(t["state"], "triage")
+        self.assertIn("reopened", t["variant_tags"])
+        self.assertIn("Marco Diaz followed up", t["reason"])
+
+    def test_parked_comes_back_on_a_second_mention(self):
+        tid = self.park_contract()
+        self.mention(1, "FYI legal is out Friday.")
+        self.assertEqual(self.task(tid)["state"], "parked")
+        self.mention(2, "Legal is back, by the way.")
+        self.assertEqual(self.task(tid)["state"], "triage")
+
+    def test_your_own_messages_dont_wake_a_parked_task(self):
+        tid = self.park_contract()
+        me = {"name": "Justin", "email": "jgrover@adobe.com"}
+        self.mention(1, "Will look at this next week.", sender=me)
+        self.mention(2, "Following up on my own note.", sender=me, nudge=True)
+        t = self.task(tid)
+        self.assertEqual(t["state"], "parked")
+        self.assertNotIn("woke", t["variant_tags"])

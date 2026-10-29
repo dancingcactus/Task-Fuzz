@@ -503,9 +503,13 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
         elif t["state"] == "waiting" and (new_ask or _from_waited_on(t, s)):
             back = ("task.reply_in", f"Reply came in from {who}", "returning")
         elif t["state"] == "parked" and not answered:
+            # Parked means "until someone follows up": a nudge, or a second mention after it woke, brings it back
+            mine = entities.sent_by_me(s.get("from") or {}, ctx.cfg.get("me", {}))
             if new_ask:
                 back = ("task.reopened", f"{who} asked something new about this", "reopened")
-            else:
+            elif not mine and (s.get("nudge") or "woke" in (t.get("variant_tags") or [])):
+                back = ("task.reopened", f"{who} followed up on this", "reopened")
+            elif not mine:
                 ch.task(tid, variant_tags=tasks._tags(t, add=("woke",)))
         brief = _brief(cand)
         if brief:
