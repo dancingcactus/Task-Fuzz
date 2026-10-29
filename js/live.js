@@ -1,6 +1,7 @@
 /* Live mode: the same screens, driven by the Fuzz core (`fuzz serve`) instead of the demo data.
    Open the link `fuzz serve` prints (http://127.0.0.1:8765/?token=…) once; the token is kept in this
-   browser. Without a token, or when the page isn't served by the core, the demo runs as before.
+   browser. When the core serves the page, js/account.js asks who's using it (Me or Demo) until one is
+   picked; the pick is remembered. A page the core doesn't serve runs the demo.
 
    How it fits on the demo's Store:
    - Store keeps its in-memory model, so the views stay synchronous. Each decision still changes it at
@@ -11,10 +12,10 @@
    - Undo is the core's: each change remembers its undo group and POST /undo reverses just that one.
    - Assigning a task starts the executor for it (POST /engine/run), so Fuzz starts right away. */
 (function () {
-  var KEY = 'fuzz.token';
+  var KEY = 'fuzz.token', WHO = 'fuzz.account', NOTE = 'fuzz.account.note';
   var token = null, on = false, quiet = 0, gen = 0, pending = 0, chain = Promise.resolve(), recording = null;
   var unpin = false, extra = null, syncing = false, again = false, syncTimer = 0, detail = {}, sig = '', undoBlocked = {}, lastId = 0, said = {};
-  var base = {}, listeners = [];
+  var base = {}, listeners = [], served = false;
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
@@ -25,7 +26,7 @@
     var m = /[?&]token=([^&#]+)/.exec(location.search);
     if (m) {
       token = decodeURIComponent(m[1]);
-      try { localStorage.setItem(KEY, token); } catch (e) {}
+      try { localStorage.setItem(KEY, token); localStorage.setItem(WHO, 'me'); } catch (e) {}
       var q = location.search.replace(/([?&])token=[^&#]*&?/, '$1').replace(/[?&]$/, '');
       history.replaceState(null, '', location.pathname + q + location.hash);
       return token;
@@ -34,6 +35,17 @@
     return token;
   }
   function forget() { try { localStorage.removeItem(KEY); } catch (e) {} token = null; }
+  function who() { try { return localStorage.getItem(WHO); } catch (e) { return null; } }
+  function pick(v) { try { if (v) localStorage.setItem(WHO, v); else localStorage.removeItem(WHO); } catch (e) {} }
+  /* Back to the account screen, with a line saying why */
+  function signOut(note) {
+    pick(null);
+    try { if (note) sessionStorage.setItem(NOTE, note); } catch (e) {}
+    location.reload();
+  }
+  function takeNote() {
+    try { var n = sessionStorage.getItem(NOTE); sessionStorage.removeItem(NOTE); return n; } catch (e) { return null; }
+  }
 
   /* A file opens in the viewer, in a new tab (artifact.html), which reads it with this browser's token */
   function fileUrl(sid) { return 'artifact.html?id=' + sid; }
@@ -266,7 +278,7 @@
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
-      if (e.status === 401) { forget(); Say.tell('Fuzz doesn’t know this browser any more. Open the link `fuzz serve` printed.'); on = false; return; }
+      if (e.status === 401) { on = false; forget(); signOut('Fuzz didn’t accept this browser’s key any more. Paste the newest link fuzz serve printed.'); return; }
       console.error('[fuzz live] sync', e);
     }).then(function () {
       syncing = false;
@@ -539,7 +551,19 @@
   var Live = {
     on: function () { return on; },
     sync: syncThenRefresh,
-    disconnect: function () { forget(); location.reload(); },
+    /* The account screen again. The token stays, so picking Me is one click. */
+    switchAccount: function () { signOut(null); },
+    canSwitch: function () { return served; },
+    /* From the account screen: check the token (a new one, or the saved one when tok is null) with the core */
+    signIn: function (tok) {
+      var prev = token;
+      if (tok) token = tok;
+      return api('GET', '/me').then(function () {
+        try { localStorage.setItem(KEY, token); } catch (e) {}
+        pick('me');
+      }, function (e) { token = prev; throw e; });
+    },
+    useDemo: function () { pick('demo'); },
     /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
     saveMe: function (body) { return api('PUT', '/me', body); },
     /* Guided setup (js/setup.js): who you are, the tools Fuzz may use, the folder it may write to */
@@ -560,14 +584,19 @@
     onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {
-      if (location.protocol === 'file:' || !readToken()) return start();
+      if (location.protocol === 'file:') return start();
+      readToken();
+      function live() {
+        on = true; install(); Store.reset();
+        return sync().then(function () { if (on) { start(); listen(); } });
+      }
       fetch('/health').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (h) {
         if (!h || !h.ok) return start();
-        on = true; install(); Store.reset();
-        return sync().then(function () {
-          if (!on) { location.reload(); return; }
-          start(); listen();
-        });
+        served = true;
+        var w = who();
+        if (w === 'demo') return start();
+        if (w === 'me' && token) return live();
+        Account.choose({ hasToken: !!token, note: takeNote() }, function (p) { return p === 'me' ? live() : start(); });
       });
     }
   };
