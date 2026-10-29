@@ -49,10 +49,16 @@ def view(core, g):
             "tasks": [{"id": t["id"], "title": t["title"], "state": t["state"]} for t in ts]}
 
 
-def list_groups(core):
+def list_groups(core, since=None):
+    """With since, a group shows only while one of its tasks is open or closed on or after then."""
+    if since is None:
+        return [view(core, g) for g in core.all(
+            "SELECT * FROM groups g WHERE user_id=? AND EXISTS (SELECT 1 FROM tasks t WHERE t.group_id=g.id "
+            "AND t.state!='merged') ORDER BY id", (core.user_id,))]
     return [view(core, g) for g in core.all(
         "SELECT * FROM groups g WHERE user_id=? AND EXISTS (SELECT 1 FROM tasks t WHERE t.group_id=g.id "
-        "AND t.state!='merged') ORDER BY id", (core.user_id,))]
+        "AND t.state!='merged' AND (t.state NOT IN ('done','letgo') OR COALESCE(t.state_changed_at,'') >= ?)) ORDER BY id",
+        (core.user_id, since))]
 
 
 def brief(core, t):

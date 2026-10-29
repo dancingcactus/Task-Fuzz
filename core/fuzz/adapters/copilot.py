@@ -91,9 +91,11 @@ class Copilot(Adapter):
 
         The executor and sender see only those tools (--available-tools), plus the read-only file tool
         when files_dir is given: Copilot loads your own MCP servers too, and allowing a tool doesn't
-        hide the others. The extractor reads your sources with your connectors, so it sees them all."""
+        hide the others. The extractor reads your sources with your connectors, so it sees them all, and
+        may call the read tools without asking: with nobody there to approve, any other tool is refused."""
         prompt = skill_body(role) + "\n\n" + self.prompt(role, task_id)
-        extra = list((send_tools if role == "sender" else read_tools if role == "executor" else None) or [])
+        extra = list((send_tools if role == "sender" else read_tools if role in ("executor", "extractor") else None)
+                     or [])
         argv = [self.exe, "-p", prompt, RUN_CONFIG_FLAG, f"@{config_path}",
                 "--allow-tool", self.mcp_name(role), "--deny-tool", "shell"]
         argv += ["--allow-tool", f"write({str(write_dir).rstrip('/')}/**)"] if write_dir else ["--deny-tool", "write"]

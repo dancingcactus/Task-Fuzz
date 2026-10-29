@@ -19,6 +19,7 @@ from . import entities, vectors
 MATCHER_VERSION = "core-0.1"
 
 CLOSED_WINDOW_DAYS = 30
+THEIRS_WINDOW_DAYS = 90   # someone else's task can come back when it starts needing you, for longer
 SHORTLIST_SIZE = 3
 ENTITY_MIN = 0.5
 STRONG_ENTITY = 2.0
@@ -30,9 +31,14 @@ ANCHOR_SEM_FLOOR = {"hash": 0.10, "ollama": 0.45}
 TYPE_WEIGHT = {"ticket": 3.0, "document": 3.0, "person": 1.0, "term": 1.0, "org": 0.3}
 STRENGTH_WEIGHT = {"id": 1.0, "alias": 0.5, "provisional": 0.0}
 
+# Your own reply that answers the thread closes the task, if it's still waiting on you. Waiting tasks wait on
+# someone else, and Fuzz's own work in flight finishes or comes back to you.
+ANSWERED_CLOSES = ("triage", "queued", "scheduled", "parked", "session")
+
 MERGE_CONF = 0.85
 DUP_CONF = 0.60
 
+UNCHANGING = ("email",)   # sources whose messages are never edited: one signal each, whatever the version
 SOURCE_LABEL = {"email": "Email", "slack": "Slack", "meeting": "Meeting", "calendar": "Calendar", "fuzz": "Fuzz"}
 BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy")
 
@@ -78,12 +84,21 @@ def signal_key(s):
     return f"{s['source']}:{s['source_id']}:{s.get('version', '1')}"
 
 
+def _seen(ctx, s, key):
+    """Already recorded. An email never changes once sent, so any version of it counts: a client's version
+    can be its last-modified time, which moves when it's read or flagged, and each run re-reads six hours."""
+    if s["source"] in UNCHANGING:
+        return ctx.core.q("SELECT 1 FROM signals WHERE user_id=? AND source=? AND source_id=?",
+                          (_uid(ctx), s["source"], s["source_id"])).fetchone()
+    return ctx.core.q("SELECT 1 FROM signals WHERE user_id=? AND key=?", (_uid(ctx), key)).fetchone()
+
+
 def ingest(ctx, signals):
     core = ctx.core
     counts = {"signals": 0, "skipped": 0, "candidates": 0, "withdrawn": 0}
     for s in signals:
         key = signal_key(s)
-        if core.q("SELECT 1 FROM signals WHERE user_id=? AND key=?", (_uid(ctx), key)).fetchone():
+        if _seen(ctx, s, key):
             counts["skipped"] += 1
             continue
         core.q("INSERT INTO signals VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -161,10 +176,12 @@ def candidate_anchors(ctx, cand):
 
 def eligible_tasks(ctx):
     cutoff = iso(ctx.core.now() - timedelta(days=CLOSED_WINDOW_DAYS))
+    theirs = iso(ctx.core.now() - timedelta(days=THEIRS_WINDOW_DAYS))
     live = ",".join(f"'{s}'" for s in states.LIVE)
     rows = ctx.core.q(
         f"SELECT * FROM tasks WHERE user_id=? AND (state IN ({live}) "
-        "OR (state IN ('done','letgo') AND state_changed_at >= ?))", (_uid(ctx), cutoff)).fetchall()
+        "OR (state IN ('done','letgo') AND state_changed_at >= ?) "
+        "OR (state='letgo' AND variant_tags LIKE '%\"theirs\"%' AND state_changed_at >= ?))", (_uid(ctx), cutoff, theirs)).fetchall()
     return {r["id"]: r for r in rows}
 
 
@@ -413,6 +430,7 @@ def create_task(ctx, cand, decision_id):
     _moments(core, tid, cand)
     core.q("INSERT INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) VALUES (?,?,?,?,?,?,?)",
            (_uid(ctx), tid, cand["id"], cand["signal_key"], "origin", _source_title(s), ctx.run_id))
+    tasks.add_links(core, tid, _links(cand, s), ctx.run_id)
     _add_anchors(ctx, tid, cand)
     groups.place(core, tid, cand["signal_key"])
     return tid
@@ -427,6 +445,12 @@ def _moments(core, tid, cand):
             scheduler.suggest_schedule(core, tid, dict(m, type="moment"), m.get("reason"), actor=None)
         except FuzzError:
             pass
+
+
+def _links(cand, s):
+    """The candidate's own links first, then the signal's, each once."""
+    c = json.loads(cand["payload"]) if isinstance(cand["payload"], str) else (cand["payload"] or {})
+    return list(dict.fromkeys((c.get("links") or []) + (s.get("links") or [])))
 
 
 def _source_title(s):
@@ -447,6 +471,8 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
     s = _signal(ctx, cand)
     core.q("INSERT OR IGNORE INTO sources (user_id, task_id, candidate_id, signal_key, role, title, added_run) "
            "VALUES (?,?,?,?,?,?,?)", (_uid(ctx), tid, cand["id"], cand["signal_key"], role, _source_title(s), ctx.run_id))
+    if role != "ignored":
+        tasks.add_links(core, tid, _links(cand, s), ctx.run_id)
     _add_anchors(ctx, tid, cand)
     who = (s.get("from") or {}).get("name") or "Someone"
     where = SOURCE_LABEL.get(s["source"], s["source"])
@@ -454,6 +480,8 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
     ch = events.Changes()
     new_ask = cand["kind"] == "ask"
     back = None   # (type, reason, tag) when the task returns to triage
+    answered = (role == "update" and not new_ask and s.get("answers") and t["state"] in ANSWERED_CLOSES
+                and entities.sent_by_me(s.get("from") or {}, ctx.cfg.get("me", {})))
     if role == "update":
         if new_title:
             tasks.retitle(core, ch, t, new_title)
@@ -462,15 +490,19 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
             ch.task(tid, due=due)
             cards.refresh_schedule_options(core, ch, tid)
         if reopen:
+            theirs = "theirs" in (t.get("variant_tags") or [])
             why = (f"{who} asked something new after you marked this done" if t["state"] == "done"
+                   else f"This was someone else's, but now {who} needs you" if theirs
                    else f"{who} asked again after you let this go")
             back = ("task.reopened", why, "reopened")
+            if theirs:
+                ch.task(tid, owner="me", variant_tags=tasks._tags(t, remove=("theirs",)))
         elif t["state"] == "scheduled" and due and t["schedule_fire_at"] and due < t["schedule_fire_at"]:
             back = ("task.came_back", f"Pulled forward: the new deadline {due} is before {t['schedule_fire_at'][:10]}",
                     "returning")
         elif t["state"] == "waiting" and (new_ask or _from_waited_on(t, s)):
             back = ("task.reply_in", f"Reply came in from {who}", "returning")
-        elif t["state"] == "parked":
+        elif t["state"] == "parked" and not answered:
             if new_ask:
                 back = ("task.reopened", f"{who} asked something new about this", "reopened")
             else:
@@ -485,6 +517,13 @@ def attach(ctx, task_id, cand, role, decision_id, new_title=None, reopen=False):
         events.emit(core, typ, task_id=tid, changes=ch, log=("status", f"{text}. {why}."),
                     data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id})
         cards.sync(core, tid, "front" if typ == "task.reply_in" else "back")
+    elif answered:
+        tasks.move(core, ch, t, "done", question=None)
+        quote = (s.get("quote") or "").strip()[:160]
+        events.emit(core, "task.done", task_id=tid, changes=ch,
+                    log=("status", f"You answered in {where}" + (f": “{quote}”" if quote else "") + ". Fuzz marked this done."),
+                    data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id, "by": "reply"})
+        cards.sync(core, tid)
     else:
         events.emit(core, "task.reply_in", task_id=tid, changes=ch, log=("status", text),
                     data={"candidate_id": cand["id"], "role": role, "decision_id": decision_id})
@@ -529,6 +568,8 @@ def apply_verdicts(ctx, verdicts):
             st = target["state"]
             if st == "done":
                 outcome = "reopened" if v.get("new_ask") else "ignored"
+            elif st == "letgo" and other and "theirs" in (target.get("variant_tags") or []):
+                outcome = "context"   # still theirs: kept with it, so it has the history if it ever needs you
             elif st == "letgo":
                 ts = _signal(ctx, cand).get("ts") or ""
                 outcome = "resurfaced" if v.get("new_ask") and ts > (target["state_changed_at"] or "") else "ignored"

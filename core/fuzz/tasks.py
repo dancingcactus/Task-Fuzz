@@ -4,13 +4,18 @@ Human decisions (assign, done, park...) and the AI's writes (log_step, update_br
 here, so HTTP, MCP and the CLI all call the same code.
 """
 
+import re
+from datetime import timedelta
+from urllib.parse import unquote_plus, urlparse
+
 from . import cards, events, states
-from .db import FuzzError, parse_iso
+from .db import FuzzError, iso, parse_iso
 
 CONTEXT_MAX = 16 * 1024
 QUESTION_MAX = 500
 SUMMARY_MAX = 400
 TITLE_MAX = 140
+FINISHED_WINDOW_DAYS = 14   # done and let-go tasks older than this stay out of the UI's list; search finds them
 
 
 def get(core, task_id):
@@ -36,15 +41,43 @@ def require(core, task_id):
     return t
 
 
-def list_tasks(core, state=None):
+def finished_cutoff(core, days=FINISHED_WINDOW_DAYS):
+    return iso(core.now() - timedelta(days=days))
+
+
+def list_tasks(core, state=None, closed_days=None):
+    """With closed_days, done and let-go tasks that closed longer ago than that are left out."""
+    where, args = "", []
+    if closed_days is not None:
+        where, args = " AND NOT (state IN ('done','letgo') AND COALESCE(state_changed_at,'') < ?)", [finished_cutoff(core, closed_days)]
     if state:
         wanted = [s for s in state.split(",") if s]
         for s in wanted:
             if s not in states.STATES:
                 raise FuzzError(f"Unknown state {s!r}", "state")
-        return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ({','.join('?' * len(wanted))}) ORDER BY order_key, id",
-                        [core.user_id] + wanted)
-    return core.all("SELECT * FROM tasks WHERE user_id=? AND state!='merged' ORDER BY order_key, id", (core.user_id,))
+        return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ({','.join('?' * len(wanted))}){where} ORDER BY order_key, id",
+                        [core.user_id] + wanted + args)
+    return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state!='merged'{where} ORDER BY order_key, id", [core.user_id] + args)
+
+
+def finished_older(core, days=FINISHED_WINDOW_DAYS):
+    """How many done and let-go tasks closed before the window: the ones only search finds."""
+    return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state IN ('done','letgo') AND COALESCE(state_changed_at,'') < ?",
+                    (core.user_id, finished_cutoff(core, days)))["n"]
+
+
+def search_finished(core, q, limit=50):
+    """Done and let-go tasks whose title or summary has the words, newest first."""
+    words = [w for w in (q or "").split() if w][:8]
+    if not words:
+        return []
+    like = " AND ".join("(title LIKE ? ESCAPE '\\' OR COALESCE(summary,'') LIKE ? ESCAPE '\\')" for _ in words)
+    args = []
+    for w in words:
+        w = "%" + re.sub(r"([%_\\])", r"\\\1", w) + "%"
+        args += [w, w]
+    return core.all(f"SELECT * FROM tasks WHERE user_id=? AND state IN ('done','letgo') AND {like} "
+                    "ORDER BY state_changed_at DESC, id DESC LIMIT ?", [core.user_id] + args + [max(1, min(int(limit), 200))])
 
 
 def next_order(core, where="back"):
@@ -103,11 +136,13 @@ def _one(core, actor, type, t, to, log, card=None, option=None, value=None, data
 
 # ---------------------------------------------------------------- capture
 
-def capture(core, text, docs=None, actor="human", due=None, gather=False):
+def capture(core, text, docs=None, actor="human", due=None, gather=False, uploading=False):
     """gather: Fuzz looks the task up with its read-only tools before it reaches triage, so the card can
-    show what it found. It waits as queued for Fuzz with the gather tag until then."""
+    show what it found. It waits as queued for Fuzz with the gather tag until then.
+    uploading: the docs' files are on their way (files.attach), so Fuzz waits a little for them."""
+    from . import files
     text = (text or "").strip()
-    docs = [d for d in (docs or []) if d]
+    docs = [files.clean_name(d) for d in (docs or []) if d]
     if not text and not docs:
         raise FuzzError("Say what the task is, or attach a document", "text")
     title = (text or docs[0]).splitlines()[0][:TITLE_MAX]
@@ -117,11 +152,11 @@ def capture(core, text, docs=None, actor="human", due=None, gather=False):
         ch = events.Changes()
         ch.task(tid, state="queued" if gather else "triage", assignee="fuzz" if gather else "human", title=title,
                 ask=text or None, owner="me", due=due, order_key=next_order(core),
-                variant_tags=["gather"] if gather else [], created_at=now, state_changed_at=now,
+                variant_tags=(["gather"] if gather else []) + (["uploading"] if uploading and docs else []), created_at=now, state_changed_at=now,
                 title_history=[], steps_used=0, attempts=0, deadline_level=0)
         events.emit(core, "task.captured", task_id=tid, changes=ch, data={"docs": docs},
                     log=("status", "You captured this task." if actor == "human" else "Fuzz captured this task."))
-        for d in docs:
+        for d in docs:   # each upload fills its row (files.attach)
             core.q("INSERT INTO sources (user_id, task_id, role, title) VALUES (?,?,?,?)",
                    (core.user_id, tid, "attachment", d))
         cards.sync(core, tid)
@@ -165,12 +200,68 @@ def park(core, task_id, card=None):
                 option="park", question=None, remove_tags=("woke",))
 
 
-def wait(core, task_id, on=None, card=None, option="wait"):
+CHECK_BACK_DAYS = 3        # business days, when Fuzz doesn't pick a time
+CHECK_BACK_WEEK = 7        # Fuzz picks within a week, unless it has a reason to wait longer
+CHECK_BACK_LONGEST = 30
+
+
+def default_check_back(core, days=CHECK_BACK_DAYS):
+    """9am your time, the given number of business days from now."""
+    from . import timeres
+    d = core.now().astimezone(timeres.local_tz(core))
+    while days:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            days -= 1
+    return iso(d.replace(hour=9, minute=0, second=0, microsecond=0))
+
+
+def waiting_on(t, on=None):
+    """Who you're waiting on: the name you gave, or the task's owner when it's a person."""
+    who = (on or "").strip() or (t.get("owner") if t.get("owner") not in ("me", "unclear", "someone", None) else None)
+    return (who or "").strip() or None
+
+
+def wait(core, task_id, on=None, card=None, option="wait", plan=False, actor="human"):
+    """Waiting means you're blocked until someone gets back to you, so it needs a who. It always has a
+    check-back time: with plan, Fuzz looks at the context first and picks it (set_check_back); otherwise,
+    or until it does, it's a few business days out."""
     t = require(core, task_id)
-    who = on or (t.get("owner") if t.get("owner") not in ("me", "unclear", None) else None) or "someone"
-    return _one(core, "human", "task.waiting", t, "waiting",
-                ("status", f"You moved this to Waiting on others ({who}). Fuzz watches for the reply."),
-                card=card, option=option, value=on, waiting_on=who, question=None)
+    who = waiting_on(t, on)
+    if not who:
+        raise FuzzError("Who are you waiting on?", "value")
+    back = default_check_back(core)
+    with core.tx(actor):
+        ch = events.Changes()
+        if plan:
+            move(core, ch, t, "queued", card=card, add_tags=("gather", "plan_wait"), waiting_on=who,
+                 schedule_anchor=None, schedule_fire_at=back, question=None, attempts=0)
+            log = f"You're waiting on {who}. Fuzz is working out when to check back."
+        else:
+            move(core, ch, t, "waiting", card=card, waiting_on=who, schedule_anchor=None, schedule_fire_at=back,
+                 question=None)
+            log = f"You're waiting on {who}. Fuzz checks back {_when(core, back)}, sooner if they reply."
+        _answered(core, ch, card, option, who)
+        eid = events.emit(core, "task.waiting", task_id=t["id"], changes=ch, log=("status", log),
+                          data={"on": who, "plan": plan})
+        cards.sync(core, t["id"])
+    return eid
+
+
+def _when(core, at):
+    from . import timeres
+    lab = timeres.label(core, {"type": "exact", "at": at})
+    return lab[0].lower() + lab[1:]
+
+
+def theirs(core, task_id, on=None, card=None, option="someone_else"):
+    """Someone else's task: Fuzz doesn't track other people's work, so it closes. It stays findable, and a
+    new ask that needs you brings it back (the matcher resurfaces it)."""
+    t = require(core, task_id)
+    who = waiting_on(t, on)
+    why = f"You said this is {who}'s, not yours." if who else "You said this is someone else's, not yours."
+    return _one(core, "human", "task.let_go", t, "letgo", ("status", why), card=card, option=option, value=on,
+                question=None, reason=why, add_tags=("theirs",), owner=who or t.get("owner"))
 
 
 def let_go(core, task_id, card=None, option="drop", why=None):
@@ -233,6 +324,24 @@ def bring_back(core, task_id, where="back", reason=None, type="task.came_back", 
     return eid
 
 
+def to_back(core, task_id):
+    """Not now, but not at a time either: the task stays where it is and its card goes to the end of the
+    queue, behind handbacks and anything due soon too. It comes up again once you've been through the rest."""
+    t = require(core, task_id)
+    open_ = cards.open_cards(core, t["id"])
+    if not open_:
+        raise FuzzError("This task has no card in triage to move", "task_id", 409)
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], order_key=next_order(core))
+        for c in open_:
+            ch.card(c["id"], postponed=c["postponed"] + 1, order_key=cards.next_order(core),
+                    payload=dict(c.get("payload") or {}, at_end=True))
+        events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": open_[0]["kind"], "to": "back"},
+                    log=("status", "You moved this to the end of the list."))
+    return t["id"]
+
+
 def reopen(core, task_id, reason, actor="system"):
     return bring_back(core, task_id, where="back", reason=reason, type="task.reopened", actor=actor,
                       tags=("reopened",), log=("status", reason))
@@ -247,6 +356,39 @@ def keep_stale(core, task_id, card):
         events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": "keep"},
                     log=("status", "You said you still care about this."))
         cards.sync(core, t["id"])
+
+
+def keep_parked(core, task_id, card):
+    """The parked review asked and you still want it someday: back to Parked, not asked again for a while."""
+    t = require(core, task_id)
+    return _one(core, "human", "task.kept_parked", t, "parked", ("status", "You kept this parked."), card=card,
+                option="keep_parked", question=None, reviewed_at=core.now_iso(), reviews=(t.get("reviews") or 0) + 1)
+
+
+def clarify(core, task_id, card, option="now", log="You brought this back from Parked."):
+    """It's yours to decide again: it stays in triage, first in line, as a fresh task card. From the parked
+    review (you want it now) and from a check-back (they got back to you)."""
+    t = require(core, task_id)
+    with core.tx("human"):
+        ch = events.Changes()
+        f = dict(variant_tags=_tags(t, remove=("review", "check_back")), order_key=next_order(core, "front"), reason=None)
+        if option == "now":
+            f["reviewed_at"] = core.now_iso()
+        ch.task(t["id"], **f)
+        _answered(core, ch, card, option)
+        events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": option},
+                    log=("status", log))
+        cards.sync(core, t["id"], "front")
+    return t["id"]
+
+
+def check_back(core, task_id, actor="system"):
+    """A waiting task's check-back time came: back to triage to ask if they got back to you."""
+    t = require(core, task_id)
+    who = t.get("waiting_on") or "they"
+    return bring_back(core, t["id"], where="front", reason=f"Did {who} get back to you?", actor=actor,
+                      tags=("check_back",), log=("status", f"Checking in: you've been waiting on {who} since "
+                                                           f"{_when(core, t['state_changed_at'])}."))
 
 
 # ---------------------------------------------------------------- the AI's writes
@@ -296,6 +438,91 @@ def save_notes(core, task_id, text, actor="fuzz:executor"):
         ch = events.Changes()
         ch.task(t["id"], notes=(text or "").strip() or None)
         events.emit(core, "task.notes_saved", task_id=t["id"], changes=ch)
+
+
+LINK_RE = re.compile(r"^https?://\S+$", re.I)
+_URL_VERBS = {"edit", "view", "preview", "browse", "pages", "spaces", "display", "d", "u", "0", "1"}
+_GOOGLE = {"document": "Google Doc", "presentation": "Google Slides", "spreadsheets": "Google Sheet",
+           "forms": "Google Form"}
+
+
+def link_title(url):
+    """A readable name from a link alone: the page's slug ("Experimentation Knowledge Base - Use Cases Queries"),
+    a ticket key, the kind of Google file, or else its site."""
+    p = urlparse(url)
+    segs = [s for s in p.path.split("/") if s]
+    for i in range(len(segs) - 1, -1, -1):
+        name = unquote_plus(segs[i]).strip()
+        if name in _GOOGLE and (p.hostname or "").endswith("google.com"):
+            return _GOOGLE[name]
+        if i and segs[i - 1] == "d":   # /d/<id>/: a Google file's id
+            continue
+        if name.lower() in _URL_VERBS or len(name) < 3 or not re.search(r"[A-Za-z]", name):
+            continue
+        if len(name) > 20 and not re.search(r"[\s_-]", name):   # a document id, not a name
+            continue
+        return name
+    return p.hostname or url
+
+
+def _same_page(link):
+    """What makes two links one source: a Google file's id or a ticket key, else the address without its #part."""
+    from .matching.entities import normalize_url
+    ident = normalize_url(link)
+    return ident if ident.startswith(("gdoc:", "ticket:")) else link.split("#")[0].rstrip("/")
+
+
+def _link_source(core, task_id, title, link, run_id):
+    for s in core.all("SELECT id, link FROM sources WHERE task_id=? AND user_id=? AND role='link' AND withdrawn=0",
+                      (task_id, core.user_id)):
+        if _same_page(s["link"]) == _same_page(link):
+            return s["id"], False
+    return core.q("INSERT INTO sources (user_id, task_id, role, title, link, added_run) VALUES (?,?,?,?,?,?)",
+                  (core.user_id, task_id, "link", title, link, run_id)).lastrowid, True
+
+
+def one_per_message(rows):
+    """Each message once. One read again by a later run may sit on a task twice: keep the copy that counts
+    (not ignored or withdrawn), the one the task came from if it's among them, else the latest. Rows carry
+    `msg` (source:source_id, None when there's no message behind it), dropped here. Order is kept."""
+    best = {}
+    for r in rows:
+        if r["msg"] is None:
+            continue
+        rank = (r["role"] != "ignored" and not r["withdrawn"], r["role"] == "origin", r["id"])
+        if r["msg"] not in best or rank > best[r["msg"]][0]:
+            best[r["msg"]] = (rank, r["id"])
+    keep = {i for _, i in best.values()}
+    out = []
+    for r in rows:
+        if r["msg"] is None or r["id"] in keep:
+            out.append({k: v for k, v in r.items() if k != "msg"})
+    return out
+
+
+def add_links(core, task_id, links, run_id=None):
+    """The docs and tickets an email or message linked to join the task's sources with it, quietly."""
+    for url in links or []:
+        url = (url or "").strip()
+        if LINK_RE.match(url):
+            _link_source(core, task_id, link_title(url), url, run_id)
+
+
+def add_link(core, task_id, title, link, actor="fuzz:executor"):
+    """A web page that belongs with the task (a wiki, a doc) becomes one of its sources. The same link twice is one source."""
+    t = require(core, task_id)
+    link = (link or "").strip()
+    if not LINK_RE.match(link):
+        raise FuzzError("link is the page's full http(s) address", "link")
+    title = (title or "").strip() or link_title(link)
+    with core.tx(actor):
+        sid, added = _link_source(core, t["id"], title, link, (core.run or {}).get("id"))
+        if not added:
+            return sid, False
+        who = "You" if actor == "human" else "Fuzz"
+        events.emit(core, "task.link_added", task_id=t["id"], data={"source_id": sid, "title": title, "link": link},
+                    log=("status", f"{who} added {title} as a source."))
+    return sid, True
 
 
 def rename(core, task_id, title=None, ask=None, actor="fuzz:executor"):

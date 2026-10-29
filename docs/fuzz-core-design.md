@@ -221,6 +221,7 @@ task.handed_back task.scheduled  task.woke        task.parked      task.waiting
 task.done       task.let_go      task.restored    task.stale       task.deadline_level
 task.reopened   task.reply_in    task.came_back   task.anchor_moved task.anchor_lost
 task.confirmed  task.draft_edited task.sent_back task.send_failed
+task.review_due task.kept_parked task.check_back_set
 group.created   group.linked     group.unlinked   group.renamed    group.wrapped
 entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
@@ -691,7 +692,7 @@ replied" are not cards. They are things Fuzz says, through the
 
 | Family | Kind | The decision | Answers |
 | --- | --- | --- | --- |
-| **Routing** | `task` | What should happen to this work? | Assign to Fuzz · Work in Claude · Schedule · Done, plus Park it · Waiting on someone · Drop |
+| **Routing** | `task` | What should happen to this work? | Assign to Fuzz · Work in Claude · Schedule · Done, plus Park it · Waiting on someone · Not mine · Drop |
 | **Questions** | `duplicate` | Are these the same task? | Merge · Keep separate · Not sure yet |
 | | `entity_person` | Are these the same person? | Same person · Different people · Not sure yet |
 | | `entity_term` | What is this? | Save definition · Same as an existing project · Not sure yet |
@@ -766,9 +767,15 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Schedule `{anchor}` | `task.scheduled` | `scheduled`, see [Scheduling with human time](#scheduling-with-human-time) |
 | | Done | `task.done` | `done` |
 | | Park it | `task.parked` | `parked` |
-| | Waiting on someone | `task.waiting` | `waiting` |
+| | Waiting on someone `{who}` | `task.waiting` | `waiting`, with a check-back time. Needs a who. With an executor, Fuzz first picks the time from the context (within a week unless there's strong evidence), else three business days |
+| | Not mine `{who?}` | `task.let_go` | `letgo`, tagged `theirs`: Fuzz doesn't track other people's work. A new ask that needs you brings it back |
 | | Drop | `task.let_go` | `letgo` |
 | | Stale: Yes, keep it | `card.answered` | Stays, stale clock resets |
+| | Parked review: Keep it parked | `task.kept_parked` | Back to `parked`; not asked again for `review.again_days` |
+| | Parked review: Bring it back | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
+| | Check-back: They got back to me | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
+| | Check-back: Nudge them | `task.assigned` | `queued`, for Fuzz to draft a nudge for your OK |
+| | Check-back: Keep waiting | `task.waiting` | Back to `waiting` with a new check-back time |
 | | Handed back: quick answer `{text}` | `card.answered`, `task.assigned` | Back to `queued` with the answer in its notes |
 | `duplicate` | Merge | `task.merged` | The other task redirects. Logged in `feedback` |
 | | Keep separate | `card.answered` | A `kept_separate` link, so Fuzz won't ask again. Logged in `feedback` |
@@ -778,7 +785,7 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Same as an existing project | `entity.merged` | Linked to that entity |
 | `is_task` | Yes, it's mine | `task.confirmed` | Becomes a routing card in Triage |
 | | No, not a task | `task.let_go` | Closed as "not a task". Logged in `feedback` for the extractor |
-| | It's someone else's | `task.waiting` | Tracked as waiting on that person |
+| | It's someone else's | `task.let_go` | Closed as "someone else's" (tag `theirs`); Fuzz doesn't track other people's work. A new ask that needs you brings it back, for 90 days |
 | `draft`, `nudge` | Approve and send | `task.approved`, then `task.sent` from the sender | `sending`, then `done`, or back to `waiting` for a nudge. `task.send_failed` brings it back to `review` |
 | | Edit `{body}` | `task.draft_edited` | Stays in `review` |
 | | Send back `{note}` | `task.sent_back` | Back to `queued` with the note |

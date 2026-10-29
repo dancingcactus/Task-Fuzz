@@ -123,7 +123,7 @@ class CardTable(CoreCase):
     def test_is_task(self):
         self.check(self._is_task(), "mine", ["task.confirmed"], "triage")
         self.check(self._is_task(), "not_task", ["task.let_go"], "letgo")
-        self.check(self._is_task(), "someone_else", ["task.waiting"], "waiting", value="Dana")
+        self.check(self._is_task(), "someone_else", ["task.let_go"], "letgo", value="Dana")
 
     def _is_task(self):
         n = self.core.one("SELECT COUNT(*) n FROM tasks")["n"]
@@ -140,6 +140,15 @@ class CardTable(CoreCase):
         self.check(self.draft("note"), "approve", ["task.approved"], "done")
         self.check(self.draft(), "edit", ["task.draft_edited"], "review", value="Hi Elena, new text.")
         self.check(self.draft(), "send_back", ["task.sent_back"], "queued", value="Warmer, please")
+        self.check(self.draft(), "done", ["task.done"], "done")
+
+    def test_done_on_a_draft_means_you_sent_it_yourself(self):
+        tid, card = self.draft()
+        answers.answer(self.core, card["id"], "done")
+        self.assertEqual(self.core.one("SELECT status FROM drafts WHERE task_id=?", (tid,))["status"], "withdrawn",
+                         "Fuzz's sender never picks it up")
+        events.undo(self.core)
+        self.assertEqual(self.core.one("SELECT status FROM drafts WHERE task_id=?", (tid,))["status"], "pending")
 
     def test_not_now_on_a_draft_brings_it_back_for_your_ok(self):
         tid, card = self.draft()
@@ -223,6 +232,18 @@ class QueueRules(CoreCase):
         order = [c["task_id"] for c in self.open_cards()]
         self.assertEqual(order[:2], [urgent, quick], "overloaded brings quick ones first")
         self.assertLess(order.index(quick), order.index(plain))
+
+    def test_end_of_the_list(self):
+        first = tasks.capture(self.core, "First", due="2026-10-20T11:00:00Z")
+        tasks.capture(self.core, "Second")
+        back = self.claimed_and_handed_back()
+        tasks.to_back(self.core, first)
+        order = [c["task_id"] for c in self.open_cards()]
+        self.assertEqual(order[-1], first, "behind handbacks too, even though it's due soon")
+        self.assertLess(order.index(back), order.index(first))
+        self.assertEqual(self.task(first)["state"], "triage", "no time, no state change")
+        events.undo(self.core)
+        self.assertEqual([c["task_id"] for c in self.open_cards()][0], first)
 
     def claimed_and_handed_back(self):
         tid = tasks.capture(self.core, "Handed back one")

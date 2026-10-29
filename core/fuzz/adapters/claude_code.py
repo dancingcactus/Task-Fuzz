@@ -47,10 +47,11 @@ class ClaudeCode(Adapter):
         write_dir, Write and Edit join it, allowed only inside the output folder.
 
         The sender loads your own MCP servers and connectors (no --strict-mcp-config), since it sends with
-        them. It may still call only Fuzz's sender tools and the send_tools you listed. The executor loads
-        them too when you listed read_tools, and may call only those."""
+        them. It may still call only Fuzz's sender tools and the send_tools you listed. The executor and the
+        extractor load them too when you listed read_tools, and may call only those."""
         allowed = [f"mcp__{self.mcp_name(role)}__*"]
-        extra = list((send_tools if role == "sender" else read_tools if role == "executor" else None) or [])
+        extra = list((send_tools if role == "sender" else read_tools if role in ("executor", "extractor") else None)
+                     or [])
         allowed += extra
         tools = []
         for d in (files_dir, write_dir):

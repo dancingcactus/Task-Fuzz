@@ -1,14 +1,15 @@
 /* Lineup: one page, by who has the ball. To decide (the Triage count), Yours, With Fuzz (his lane, live),
-   With others, Later, then Parked and Finished (both collapsed). Everything here reads and writes the shared Store. */
+   Waiting on others, Later, then Parked and Finished (both collapsed). Everything here reads and writes the shared Store. */
 (function () {
   var V = {};
   var esc = UI.esc;
   var root, openId = null, dlg = null, unsub = null, timer = 0;
+  var finQ = '', finHits = null, finAsk = 0, finTimer = 0;
 
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
     parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
-    waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'With someone else. Fuzz watches for replies and drafts nudges for your OK. Replies go straight back to triage.' },
+    waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'You’re blocked until someone gets back to you. Fuzz checks back on each one, and a reply brings it straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
     letgo: { label: 'Let go', cols: ['Status', 'Let go', 'Note'], states: ['letgo'], blurb: 'Things you decided not to carry. Bring any of them back, no questions asked.' }
   };
@@ -45,9 +46,32 @@
   }
 
   /* A section that starts closed (Parked, Finished) and stays as you left it while the page updates */
-  function foldHTML(id, title, rows) {
-    if (!rows.length) return '';
-    return '<details class="lsec fold" id="' + id + '"' + (openSecs[id] ? ' open' : '') + '><summary><h2 id="sec-' + id + '">' + title + ' <span class="lcount">' + rows.length + '</span></h2></summary><ul class="lrows">' + rows.join('') + '</ul></details>';
+  function foldHTML(id, title, rows, extra) {
+    if (!rows.length && !extra) return '';
+    return '<details class="lsec fold" id="' + id + '"' + (openSecs[id] ? ' open' : '') + '><summary><h2 id="sec-' + id + '">' + title + (rows.length ? ' <span class="lcount">' + rows.length + '</span>' : '') + '</h2></summary>' +
+      (rows.length ? '<ul class="lrows">' + rows.join('') + '</ul>' : '') + (extra || '') + '</details>';
+  }
+
+  /* Finished shows the last two weeks. Anything older is a search away, so the page stays quick as the years pile up. */
+  function finRow(it) { return it.state === 'done' ? rowHTML(it, 'Done', 'ok', it.doneAgo) : rowHTML(it, it.theirs ? 'Someone else’s' : 'Let go', 'muted', it.doneAgo); }
+  function olderHTML() {
+    var n = Store.finishedOlder();
+    if (!n && !finQ) return '';
+    var h = '<div class="fin-older"><label for="fin-q">Search older finished work <span class="lcount">' + n + '</span></label>' +
+      '<input id="fin-q" type="search" autocomplete="off" placeholder="Words from the title" value="' + esc(finQ) + '">';
+    if (finHits) h += finHits.length ? '<ul class="lrows" aria-label="Older finished work">' + finHits.map(function (it) {
+      return finRow(it).replace('data-open="' + it.id + '"', 'data-older="' + it.coreId + '"');
+    }).join('') + '</ul>' : '<p class="lempty">Nothing older matches “' + esc(finQ) + '”.</p>';
+    return h + '</div>';
+  }
+  function searchOlder(q) {
+    finQ = q; clearTimeout(finTimer);
+    var ask = ++finAsk;
+    if (!q.trim()) { finHits = null; render(); return; }
+    finTimer = setTimeout(function () {
+      Live.searchFinished(q.trim()).then(function (hits) { if (ask === finAsk) { finHits = hits; render(); } },
+        function (e) { console.error('[fuzz] search', e); });
+    }, 250);
   }
   function yoursRows() {
     var mine = Store.inState('review').filter(function (it) { return !Store.inQueue(it.id); });
@@ -85,7 +109,7 @@
       var p = Store.progress(it), dots = '';
       for (var j = 0; j < p.total; j++) dots += '<i class="' + (j < p.done ? 'on' : '') + '"></i>';
       h += '<li><button type="button" class="lrow lane-row" data-open="' + it.id + '"><span class="lrow-main"><span class="rt">' + esc(it.title) + '</span>' +
-        '<span class="lane-step">' + UI.text(Store.nowText(it)) + '</span></span>' +
+        '<span class="lane-step">' + UI.text(Store.nowText(it), { links: false }) + '</span></span>' +
         '<span class="lrow-side"><span class="steps" role="img" aria-label="Step ' + Math.min(p.done + 1, p.total) + ' of ' + p.total + '">' + dots + '</span>' + (it.dueAt ? UI.pill('Rush', 'accent') : '') + '</span></button></li>';
     });
     next.forEach(function (it) { h += rowHTML(it, 'Next up', 'muted', 'Starts when a slot opens', 'lane-row'); });
@@ -98,9 +122,12 @@
     root = container; prevLane = null; departed = {};
     root.innerHTML = '<section class="lineup" aria-labelledby="tasks-h"><div class="tasks-head"><h1 id="tasks-h">Lineup</h1></div><div class="board" id="board"></div></section>';
     root.querySelector('#board').addEventListener('click', function (e) {
+      var o = e.target.closest('[data-older]');
+      if (o) { Live.loadFinished(o.dataset.older).then(function (it) { open(it.id, o); }, function () { Say.tell('That task wouldn’t open. Try again.'); }); return; }
       var b = e.target.closest('[data-open]'); if (!b) return;
       open(b.dataset.open, b);
     });
+    root.querySelector('#board').addEventListener('input', function (e) { if (e.target.id === 'fin-q') searchOlder(e.target.value); });
     root.querySelector('#board').addEventListener('toggle', function (e) { if (e.target.tagName === 'DETAILS') openSecs[e.target.id] = e.target.open; }, true);
     unsub = Store.on(function (e) { if (e.type !== 'change') { render(); if (openId) renderDialog(); } });
     timer = setInterval(function () { if (Object.keys(departed).length) render(); }, 2000);
@@ -122,18 +149,20 @@
       : '<p class="decide decide--clear">Nothing to decide. Triage is clear.</p>';
     h += sectionHTML('yours', 'Yours', yoursRows(), 'Nothing is waiting on you right now.');
     h += laneHTML();
-    h += sectionHTML('others', 'With others', Store.inState('waiting').map(function (it) { return rowHTML(it, it.waitingOn || 'Someone', 'warn', !it.nextCheck ? '' : /,/.test(it.nextCheck) ? it.nextCheck : 'Next check: ' + it.nextCheck.charAt(0).toLowerCase() + it.nextCheck.slice(1)); }));
+    h += sectionHTML('others', 'Waiting on others', Store.inState('waiting').map(function (it) { return rowHTML(it, it.waitingOn || 'Someone', 'warn', !it.nextCheck ? '' : /^Fuzz /.test(it.nextCheck) ? it.nextCheck : 'Checks back ' + it.nextCheck.charAt(0).toLowerCase() + it.nextCheck.slice(1)); }));
     var later = Store.inState('scheduled').map(function (it) { return rowHTML(it, 'Scheduled', 'muted', it.scheduledFor ? 'Back ' + it.scheduledFor : it.now); });
     var parked = Store.inState('parked').sort(function (a, b) { return (b.woke ? 1 : 0) - (a.woke ? 1 : 0); });
     /* A parked task that woke up (something new came in) stays in view; the rest wait in Parked, closed */
     later = parked.filter(function (it) { return it.woke; }).map(function (it) { return rowHTML(it, 'Woke up', 'accent', it.now, 'woke'); }).concat(later);
     h += sectionHTML('later', 'Later', later);
     h += foldHTML('parked', 'Parked', parked.filter(function (it) { return !it.woke; }).map(function (it) { return rowHTML(it, 'Parked', 'muted', 'No date'); }));
-    var fin = Store.inState('done').map(function (it) { return rowHTML(it, 'Done', 'ok', it.doneAgo); })
-      .concat(Store.inState('letgo').map(function (it) { return rowHTML(it, 'Let go', 'muted', it.doneAgo); }));
-    h += foldHTML('fin', 'Finished', fin);
+    var fin = Store.inState('done', 'letgo').sort(function (a, b) { return (b.changedAt || 0) - (a.changedAt || 0); }).map(finRow);
+    h += foldHTML('fin', Store.finishedOlder() ? 'Finished · last 2 weeks' : 'Finished', fin, olderHTML());
     board.innerHTML = h;
-    if (keep) { var el = board.querySelector('[data-open="' + keep + '"]') || document.getElementById(keep); if (el) el.focus({ preventScroll: true }); }
+    if (keep) {
+      var el = board.querySelector('[data-open="' + keep + '"]') || document.getElementById(keep); if (el) el.focus({ preventScroll: true });
+      if (el && el.id === 'fin-q') el.setSelectionRange(el.value.length, el.value.length);
+    }
   }
 
   function actionsFor(it) {
@@ -141,8 +170,10 @@
     function act(label, kind, fn, msg) { A.push({ label: label, kind: kind, fn: fn, msg: msg }); }
     var id = it.id, r = Store.recipient(it);
     if (it.state === 'review') {
-      if (r) act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Approved. Fuzz is sending it to ' + r.to + '.');
-      else act('Looks good', 'primary', function (text) { Store.accept(id, text); }, 'Approved and filed in Done.');
+      if (r) {
+        act('Approve and send', 'primary', function (text) { Store.approve(id, text); }, 'Approved. Fuzz is sending it to ' + r.to + '.');
+        act('Mark done', 'menu', function () { Store.done(id); }, 'Marked done. Fuzz won’t send the draft.');
+      } else act('Looks good', 'primary', function (text) { Store.accept(id, text); }, 'Approved and filed in Done.');
       if (!Store.inQueue(id)) act('Put it in triage', 'secondary', function () { Store.queueUp(Store.item(id), 'front'); }, 'It’s first in triage.');
     } else if (it.state === 'ai' || it.state === 'ai-queued') {
       act('Pull back into triage', 'secondary', function () { Store.bringBack(id, 'front'); }, 'Pulled back into triage.');
@@ -190,7 +221,15 @@
     return h;
   }
   function actionsRow(acts, revise) {
-    return '<div class="dlg-actions">' + acts.map(function (a, i) { return '<button type="button" class="btn ' + (a.kind === 'primary' ? 'primary' : '') + '" data-do="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+    /* A 'menu' action sits in a dropdown beside the primary one: on a draft, Mark done is for when you send it yourself */
+    var menu = acts.map(function (a, i) { return a.kind === 'menu' ? '<button type="button" role="menuitem" data-do="' + i + '"><b>' + esc(a.label) + '</b><span>You send it yourself. Fuzz won’t send this draft.</span></button>' : ''; }).join('');
+    return '<div class="dlg-actions">' + acts.map(function (a, i) {
+      if (a.kind === 'menu') return '';
+      var b = '<button type="button" class="btn ' + (a.kind === 'primary' ? 'primary' : '') + (a.kind === 'primary' && menu ? ' done-btn' : '') + '" data-do="' + i + '">' + esc(a.label) + '</button>';
+      if (a.kind !== 'primary' || !menu) return b;
+      return '<div class="split">' + b + '<button type="button" class="btn primary more-btn" data-dmore aria-haspopup="menu" aria-expanded="false" aria-label="Finish it another way" title="Finish it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
+        '<div class="menu" role="menu" id="dlg-menu" hidden aria-label="Finish it another way">' + menu + '</div></div>';
+    }).join('') +
       (revise ? '<button type="button" class="btn" data-revise aria-expanded="false" aria-controls="dlg-revise">Ask Fuzz to change it</button>' : '') + '</div>';
   }
   function detailHTML(it) {
@@ -206,7 +245,7 @@
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
     if (!draft) h += actionsRow(acts, false);
-    return h;
+    return h + UI.idTag(it);
   }
   /* Each change undoes on its own, or says why it can't (the core's model) */
   function undoer(ch) { return function () { var why = ch.undo(); if (!why && root) render(); return why; }; }
@@ -222,6 +261,9 @@
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }
       var gp = e.target.closest('[data-group]');
       if (gp) { openGroup(gp.dataset.group, gp); return; }
+      var dm = d.querySelector('#dlg-menu'), mb = e.target.closest('[data-dmore]');
+      if (mb) { dm.hidden = !dm.hidden; mb.setAttribute('aria-expanded', String(!dm.hidden)); if (!dm.hidden) dm.querySelector('button').focus(); return; }
+      if (dm && !dm.hidden && !e.target.closest('#dlg-menu')) { dm.hidden = true; d.querySelector('[data-dmore]').setAttribute('aria-expanded', 'false'); }
       var rv = e.target.closest('[data-revise]');
       if (rv) { var f = d.querySelector('#dlg-revise'); f.hidden = !f.hidden; rv.setAttribute('aria-expanded', String(!f.hidden)); if (!f.hidden) d.querySelector('#dlg-revise-text').focus(); return; }
       var b = e.target.closest('[data-do]'); if (!b) return;

@@ -52,8 +52,18 @@ class FakeHome(CoreCase):
             os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         # launchd labels are global: the real launchctl would swap your running com.fuzz.* jobs for these
         p = os.path.join(self.bin, "launchctl")
-        with open(p, "w") as f:
-            f.write("#!/bin/sh\nexit 0\n")
+        state = tempfile.mkdtemp()   # outside the fake home, which tests compare whole
+        self.addCleanup(shutil.rmtree, state, True)
+        self.launchctl_log = os.path.join(state, "launchctl.log")
+        loaded = os.path.join(state, "loaded")
+        os.makedirs(loaded)
+        with open(p, "w") as f:   # logs each call, and keeps which jobs are loaded so `list` can say
+            f.write(f'#!/bin/sh\necho "$*" >> "{self.launchctl_log}"\n'
+                    f'case "$1" in\n'
+                    f'  list) [ -e "{loaded}/$2" ]; exit $? ;;\n'
+                    f'  load) touch "{loaded}/$(basename "$3" .plist)" ;;\n'
+                    f'  unload) rm -f "{loaded}/$(basename "${{3:-$2}}" .plist)" ;;\n'
+                    f'esac\nexit 0\n')
         os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC)
         env = mock.patch.dict(os.environ, {"HOME": self.fake, "PATH": self.bin + os.pathsep + os.environ["PATH"]})
         env.start()
@@ -71,6 +81,48 @@ class FakeHome(CoreCase):
         return json.loads(p.read_text()) if p.exists() else {}
 
 
+class Launchd(FakeHome):
+    """Reinstalling (Settings > Update) must not take down `fuzz serve`, which may be the one doing it."""
+
+    def calls(self):
+        if not os.path.exists(self.launchctl_log):
+            return []
+        with open(self.launchctl_log) as f:
+            lines = [l.strip() for l in f if not l.startswith("list ")]
+        os.remove(self.launchctl_log)
+        return lines
+
+    def test_first_install_loads_every_job(self):
+        installer.install(self.core, "claude-code", launchd=True)
+        self.assertEqual([c.split("/")[-1] for c in self.calls()],
+                         [f"com.fuzz.u1.{r}.plist" for r in ("serve", "executor", "extractor", "sender")])
+
+    def test_an_unchanged_job_keeps_running(self):
+        installer.install(self.core, "claude-code", launchd=True)
+        self.calls()
+        installer.install(self.core, "claude-code", launchd=True)
+        self.assertEqual(self.calls(), [])
+
+    def test_serve_reloading_itself_hands_off_to_a_detached_shell(self):
+        installer.install(self.core, "claude-code", launchd=True)
+        self.calls()
+        serve = Path(self.fake, "Library", "LaunchAgents", "com.fuzz.u1.serve.plist")
+        serve.write_bytes(serve.read_bytes().replace(b"serve", b"serve-old", 1))   # an older job definition
+        real, handed = installer.subprocess.Popen, []
+
+        def popen(cmd, *a, **kw):   # only the hand-off is caught; the installer's other commands run
+            if cmd[0] == "/bin/sh":
+                handed.append((cmd[-1], kw.get("start_new_session")))
+                return mock.Mock()
+            return real(cmd, *a, **kw)
+        with mock.patch.dict(os.environ, {"XPC_SERVICE_NAME": "com.fuzz.u1.serve"}), \
+                mock.patch.object(installer.subprocess, "Popen", popen):
+            installer.install(self.core, "claude-code", launchd=True)
+        self.assertEqual(self.calls(), [], "serve isn't unloaded from inside itself")
+        self.assertEqual(handed, [(str(serve), True)])
+        self.assertNotIn(b"serve-old", serve.read_bytes())
+
+
 class Install(FakeHome):
     def test_claude_code_install_reinstall_uninstall(self):
         before = tree(self.fake)
@@ -78,7 +130,7 @@ class Install(FakeHome):
         self.assertTrue(out["engine_set"], "the first client installed becomes the engine")
         self.assertEqual(self.core.config["engine"]["client"], "claude-code")
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
-        self.assertIn("prompt_version: executor-0.11", skill.read_text())
+        self.assertIn("prompt_version: executor-0.13", skill.read_text())
         reg = self.stub_registry()
         self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor", "fuzz-sender"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])
@@ -131,12 +183,12 @@ class Doctor(FakeHome):
         st = {c["client"]: c for c in doctor.status(self.core, refresh=True)["clients"]}
         c = st["claude-code"]
         self.assertEqual(c["summary"], "ready", c["fixes"])
-        self.assertEqual([m["tools"] for m in c["mcp"]], [14, 5, 4], "each role's server starts with its tools")
+        self.assertEqual([m["tools"] for m in c["mcp"]], [15, 5, 4], "each role's server starts with its tools")
         skill = Path(self.fake, ".claude", "skills", "fuzz-extract", "SKILL.md")
-        skill.write_text(skill.read_text().replace("extract-0.2", "extract-0.0"))
+        skill.write_text(skill.read_text().replace("extract-0.6", "extract-0.0"))
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "needs_attention")
-        self.assertIn("extract-0.0 → extract-0.2", c["first_fix"])
+        self.assertIn("extract-0.0 → extract-0.6", c["first_fix"])
         engine.action(self.core, "claude-code", "update")
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "ready")

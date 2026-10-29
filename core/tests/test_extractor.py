@@ -4,7 +4,8 @@ import unittest
 
 from helpers import CoreCase, fixture
 
-from fuzz import answers, cards, tasks, tools
+from fuzz import answers, cards, events, tasks, tools
+from fuzz.db import FuzzError
 
 # What a judge says about each day-2 ask (the spike's table): ask keyword -> (target title keyword, verdict, conf, new_ask, new_title)
 JUDGE = {
@@ -40,7 +41,27 @@ class TwoDays(CoreCase):
         return rows[0]
 
     def sources(self, tid):
-        return self.core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND role!='ignored'", (tid,))["n"]
+        return self.core.one("SELECT COUNT(*) n FROM sources WHERE task_id=? AND role NOT IN ('ignored','link')",
+                             (tid,))["n"]
+
+    def test_the_docs_a_message_links_join_the_sources(self):
+        self.day("day1.json")
+        deck = self.by_title("Review the Q4 pricing deck")
+        links = self.core.all("SELECT title, link FROM sources WHERE task_id=? AND role='link'", (deck["id"],))
+        self.assertEqual([(s["title"], s["link"]) for s in links],
+                         [("Google Slides", "https://docs.google.com/presentation/d/PRICINGDECK123/edit")])
+        self.day("day2.json")
+        self.assertEqual(len(self.core.all("SELECT id FROM sources WHERE task_id=? AND role='link'", (deck["id"],))),
+                         1, "the same link from a later message is still one source")
+
+    def test_a_link_is_named_from_its_address(self):
+        for url, want in [
+                ("https://wiki.corp.example.com/spaces/EXO/pages/4041045840/Experimentation+Knowledge+Base+-+Use+Cases+Queries",
+                 "Experimentation Knowledge Base - Use Cases Queries"),
+                ("https://acme.atlassian.net/browse/TAPER-8461", "TAPER-8461"),
+                ("https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdef/edit", "Google Doc"),
+                ("https://example.com/", "example.com")]:
+            self.assertEqual(tasks.link_title(url), want)
 
     def test_day1(self):
         out = self.day("day1.json")
@@ -107,6 +128,31 @@ class TwoDays(CoreCase):
                                            "verdict": "same", "confidence": 0.95, "new_ask": True, "reason": "t"}])
         self.assertEqual(self.task(contract["id"])["state"], "letgo")
 
+    def theirs_then(self, owner, sid):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        tasks.theirs(self.core, contract["id"], on="Marco Diaz", card=self.card_for(contract["id"], "task"))
+        tools.submit_signals(self.core, [{
+            "source": "email", "source_id": sid, "anchor": "email:conv-B", "ts": "2026-10-20T09:30:00Z",
+            "from": {"name": "Marco Diaz", "email": "marco@acme.example"}, "quote": "Can you sign off on the contract?",
+            "candidates": [{"ask": "Sign off on the vendor contract", "owner": owner}]}])
+        item = tools.get_pending_judgments(self.core)["items"][0]
+        tools.submit_verdicts(self.core, [{"candidate_id": item["candidate_id"], "task_id": contract["id"],
+                                           "verdict": "same", "confidence": 0.95, "new_ask": True, "reason": "t"}])
+        return self.task(contract["id"])
+
+    def test_someone_elses_task_comes_back_when_it_needs_you(self):
+        t = self.theirs_then("me", "msg-b11")
+        self.assertEqual((t["state"], t["owner"]), ("triage", "me"))
+        self.assertNotIn("theirs", t["variant_tags"])
+        self.assertIn("now Marco Diaz needs you", t["reason"])
+
+    def test_someone_elses_task_stays_theirs_while_it_is(self):
+        t = self.theirs_then("Marco Diaz", "msg-b12")
+        self.assertEqual(t["state"], "letgo")
+        self.assertIn("theirs", t["variant_tags"])
+        self.assertEqual(self.sources(t["id"]), 2, "kept with it as context")
+
     def test_a_reply_from_the_person_you_wait_on_comes_back(self):
         self.day("day1.json")
         contract = self.by_title("vendor contract")
@@ -132,6 +178,50 @@ class TwoDays(CoreCase):
         self.assertEqual(t["state"], "parked")
         self.assertIn("woke", t["variant_tags"])
         self.assertFalse(self.open_cards() and [c for c in self.open_cards() if c["task_id"] == contract["id"]])
+
+    def answer_in_thread(self, frm, sid="msg-b13", **extra):
+        tools.submit_signals(self.core, [dict({
+            "source": "email", "source_id": sid, "anchor": "email:conv-B", "ts": "2026-10-20T09:30:00Z",
+            "from": frm, "quote": "Signed and sent back.", "answers": True, "candidates": []}, **extra)])
+
+    def test_your_own_reply_that_answers_closes_the_task(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        self.answer_in_thread({"name": "Justin Grover"})   # Slack gives the full name; me.names has "Justin"
+        t = self.task(contract["id"])
+        self.assertEqual(t["state"], "done")
+        self.assertFalse([c for c in self.open_cards() if c["task_id"] == contract["id"]])
+        log = [x["text"] for x in events.task_log(self.core, contract["id"], 1)]
+        self.assertIn("You answered in Email", log[0])
+
+    def test_someone_elses_answer_does_not_close_it(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        self.answer_in_thread({"name": "Marco Diaz", "email": "marco@acme.example"})
+        self.answer_in_thread({"name": "Justin Smith", "email": "jsmith@acme.example"}, sid="msg-b14")
+        self.assertEqual(self.task(contract["id"])["state"], "triage")
+
+    def test_your_answer_leaves_a_task_you_wait_on_open(self):
+        self.day("day1.json")
+        contract = self.by_title("vendor contract")
+        answers.answer(self.core, self.card_for(contract["id"], "task")["id"], "wait", "Marco Diaz")
+        self.answer_in_thread({"name": "Justin", "email": "jgrover@adobe.com"})
+        self.assertEqual(self.task(contract["id"])["state"], "waiting")
+
+    def test_an_answer_carries_no_asks(self):
+        with self.assertRaises(FuzzError) as e:
+            self.answer_in_thread({"name": "Justin"}, candidates=[{"ask": "Send the deck"}])
+        self.assertEqual(e.exception.field, "signals[0].answers")
+
+    def test_an_email_read_again_is_not_new(self):
+        msg = {"source": "email", "source_id": "<m1@acme.example>", "version": "2026-10-20T08:00:00Z",
+               "anchor": "email:conv-Q", "ts": "2026-10-20T08:00:00Z", "from": {"name": "Dana"},
+               "quote": "Can you send the Q4 numbers?", "candidates": [{"ask": "Send Dana the Q4 numbers"}]}
+        tools.submit_signals(self.core, [msg])
+        out = tools.submit_signals(self.core, [dict(msg, version="2026-10-20T11:30:00Z")])   # opened, so modified
+        self.assertEqual(out["skipped"], 1)
+        t = self.by_title("Q4 numbers")
+        self.assertEqual(self.sources(t["id"]), 1)
 
     def test_a_candidate_can_carry_a_brief(self):
         tools.submit_signals(self.core, [{

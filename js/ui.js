@@ -16,8 +16,21 @@
     tone = tone || 'muted'; var ic = STATUS_ICON[tone];
     return '<span class="pill pill--' + tone + (ic ? ' pill--icon' : '') + '">' + (ic || '') + esc(text) + '</span>';
   }
-  /* Escape text, then turn `backticked` bits into inline code. */
-  function text(s) { return esc(s).replace(/`([^`]+)`/g, '<code class="icode">$1</code>'); }
+  /* Escape text, then turn `backticked` bits into inline code and bare URLs into links.
+     o.links false keeps URLs plain, for text that sits inside a button. */
+  function text(s, o) {
+    return esc(s).split(/(`[^`]+`)/).map(function (part, i) {
+      if (i % 2) return '<code class="icode">' + part.slice(1, -1) + '</code>';
+      if (o && o.links === false) return part;
+      /* Trailing punctuation ends the sentence, not the URL */
+      return part.replace(/https?:\/\/(?:&amp;|[^\s<>&])*(?:&amp;|[^\s<>&.,;:!?)\]])/g, '<a href="$&" target="_blank" rel="noopener">$&</a>');
+    }).join('');
+  }
+
+  /* The id to quote when chasing a bug: the core's task id when it has one, else the page's own */
+  function idTag(it) {
+    return '<p class="taskid">' + (it.coreId != null ? 'Task #' + esc(it.coreId) : 'Local ' + esc(it.id)) + '</p>';
+  }
 
   /* Markdown the AI writes, drawn as HTML. Escaped first, so only these few forms become markup. */
   function inline(s) {
@@ -104,6 +117,7 @@
       var away = s.url && s.url.indexOf('artifact.html') !== 0 ? ' target="_blank" rel="noopener"' : '';
       var href = s.url ? '<a href="' + esc(s.url) + '"' + away + ' class="source">' : '<a href="#" data-noop class="source">';
       return '<li>' + href + '<span class="pill pill--muted">' + esc(s.type) + '</span><span class="source-title">' + esc(s.title) + '</span>' +
+        (s.when ? '<time class="source-when" datetime="' + esc(s.at) + '">' + esc(s.when) + '</time>' : '') +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a></li>';
     }).join('') + '</ul>';
   }
@@ -125,5 +139,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, text: text, md: md, pill: pill, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
 })();

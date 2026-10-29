@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   summary TEXT,                    -- a sentence or two on what the AI did or found, shown above the brief
   question TEXT,                   -- the one question the AI is asking the human now
   quick_answers TEXT,              -- json list, from a handback
-  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed
+  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed, review
   reason TEXT,                     -- why it is back: "Priya asked for the deck again on Slack"
   effort_mins INTEGER,
   energy TEXT,                     -- low | normal | high
@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   merged_into INTEGER,
   parent_id INTEGER,
   group_id INTEGER,                -- the tasks that came from the same place (groups.py)
+  reviewed_at TEXT,                -- the last time a parked review asked about it (review.py)
+  reviews INTEGER,                 -- how many times you kept it parked when asked
   title_history TEXT,              -- json list
   created_at TEXT,
   state_changed_at TEXT,
@@ -95,6 +97,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_event_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS tasks_user_state ON tasks (user_id, state);
+CREATE INDEX IF NOT EXISTS tasks_user_closed ON tasks (user_id, state, state_changed_at);
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -224,9 +227,10 @@ CREATE TABLE IF NOT EXISTS sources (
   task_id INTEGER NOT NULL,
   candidate_id INTEGER,            -- null for an attachment you added
   signal_key TEXT,
-  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment | output
+  role TEXT NOT NULL,              -- origin | update | context | ignored | attachment | output | link
   title TEXT,
   path TEXT,                       -- an attachment's file, in files/u<user>/t<task>/, or an output's
+  link TEXT,                       -- a web page the executor added as a source (add_source)
   mime TEXT,
   size INTEGER,
   added_run INTEGER,
@@ -334,9 +338,9 @@ def connect(home):
     return conn
 
 
-MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER")],
+MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
-              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER")]}
+              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER")]}
 
 
 def _migrate(conn):

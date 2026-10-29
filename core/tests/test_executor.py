@@ -43,6 +43,37 @@ class Time(Claimed):
         self.assertEqual(e.exception.field, "due")
 
 
+class AddSource(Claimed):
+    def test_a_web_page_becomes_a_source(self):
+        tid = self.claimed("Schedule a follow-up with the KB team")
+        url = "https://wiki.example.com/spaces/EXO/pages/4041045840"
+        r = tools.add_source(self.core, tid, "Experimentation Knowledge Base", url)
+        self.assertTrue(r["added"])
+        ref = [s for s in tools.get_task(self.core, tid)["sources"] if s["id"] == r["source_id"]][0]
+        self.assertEqual((ref["role"], ref["title"], ref["link"]), ("link", "Experimentation Knowledge Base", url))
+        self.assertEqual(tools.read_source(self.core, r["source_id"])["link"], url)
+        self.assertEqual(events.task_log(self.core, tid, 1)[0]["text"],
+                         "Fuzz added Experimentation Knowledge Base as a source.")
+
+    def test_the_same_link_twice_is_one_source(self):
+        tid = self.claimed()
+        first = tools.add_source(self.core, tid, "Plan", "https://example.com/plan")
+        again = tools.add_source(self.core, tid, "Plan, again", "https://example.com/plan")
+        self.assertEqual((again["source_id"], again["added"]), (first["source_id"], False))
+
+    def test_only_web_links(self):
+        tid = self.claimed()
+        for bad in ("", "wiki page 4041045840", "file:///etc/passwd", "javascript:alert(1)"):
+            with self.assertRaises(FuzzError) as e:
+                tools.add_source(self.core, tid, "Page", bad)
+            self.assertEqual(e.exception.field, "link")
+
+    def test_it_needs_the_lease(self):
+        tid = tasks.capture(self.core, "Not claimed")
+        with self.assertRaises(FuzzError):
+            tools.add_source(self.core, tid, "Page", "https://example.com/")
+
+
 class Rename(Claimed):
     def test_a_rename_is_logged_and_undone_on_its_own(self):
         tid = self.claimed("Can you summarize my last 5 slack threads?")

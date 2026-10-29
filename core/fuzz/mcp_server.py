@@ -69,6 +69,13 @@ def build(core, role):
             return _call(tools.read_source, core, source_id)
 
         @srv.tool()
+        def add_source(task_id: int, title: str, link: str) -> dict:
+            """Add a web page (a wiki, a doc, a ticket) to the task's Sources, when the person asks for it or
+            it's what the task hangs on. link: its full http(s) address; title: its name as the page shows it.
+            The same link twice is one source. Doesn't count against the step budget."""
+            return _call(tools.add_source, core, task_id, title, link)
+
+        @srv.tool()
         def log_step(task_id: int, kind: str, text: str) -> dict:
             """Add one line to the task's "Done so far". kind: research, action or guidance. Each call counts
             against the step budget."""
@@ -144,13 +151,18 @@ def build(core, role):
                          summary)
 
         @srv.tool()
-        def finish_gathering(task_id: int, result: bool = False, options: list[str] | None = None) -> dict:
+        def finish_gathering(task_id: int, result: bool = False, options: list[str] | None = None,
+                             check_back: dict[str, Any] | None = None) -> dict:
             """End a gather (claim_next_task returned gathering: true): the task goes to the person's triage
             with the brief you wrote, or, when it says comes_back, waits until then. Call it once the context is in, or straight away if nothing helps.
             result: true when the task was only to look something up and the brief is the finished
             deliverable (a summary, an agenda, an answer); allowed when the task says may_finish. It then
-            arrives done, Done first, with at most one follow-up in options. Write the brief first."""
-            return _call(tools.finish_gathering, core, task_id, result, options)
+            arrives done, Done first, with at most one follow-up in options. Write the brief first.
+            check_back: only for a task that says planning_wait, when Fuzz should ask the person if
+            they got back to them: {"at": "2026-11-03T09:00", "reason": "Dana said Monday, so Tuesday
+            morning."}. Within 7 days; later only with strong evidence, given as "beyond_a_week_because"
+            (up to 30 days). Leave it out and the default stands."""
+            return _call(tools.finish_gathering, core, task_id, result, options, check_back)
 
         @srv.tool()
         def release(task_id: int) -> dict:

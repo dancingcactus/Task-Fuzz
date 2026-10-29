@@ -18,7 +18,7 @@
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
-  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File', output: 'Saved file' };
+  var ROLE = { origin: 'Source', update: 'Update', context: 'Context', attachment: 'File', output: 'Saved file', link: 'Link' };
 
   /* ---------- Talking to the core ---------- */
   function readToken() {
@@ -50,13 +50,20 @@
     });
   }
 
-  /* Writes go one at a time, in the order you made them. A failed write says why and puts the screen
-     back the way the core has it. */
-  function write(fn) {
+  /* Writes go one at a time, in the order you made them. A failed write says why, about which task, and
+     puts the screen back the way the core has it. It stays on screen until you dismiss it, since the
+     card coming back on its own is otherwise all you'd see. */
+  function failed(e, title) {
+    var what = title ? 'Your change to “' + title + '” didn’t go through' : 'That didn’t go through';
+    if (e instanceof TypeError) return what + ': Fuzz’s server isn’t answering. Check that fuzz serve is running, then try again.';
+    if (e.status === 404 && /^No route /.test(e.message)) return what + ': Fuzz’s server is running older code than this page. Restart fuzz serve, then try again.';
+    return what + ': ' + e.message.replace(/\.?$/, '.') + ' It’s back the way Fuzz has it.';
+  }
+  function write(fn, title) {
     pending++;
     var p = chain.then(fn);
     chain = p.catch(function (e) {
-      Say.tell('That didn’t reach Fuzz: ' + e.message);
+      Say.tell(failed(e, title), { stay: true });
       console.error('[fuzz live]', e);
     }).then(function () { pending--; soon(0); });
     if (recording) recording.push(p);
@@ -108,6 +115,15 @@
     if (d.toDateString() === y.toDateString()) return 'Yesterday';
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
+  /* A source's own time, to the minute: "Today, 9:14 AM", "Oct 27, 4:12 PM" */
+  function stampOf(s) {
+    var t = ts(s); if (!t) return '';
+    var d = new Date(t), now = new Date(), y = new Date(); y.setDate(now.getDate() - 1);
+    var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return 'Today, ' + time;
+    if (d.toDateString() === y.toDateString()) return 'Yesterday, ' + time;
+    return d.toLocaleDateString([], d.getFullYear() === now.getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + time;
+  }
   function whenText(fire) {
     var t = ts(fire); if (!t) return 'when you’re back at your desk';
     return Sched.hint({ anchor: {}, fire_at: new Date(t).toISOString() }).replace(/^Today, /, 'today at ').replace(/^Tomorrow, /, 'tomorrow at ');
@@ -157,12 +173,12 @@
       age: ago(t.created_at) || 'Just now', stage: tags.indexOf('stale') > -1 ? 'stale' : 'fresh',
       mins: t.effort_mins || 5, energy: t.energy || 'normal',
       incoming: t.reason || (t.ask && t.ask !== t.title ? t.ask : origin ? '' : 'You captured this.'),
-      ask: (c && c.prompt) || t.question || 'What should happen to this?',
+      ask: ((tags.indexOf('review') > -1 || tags.indexOf('check_back') > -1) && t.reason) || (c && c.prompt) || t.question || 'What should happen to this?',
       hint: '', instr: it.instr && it.coreId === t.id ? it.instr : '',
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', url: s.role === 'output' || s.role === 'attachment' ? fileUrl(s.id) : webUrl(s.link) }; }),
+      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
@@ -170,10 +186,15 @@
       quick: tags.indexOf('handed_back') > -1 && t.quick_answers && t.quick_answers.length ? t.quick_answers : null,
       updated: tags.indexOf('returning') > -1 || tags.indexOf('reopened') > -1 || tags.indexOf('woke') > -1,
       woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1,
+      /* A parked task back to ask if you still want it; after a few keeps the card leans toward letting go */
+      review: tags.indexOf('review') > -1 && state === 'triage', leansGo: !!(c && c.suggested === 'drop'),
+      /* A waiting task back to ask if they got back to you; and one you said was someone else's */
+      checkBack: tags.indexOf('check_back') > -1 && state === 'triage', theirs: tags.indexOf('theirs') > -1,
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
-      waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at), nextCheck: '',
-      doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at),
+      waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at),
+      nextCheck: t.state === 'waiting' && t.schedule_fire_at ? whenText(t.schedule_fire_at) : '',
+      doneAgo: agoText(t.state_changed_at), parkedAgo: agoText(t.state_changed_at), changedAt: ts(t.state_changed_at) || 0,
       draft: draft ? draft.body : null, draftId: draft ? draft.id : null,
       afterApprove: (c && c.after_approve) || null, prep: !!(draft && draft.kind === 'note' && draft.final === 0),
       sendTo: draft && draft.kind !== 'note' ? { to: draft.target || 'its recipient', via: via(draft, t) } : null,
@@ -182,6 +203,8 @@
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
       group: t.group_id ? 'g' + t.group_id : null
     };
+    /* Waiting on someone while Fuzz works out when to check back: it's already with them, not with Fuzz */
+    if (tags.indexOf('plan_wait') > -1) { f.state = 'waiting'; f.gathering = false; f.nextCheck = 'Fuzz is picking a time'; }
     /* Time-sensitive tasks get the rush treatment; others with a date get the due bar */
     var due = ts(t.due);
     if (due && (t.deadline_level || 0) >= 1) f.dueAt = due;
@@ -194,7 +217,7 @@
     else if (state === 'sending') f.now = 'Sending' + (f.sendTo ? ' to ' + f.sendTo.to : '');
     else if (state === 'session') f.now = 'Open in Claude';
     else if (state === 'done') f.now = 'Done';
-    else if (state === 'letgo') f.now = 'Let go';
+    else if (state === 'letgo') f.now = f.theirs ? 'Someone else’s' : 'Let go';
     else f.now = '';
     var q = c && QUESTION[c.kind];
     /* A permission card's task stays queued for Fuzz in the core, but it is waiting on you */
@@ -236,6 +259,10 @@
         return api('GET', '/tasks/' + t.id).then(function (full) { detail[t.id].full = full; }, function (e) { delete detail[t.id]; throw e; });
       })).then(function () {
         if (g !== gen || pending) { again = true; return; }
+        /* A task that left the list (finished more than two weeks ago) leaves the cache too */
+        var listed = {}; list.forEach(function (t) { listed[t.id] = true; });
+        Object.keys(detail).forEach(function (id) { if (!listed[id]) delete detail[id]; });
+        Store.get().finishedOlder = r[0].finished_older || 0;
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
@@ -266,7 +293,10 @@
   }
 
   /* The tasks that came from the same place. A meeting's notes are a file, which a browser page can't open. */
-  function toGroup(g) { return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped }; }
+  function toGroup(g) {
+    return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped,
+      members: (g.tasks || []).map(function (t) { return { id: 't' + t.id, state: STATE[t.state] || t.state }; }) };
+  }
 
   function apply(list, cards, moment, groups) {
     var st = Store.get(), byTask = {};
@@ -344,9 +374,9 @@
   function wrap(name, ops) {
     base[name] = Store[name];
     Store[name] = function () {
-      var f = !quiet && ops.apply(null, arguments);
+      var f = !quiet && ops.apply(null, arguments), it = f && Store.item(arguments[0]);
       var res = base[name].apply(Store, arguments);
-      if (f) { gen++; write(f); }
+      if (f) { gen++; write(f, it && it.title); }
       return res;
     };
   }
@@ -365,12 +395,19 @@
       return then(decide(it, 'assign', { instructions: text }, 'assign', { instructions: text }), function () { return kick(it); });
     });
     wrap('handToFuzz', function (id) { var it = S.item(id); return then(decide(it, 'assign', {}, 'assign'), function () { return kick(it); }); });
+    wrap('attach', function (id, files) { var it = S.item(id); return function () { return upload(it.coreId, files); }; });
     wrap('mine', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('session', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('markDone', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('park', function (id) { return decide(S.item(id), 'park', undefined, 'park'); });
-    wrap('wait', function (id) { return decide(S.item(id), 'wait', undefined, 'wait'); });
+    wrap('keepParked', function (id) { return decide(S.item(id), 'keep_parked'); });
+    wrap('clarify', function (id) { return decide(S.item(id), 'now'); });
+    wrap('wait', function (id, who) { return decide(S.item(id), 'wait', who, 'wait', { on: who }); });
+    wrap('gotIt', function (id) { return decide(S.item(id), 'got_it'); });
+    wrap('keepWaiting', function (id) { return decide(S.item(id), 'keep_waiting'); });
+    wrap('nudgeThem', function (id) { var it = S.item(id); return then(decide(it, 'nudge'), function () { return kick(it); }); });
+    wrap('theirs', function (id) { return decide(S.item(id), 'someone_else', undefined, 'theirs'); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     /* instr: what Fuzz should look into before it comes back */
@@ -390,10 +427,12 @@
       var it = S.item(id);
       return then(editFirst(it, text), decide(it, 'send_back', note), function () { return kick(it); });
     });
-    /* Not now on a question: postpone it in the core too. On a draft it only moves the card back here. */
-    wrap('toBack', function (id) {
+    /* Not now on a question: postpone it in the core too. A task (End of the list) goes to the back of the
+       core's queue, a draft you edited saved first. */
+    wrap('toBack', function (id, text) {
       var it = S.item(id);
-      return it && QUESTION[it.cardKind] && (it.cardOptions || []).indexOf('not_sure') > -1 ? decide(it, 'not_sure') : null;
+      if (it && QUESTION[it.cardKind] && (it.cardOptions || []).indexOf('not_sure') > -1) return decide(it, 'not_sure');
+      return it && it.kind === 'task' && it.coreId ? then(editFirst(it, text), decide(it, null, undefined, 'back')) : null;
     });
     /* The group sheet: the core makes groups; renaming one, taking a task out and wrapping it up are yours */
     function groupCall(g, what, body) { var gid = g && g.coreId; return gid ? function () { return api('POST', '/groups/' + gid + '/' + what, body || {}); } : null; }
@@ -422,10 +461,10 @@
 
     /* Capture: in the queue at once, then given its core id */
     var capture = S.capture;
-    S.capture = function (text, docs) {
+    S.capture = function (text, docs, picked) {
       var it = capture.apply(S, arguments);
       gen++;
-      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [] }).then(function (r) { rename(it, r.task_id); if (r.gathering) gathering(it); }); });
+      write(function () { return api('POST', '/tasks', { text: (text || '').trim() || undefined, docs: docs || [], uploading: !!(picked && picked.length) }).then(function (r) { rename(it, r.task_id); if (r.gathering) gathering(it); return upload(r.task_id, picked || []); }); });
       return it;
     };
     var parkThought = S.parkThought;
@@ -475,6 +514,19 @@
     it.state = 'ai-queued'; it.gathering = true;
     st.queue = st.queue.filter(function (q) { return q !== it.id; });
   }
+  /* The files you captured it with, one at a time, each filling the name the task was captured with.
+     One that fails doesn't stop the rest; the first failure is the one you hear about. */
+  function upload(tid, picked) {
+    var first = null;
+    return picked.reduce(function (p, f) {
+      return p.then(function () {
+        return fetch('/tasks/' + tid + '/files?name=' + encodeURIComponent(f.name), { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: f }).then(function (r) {
+          if (r.ok) return;
+          return r.json().catch(function () { return {}; }).then(function (j) { var e = new Error(f.name + ' didn’t upload: ' + (j.error || 'HTTP ' + r.status)); e.status = r.status; throw e; });
+        });
+      }).catch(function (e) { first = first || e; });
+    }, Promise.resolve()).then(function () { if (first) throw first; });
+  }
   function rename(it, coreId) {
     var st = Store.get(), old = it.id, id = 't' + coreId;
     if (Store.item(id) && Store.item(id) !== it) { st.items = st.items.filter(function (i) { return i !== it; }); st.queue = st.queue.filter(function (q) { return q !== old; }); return; }
@@ -499,6 +551,12 @@
     setupDone: function () { return api('POST', '/setup/done', {}); },
     /* The Artifacts tab: what Fuzz wrote in your output folder, and a call whenever the core's events move */
     artifacts: function () { return api('GET', '/artifacts'); },
+    /* Finished work older than Lineup shows, by words in its title or summary, newest first */
+    searchFinished: function (q) {
+      return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
+    },
+    /* One of those, whole, so its dialog shows the log and sources */
+    loadFinished: function (coreId) { return api('GET', '/tasks/' + coreId).then(function (t) { return Store.keepAside(toItem(t, null, null)); }); },
     onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
     /* start runs the app. Live mode waits for the first load so the queue isn't empty for a moment. */
     boot: function (start) {

@@ -27,7 +27,8 @@
     }).join('');
   }
   function attachedHTML() {
-    return attached.map(function (n, i) {
+    return attached.map(function (f, i) {
+      var n = f.name;
       return '<li class="file"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>' + esc(n) + '</span>' +
         '<button type="button" class="iconbtn" data-rm="' + i + '" aria-label="Remove ' + esc(n) + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
     }).join('');
@@ -43,7 +44,7 @@
       '<div class="card cap-card">' +
         '<h1 id="cap-h" class="cap-title">What is on your mind?</h1>' +
         '<div class="drop" id="drop"><button type="button" class="dropbtn" id="dropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
-          '<span class="droptxt"><b>Drop a document to add context</b><small>Optional. Fuzz reads it along with your task. Files stay in your browser in this demo.</small></span><span class="droplink">Choose files</span></button>' +
+          '<span class="droptxt"><b>Drop a document to add context</b><small>Optional. Fuzz reads it along with your task. With Fuzz running, it keeps a copy on this computer.</small></span><span class="droplink">Choose files</span></button>' +
           '<input type="file" id="file" multiple hidden></div>' +
         '<ul class="files" id="files" aria-label="Attached documents"></ul>' +
         '<div class="field"><label for="cap-text">New task</label><textarea id="cap-text" rows="4" placeholder="For example: send Sam the slides from Tuesday"></textarea></div>' +
@@ -76,7 +77,7 @@
     }
     function addFiles(list) {
       if (!list || !list.length) return;
-      Array.prototype.forEach.call(list, function (f) { attached.push(f.name); }); paintFiles();
+      Array.prototype.forEach.call(list, function (f) { attached.push(f); }); paintFiles();
       nudge(); Fuzz.pAnim('gulp'); moodFor('eager', 1400);
       Fuzz.say(list.length === 1 ? 'Ooh, reading material. I’ll look at it with your task.' : 'A whole stack. I’ll read them with your task.', { type: false });
     }
@@ -106,8 +107,8 @@
     function submit() {
       var text = ta.value.trim();
       if (!text && !attached.length) return;
-      var docs = attached.slice();
-      Store.capture(text, docs);
+      var picked = attached.slice(), docs = picked.map(function (f) { return f.name; });
+      Store.capture(text, docs, picked);
       ta.value = ''; draft = ''; attached = []; paintFiles(); listening = false; clearTimeout(listenTimer);
       mic.setAttribute('aria-pressed', 'false'); $('#mic-l').textContent = 'Dictate';
       confirm = docs.length ? 'Captured. I’m reading your ' + (docs.length === 1 ? 'document' : 'documents') + ' now.' : 'Captured. It’s waiting in your triage queue.';

@@ -45,7 +45,11 @@
     on: function (fn) { subs.push(fn); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; },
     emit: emit,
 
-    item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0]; },
+    /* Older finished tasks found by search aren't in the list; they're kept aside so a dialog can still open them */
+    item: function (id) { return state.items.filter(function (i) { return i.id === id; })[0] || (state.archive && state.archive[id]); },
+    keepAside: function (it) { (state.archive = state.archive || {})[it.id] = it; return it; },
+    /* Done and let-go tasks older than the window: the core counts them, search finds them */
+    finishedOlder: function () { return state.finishedOlder || 0; },
     /* Steps Fuzz has done out of those planned, for the progress dots in Lineup */
     progress: function (it) { var sc = it.script || generic(it); return { done: Math.min(it.workStep || 0, sc.steps.length), total: sc.steps.length }; },
     inState: function () {
@@ -140,14 +144,15 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        var kx = [x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
     },
     setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
-    toBack: function (id) { var it = S.item(id); it.order = ++state.maxOrder; S.sortQueue(); },
+    /* End of the list: behind everything, deadlines too, until it next leaves triage */
+    toBack: function (id, text) { var it = S.item(id); if (text != null) it.draft = text; if (it.kind === 'task') it.atEnd = true; it.order = ++state.maxOrder; S.sortQueue(); },
     enqueue: function (it, where) { it.state = 'triage'; S.queueUp(it, where); },
     /* Into the triage queue without changing state: a draft waiting for your OK stays "review". */
     queueUp: function (it, where) {
@@ -156,7 +161,7 @@
       S.sortQueue();
     },
     inQueue: function (id) { return state.queue.indexOf(id) > -1; },
-    leave: function (id) { state.queue = state.queue.filter(function (q) { return q !== id; }); },
+    leave: function (id) { var it = S.item(id); if (it) it.atEnd = false; state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
     assign: function (id, instructions) {
@@ -210,7 +215,30 @@
       return { change: ch, held: held.length };
     },
     park: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You parked this from triage.'); },
-    wait: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.waitingOn = it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'Tomorrow morning'; S.log(it, 'status', 'You moved this to Waiting on others. Fuzz watches for the reply.'); },
+    /* The parked review: a parked task came back to ask "Still want this?" */
+    keepParked: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.review = false; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You kept this parked.'); },
+    /* You want it now: it stays first in triage as an ordinary card, so you decide what happens next */
+    clarify: function (id) { var it = S.item(id); it.review = false; it.leansGo = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', 'You brought this back from Parked.'); },
+    /* Waiting means you're blocked until someone gets back to you, so it always names who, and Fuzz checks back */
+    wait: function (id, who) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.checkBack = false; it.waitingOn = who || it.waitingOn || it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'In a few days'; S.log(it, 'status', 'You’re waiting on ' + it.waitingOn + '. Fuzz checks back in a few days, sooner if they reply.'); },
+    /* A check-back: they got back to you, so it's yours to decide again, first in line */
+    gotIt: function (id) { var it = S.item(id); it.checkBack = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', (it.waitingOn || 'They') + ' got back to you.'); },
+    keepWaiting: function (id) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.checkBack = false; it.nextCheck = 'In a few days'; S.log(it, 'status', 'Still waiting on ' + (it.waitingOn || 'them') + '. Fuzz checks back in a few days.'); },
+    nudgeThem: function (id) {
+      var it = S.item(id); S.leave(id); it.checkBack = false;
+      it.workStep = 0; it.nextAt = Date.now() + 4500; it.instr = 'Draft a short, friendly nudge to ' + (it.waitingOn || 'them') + '.';
+      it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
+      S.log(it, 'status', 'You asked Fuzz to nudge ' + (it.waitingOn || 'them') + '.');
+    },
+    /* People you've waited on before, and whoever this task came from, for the "Waiting on whom?" box */
+    waitNames: function (it) {
+      var seen = {}, out = [];
+      [it.waitingOn, it.who].concat((it.sources || []).map(function (src) { var m = /\bfrom (.+)$/.exec(src.title || ''); return m && m[1]; }))
+        .concat(state.items.filter(function (i) { return i.waitingOn && i.waitingOn !== 'Someone'; }).map(function (i) { return i.waitingOn; }))
+        .forEach(function (n) { n = (n || '').trim(); if (n && n !== 'Someone' && n !== 'You' && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; out.push(n); } });
+      return out.slice(0, 4);
+    },
+    theirs: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.theirs = true; it.doneAgo = 'Today'; it.now = 'Someone else’s'; S.log(it, 'status', 'You said this is someone else’s, not yours.'); wrapCheck(it); },
     letGo: function (id) { var it = S.item(id); S.leave(id); it.state = 'letgo'; it.doneAgo = 'Today'; it.now = 'Let go from triage'; S.log(it, 'status', 'You let this go.'); wrapCheck(it); },
     drop: function (id) { var it = S.item(id); S.leave(id); it.state = 'dropped'; S.log(it, 'status', 'You dropped this.'); wrapCheck(it); },
     /* A duplicate card's answers: primary, Merge; secondary, Keep separate */
@@ -230,6 +258,8 @@
     /* Counts what's done, never what's left. Let-go tasks leave the count. */
     groupCount: function (g) {
       var all = S.groupTasks(g).filter(function (i) { return i.state !== 'letgo'; });
+      /* The core lists every task in the group, older finished ones too, which aren't loaded here */
+      (g.members || []).forEach(function (m) { if (m.state !== 'letgo' && GONE.indexOf(m.state) < 0 && !state.items.some(function (i) { return i.id === m.id; })) all.push(m); });
       return { done: all.filter(function (i) { return i.state === 'done'; }).length, total: all.length };
     },
     groupFinished: function (g) { var c = S.groupCount(g); return g.closed || (c.total > 0 && c.done === c.total); },
@@ -328,6 +358,12 @@
       state.captured.unshift({ text: title, ref: id, doc: !t && docs.length > 0, time: 'Just now' });
       emit({ type: 'capture', item: it });
       return it;
+    },
+    /* Files you add to a task in triage: more for Fuzz to read. They join its Sources. */
+    attach: function (id, files) {
+      var it = S.item(id);
+      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      emit({ type: 'attach', id: id });
     },
     parkThought: function (text) {
       var id = 'thought' + (++captureN);

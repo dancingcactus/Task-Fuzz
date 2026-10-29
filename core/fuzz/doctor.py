@@ -45,7 +45,8 @@ def client_status(core, name, check_start=True):
     read_tools = list(((core.config.get("read") or {}).get("tools") or {}).get(name) or [])
     out["read"] = {"tools": read_tools, "status": "set" if read_tools else "none",
                    "note": None if read_tools else
-                   f"The executor has only Fuzz's tools, so it can't search or check your calendar. To let it, "
+                   f"The executor and extractor have only Fuzz's tools, so they can't read Slack, search or check "
+                   f"your calendar without someone there to approve. To let them, "
                    f"pick lookup tools with `fuzz setup --step tools --client {name}`."}
     fixes = []
     from . import outputs

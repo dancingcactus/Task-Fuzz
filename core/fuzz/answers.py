@@ -38,11 +38,28 @@ def _task_answer(core, card, t, option, value):
     if option == "park":
         return tasks.park(core, t["id"], card=card)
     if option == "wait":
-        return tasks.wait(core, t["id"], on=value if isinstance(value, str) else None, card=card)
+        return tasks.wait(core, t["id"], on=value if isinstance(value, str) else None, card=card,
+                          plan=gathers(core.config))
+    if option == "someone_else":
+        return tasks.theirs(core, t["id"], on=value if isinstance(value, str) else None, card=card)
     if option == "drop":
         return tasks.let_go(core, t["id"], card=card)
     if option == "keep":
         return tasks.keep_stale(core, t["id"], card)
+    if option == "keep_parked":
+        return tasks.keep_parked(core, t["id"], card)
+    if option == "now":
+        return tasks.clarify(core, t["id"], card)
+    if option == "got_it":
+        return tasks.clarify(core, t["id"], card, "got_it", f"{t.get('waiting_on') or 'They'} got back to you.")
+    if option == "keep_waiting":
+        return tasks.wait(core, t["id"], on=t.get("waiting_on"), card=card, option="keep_waiting",
+                          plan=gathers(core.config))
+    if option == "nudge":
+        who = t.get("waiting_on") or "them"
+        return tasks.assign(core, t["id"], card=card, option="nudge",
+                            instructions=f"Draft a short, friendly nudge to {who} (a nudge.* draft in the same thread) "
+                                         f"asking where this stands.")
 
 
 def _duplicate(core, card, t, option, value):
@@ -105,7 +122,7 @@ def _is_task(core, card, t, option, value):
                    (core.user_id, core.now_iso(), "not_task", t["id"], "is_task card"))
         return
     if option == "someone_else":
-        return tasks.wait(core, t["id"], on=value if isinstance(value, str) else None, card=card, option="someone_else")
+        return tasks.theirs(core, t["id"], on=value if isinstance(value, str) else None, card=card)
 
 
 def _draft(core, card, t, option, value):
@@ -117,6 +134,8 @@ def _draft(core, card, t, option, value):
         return drafts.send_back(core, card, value)
     if option == "not_yet":
         return drafts.not_yet(core, card)
+    if option == "done":   # you sent it yourself, so Fuzz doesn't
+        return drafts.done_myself(core, card)
     if option == "schedule":   # not now: the draft waits, and asks for your OK again at that time
         v = value if isinstance(value, dict) else {}
         return tasks.schedule(core, t["id"], v.get("anchor"), card=card)

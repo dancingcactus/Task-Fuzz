@@ -15,11 +15,13 @@ OPTIONS = {
     "entity_person": ["same", "different", "not_sure"],
     "entity_term": ["define", "same_as", "not_sure"],
     "is_task": ["mine", "not_task", "someone_else", "not_sure"],
-    "draft": ["approve", "edit", "send_back", "schedule"],
+    "draft": ["approve", "edit", "send_back", "schedule", "done"],
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
 }
-TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "drop"]
+TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop"]
+REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
+CHECK_BACK_OPTIONS = ["got_it", "nudge", "keep_waiting", "drop"]   # a waiting task back to ask "Did they get back to you?"
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
@@ -37,7 +39,7 @@ PROMPTS = {
 }
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back"}
 
 
 def open_cards(core, task_id):
@@ -103,7 +105,7 @@ def sync(core, task_id, where="back"):
     if t["state"] == "triage" and not open_:
         kind = "is_task" if "unconfirmed" in tags else "task"
         return create(core, kind, task_id, reason=t.get("reason"),
-                      suggested="keep" if "stale" in tags else "done" if "result" in tags
+                      suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags else "keep" if "stale" in tags else "done" if "result" in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
@@ -123,8 +125,17 @@ def refresh_schedule_options(core, ch, task_id):
             ch.card(c["id"], schedule_options=timeres.build_options(core, t))
 
 
+def review_suggests(core, t):
+    """Kept parked through enough reviews already: the card leans toward letting it go."""
+    return "drop" if (t.get("reviews") or 0) >= core.config["review"]["let_go_after"] else "keep_parked"
+
+
 def task_options(task):
     tags = task.get("variant_tags") or []
+    if "review" in tags:
+        return list(REVIEW_OPTIONS)
+    if "check_back" in tags:
+        return list(CHECK_BACK_OPTIONS)
     opts = list(TASK_OPTIONS)
     if "stale" in tags:
         opts.insert(0, "keep")
@@ -149,7 +160,8 @@ def moment(core):
 
 
 def queue(core):
-    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order."""
+    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order.
+    A card you sent to the end of the list waits behind all of them, deadline or not."""
     from . import tasks
     m = moment(core)
     cards = core.all("SELECT * FROM cards WHERE user_id=? AND status='open'", (core.user_id,))
@@ -164,7 +176,8 @@ def queue(core):
             fits = 0 if (t and (t.get("effort_mins") or 99) <= 5) else 1
         elif m == "low":
             fits = 0 if (t and t.get("energy") == "low") else 1
-        k = (urgent, back, fits, c["order_key"] or 0)
+        at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
+        k = (at_end, urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
     keyed.sort(key=lambda x: x[0])
     return [(c, t) for _, c, t in keyed]

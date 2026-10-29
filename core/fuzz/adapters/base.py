@@ -104,7 +104,7 @@ class Adapter:
                          send_tools=None, read_tools=None, write_dir=None):
         """files_dir: the user's attachments folder, the only place the run may read files from.
         send_tools: for the sender, the connector tools it may call to send, as this client names them.
-        read_tools: for the executor, the connector tools it may call to look things up.
+        read_tools: for the executor and the extractor, the connector tools it may call to look things up.
         write_dir: for the executor, the output folder: the one place it may create and change files."""
         raise NotImplementedError
 

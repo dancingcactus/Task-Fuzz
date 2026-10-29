@@ -50,6 +50,7 @@
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (!r.ok) throw new Error(r.status === 404 ? 'This file isn’t in your Fuzz folder any more.' : r.status === 401 ? 'Fuzz didn’t recognise this browser. Open the link `fuzz serve` prints, then try again.' : (j.error || 'Fuzz couldn’t open it.'));
         return { id: id, name: j.name, kind: j.kind || kindOf(j.name), size: j.size, updated: Date.parse(j.updated_at), task: j.task && j.task.title,
+          taskId: j.task && j.task.id, mine: j.role === 'attachment',
           url: '/files/' + id + '?token=' + encodeURIComponent(token), get: function () { return fetch('/files/' + id, auth); } };
       });
     });
@@ -71,32 +72,33 @@
     var meta = [LABEL[f.kind] || 'File', sizeText(f.size), f.updated ? 'Updated ' + agoText(f.updated) : ''].filter(Boolean).join(' · ');
     bar.innerHTML = '<div class="av-left">' + backHTML() +
       '<div class="av-title"><h1>' + esc(f.name) + '</h1><p class="meta">' + esc(meta) + (f.task ? ' · For <span class="av-task">' + esc(f.task) + '</span>' : '') + '</p></div></div>' +
-      '<div class="appbar-right">' + (f.id ? '<button type="button" class="themebtn av-del" data-del>' + ICON_TRASH + '<span>Delete</span></button>' : '') +
+      '<div class="appbar-right">' + (f.id ? '<button type="button" class="themebtn av-del" data-del>' + ICON_TRASH + '<span>' + (f.mine ? 'Remove' : 'Delete') + '</span></button>' : '') +
       '<a class="themebtn av-dl" href="' + esc(f.url) + '" download="' + esc(f.name) + '">' + ICON_DOWN + '<span>Download</span></a></div>';
     document.title = f.name + ' · Fuzz';
     if (f.id) bar.querySelector('[data-del]').addEventListener('click', function () { ask(f); });
   }
 
   /* ---------- Deleting ---------- */
-  /* Asks once, in place of the buttons. The core moves the file to your Trash, so it isn't gone for good. */
+  /* Asks once, in place of the buttons. A file Fuzz wrote moves to your Trash, so it isn't gone for good.
+     A file you added comes off its task and Fuzz erases its copy; your own copy is wherever you uploaded it from. */
   function ask(f) {
     var right = bar.querySelector('.appbar-right');
-    right.innerHTML = '<span class="av-ask" role="status">Move it to your Trash?</span>' +
-      '<button type="button" class="themebtn av-del av-del--go" data-yes>' + ICON_TRASH + '<span>Delete</span></button>' +
+    right.innerHTML = '<span class="av-ask" role="status">' + (f.mine ? 'Remove it from this task? Fuzz erases its copy.' : 'Move it to your Trash?') + '</span>' +
+      '<button type="button" class="themebtn av-del av-del--go" data-yes>' + ICON_TRASH + '<span>' + (f.mine ? 'Remove' : 'Delete') + '</span></button>' +
       '<button type="button" class="themebtn" data-no>Keep</button>';
     right.querySelector('[data-no]').addEventListener('click', function () { header(f); bar.querySelector('[data-del]').focus(); });
     right.querySelector('[data-yes]').addEventListener('click', function (e) { e.currentTarget.disabled = true; remove(f); });
     right.querySelector('[data-no]').focus();
   }
   function remove(f) {
-    fetch('/artifacts/' + f.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
+    fetch(f.mine ? '/tasks/' + f.taskId + '/files/' + f.id : '/artifacts/' + f.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (!r.ok && r.status !== 404) throw new Error(j.error || 'Fuzz couldn’t delete it (' + r.status + ').');
       });
     }).then(function () {
       bar.querySelector('.appbar-right').innerHTML = '';
       main.className = 'av';
-      main.innerHTML = '<div class="av-msg"><img src="assets/fuzz-mark.svg" alt="" width="56" height="56"><p>' + esc(f.name) + ' is in your Trash. You can put it back from there.</p>' +
+      main.innerHTML = '<div class="av-msg"><img src="assets/fuzz-mark.svg" alt="" width="56" height="56"><p>' + esc(f.name) + (f.mine ? ' is no longer on this task.' : ' is in your Trash. You can put it back from there.') + '</p>' +
         '<a class="themebtn" href="index.html#/artifacts">Go to Artifacts</a></div>';
     }).catch(function (e) {
       header(f);

@@ -20,7 +20,7 @@ EVENT_TYPES = {
     # not in the design doc's first list; each is a plain fact the UI can ignore
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
     "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached", "task.gathered",
-    "task.file_written", "task.file_deleted",
+    "task.file_written", "task.file_deleted", "task.link_added", "task.review_due", "task.kept_parked", "task.check_back_set",
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "entity.merged", "entity.kept_separate", "entity.defined",
     "card.created", "card.answered", "card.postponed", "card.expired",
@@ -240,7 +240,7 @@ def check_replay(core, user_id=None):
 # The AI's own changes you can take back, like a rename.
 AI_UNDOABLE = {"task.retitled"}
 NOT_UNDOABLE = {"task.restored", "run.started", "run.finished", "engine.installed", "engine.removed",
-                "task.sent", "source.read", "task.file_attached", "task.file_deleted"}
+                "task.sent", "source.read", "task.file_attached", "task.file_deleted", "task.link_added"}
 
 
 def _groups(core, limit=200):

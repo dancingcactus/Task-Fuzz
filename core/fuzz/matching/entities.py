@@ -73,6 +73,16 @@ def _is_me(person, me):
     return False
 
 
+def sent_by_me(person, me):
+    """Whether a message's sender is the person. Looser than _is_me on names alone, since Slack gives the
+    full name ("Justin Grover") where me.names may hold only "Justin". An email or Slack ID decides."""
+    if person.get("email") or person.get("slack_id"):
+        return _is_me(person, me)
+    name = (person.get("name") or "").strip().lower()
+    names = [n.lower() for n in me.get("names", [])]
+    return bool(name) and (name in names or name.split()[0] in names)
+
+
 def resolve_person(core, person, me):
     """Return (entity_id, strength) or None for the user themself."""
     if _is_me(person, me):

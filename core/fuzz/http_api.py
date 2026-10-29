@@ -61,9 +61,13 @@ def task_view(core, t, full=False):
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
     if full:
         out["log"] = events.task_log(core, t["id"])
-        out["sources"] = core.all("SELECT s.id, s.role, s.title, s.withdrawn, g.link, g.quote FROM sources s "
+        # newest first, each with its own time: the message's, or else when the run that found it started
+        out["sources"] = tasks.one_per_message(core.all(
+                                  "SELECT s.id, s.role, s.title, s.withdrawn, COALESCE(s.link, g.link) link, g.quote, "
+                                  "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg, s.path IS NOT NULL has_file FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
-                                  "WHERE s.task_id=? AND s.user_id=?", (t["id"], core.user_id))
+                                  "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
+                                  "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
         out["files"] = files.listing(core, t["id"])
@@ -108,8 +112,9 @@ class App:
         R = [
             ("GET", r"/tasks", self.list_tasks),
             ("POST", r"/tasks", self.capture),
+            ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
-            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|letgo|session|reopen|schedule)", self.task_action),
+            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
@@ -144,12 +149,20 @@ class App:
         return [(m, re.compile("^" + p + "$"), h) for m, p, h in R]
 
     def list_tasks(self, core, m, body, q):
-        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"))],
-                "max_working": scheduler.budget(core)["max_working"]}
+        """Done and let-go tasks from the last two weeks only, unless ?all=1. Older ones come from /tasks/search."""
+        days = None if q.get("all") == "1" else tasks.FINISHED_WINDOW_DAYS
+        return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"), closed_days=days)],
+                "max_working": scheduler.budget(core)["max_working"],
+                "finished_window_days": tasks.FINISHED_WINDOW_DAYS,
+                "finished_older": 0 if days is None else tasks.finished_older(core)}
+
+    def search_tasks(self, core, m, body, q):
+        return {"tasks": [task_view(core, t) for t in tasks.search_finished(core, q.get("q"), q.get("limit") or 50)]}
 
     def capture(self, core, m, body, q):
         gather = config.gathers(core.config)
-        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"), gather=gather)
+        tid = tasks.capture(core, body.get("text"), body.get("docs"), due=body.get("due"), gather=gather,
+                            uploading=bool(body.get("uploading")))
         if gather:
             kick_executor(self, core)
         return {"task_id": tid, "gathering": gather}, 201
@@ -166,7 +179,10 @@ class App:
         elif act == "park":
             tasks.park(core, tid)
         elif act == "wait":
-            tasks.wait(core, tid, body.get("on"))
+            tasks.wait(core, tid, body.get("on"), plan=config.gathers(core.config))
+            kick_executor(self, core)
+        elif act == "theirs":
+            tasks.theirs(core, tid, body.get("on"))
         elif act == "letgo":
             tasks.let_go(core, tid)
         elif act == "session":
@@ -175,6 +191,8 @@ class App:
             tasks.schedule(core, tid, body.get("anchor"), instructions=body.get("instructions"),
                            gather=config.gathers(core.config))
             kick_executor(self, core)
+        elif act == "back":
+            tasks.to_back(core, tid)
         elif act == "reopen":
             where = body.get("where", "front")
             if where not in ("front", "back"):
@@ -187,6 +205,7 @@ class App:
         """The raw file is the body: POST /tasks/14/files?name=budget.pdf with its Content-Type."""
         from . import files
         f = files.attach(core, int(m.group(1)), q.get("name"), body["_raw"], body.get("_type"))
+        kick_executor(self, core)   # a task captured with files waits for them before it's gathered
         return {"source_id": f["id"], "name": f["title"], "mime": f["mime"], "size": f["size"]}, 201
 
     def remove_file(self, core, m, body, q):
@@ -281,7 +300,7 @@ class App:
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
 
     def list_groups(self, core, m, body, q):
-        return {"groups": groups.list_groups(core)}
+        return {"groups": groups.list_groups(core, None if q.get("all") == "1" else tasks.finished_cutoff(core))}
 
     def group_action(self, core, m, body, q):
         gid, act = int(m.group(1)), m.group(2)
@@ -302,7 +321,7 @@ class App:
         if "option" not in body:
             raise FuzzError("option is required", "option")
         out = answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
-        if body["option"] == "schedule":   # you asked Fuzz to look into it meanwhile
+        if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
         return out
 
@@ -541,7 +560,8 @@ def kick_sender(app, core, now=None):
 
 
 def gathers_waiting(core):
-    return any(scheduler.gathering(t) for t in core.all(
+    from . import files
+    return any(scheduler.gathering(t) and not files.waiting(core, t) for t in core.all(
         "SELECT * FROM tasks WHERE user_id=? AND state='queued' AND assignee='fuzz'", (core.user_id,)))
 
 
