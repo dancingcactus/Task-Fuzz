@@ -165,14 +165,34 @@ def capture(core, text, docs=None, actor="human", due=None, gather=False, upload
 
 # ---------------------------------------------------------------- your decisions
 
-def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human"):
+def pointed(core, t, refs):
+    """The sources you picked for Fuzz to read with your instructions: each one a source id on this task, or
+    the name of a file you added (one still uploading has no id yet in the UI). Returns their titles."""
+    rows = core.all("SELECT id, title FROM sources WHERE task_id=? AND user_id=? AND withdrawn=0 AND role!='ignored' "
+                    "ORDER BY id DESC", (t["id"], core.user_id))
+    out = []
+    for r in refs or []:
+        hit = next((s for s in rows if (s["id"] == r if isinstance(r, int) else s["title"] == r)), None)
+        if not hit:
+            raise FuzzError(f"{r!r} isn't one of this task's sources", "refs")
+        if hit["title"] not in out:
+            out.append(hit["title"] or f"source {hit['id']}")
+    return out
+
+
+def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human", refs=None):
+    """refs: sources you pointed Fuzz to with this ask (see pointed). They go in the notes with your words."""
     t = require(core, task_id)
     extra = {}
     log = ("status", "You assigned this to Fuzz.")
-    if instructions and instructions.strip():
-        notes = ((t.get("notes") or "") + f"\nYou said: {instructions.strip()}").strip()
+    said = (instructions or "").strip()
+    read = pointed(core, t, refs)
+    if read:
+        said = (said + "\n" if said else "") + "Read these first: " + ", ".join(f"“{x}”" for x in read) + "."
+    if said:
+        notes = ((t.get("notes") or "") + f"\nYou said: {said}").strip()
         extra["notes"] = notes
-        log = ("guidance", f"You said: {instructions.strip()}")
+        log = ("guidance", f"You said: {said}")
     with core.tx(actor):
         ch = events.Changes()
         move(core, ch, t, "queued", card=card, attempts=0, question=None, **extra)

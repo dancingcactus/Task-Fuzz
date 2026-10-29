@@ -173,7 +173,7 @@ class App:
     def task_action(self, core, m, body, q):
         tid, act = int(m.group(1)), m.group(2)
         if act == "assign":
-            tasks.assign(core, tid, body.get("instructions"))
+            tasks.assign(core, tid, body.get("instructions"), refs=body.get("refs"))
         elif act == "done":
             tasks.done(core, tid)
         elif act == "park":

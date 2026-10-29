@@ -14,8 +14,8 @@ SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term
 
 def _task_answer(core, card, t, option, value):
     if option == "assign":
-        return tasks.assign(core, t["id"], instructions=(value or {}).get("instructions") if isinstance(value, dict) else value,
-                            card=card)
+        v = value if isinstance(value, dict) else {"instructions": value}
+        return tasks.assign(core, t["id"], instructions=v.get("instructions"), refs=v.get("refs"), card=card)
     if option == "quick":
         text = value if isinstance(value, str) else (value or {}).get("text")
         if not text or text not in (t.get("quick_answers") or []) and not (value or {}).get("custom"):

@@ -256,6 +256,7 @@
     d.className = 'dlg'; d.setAttribute('aria-labelledby', 'dlg-title');
     d.innerHTML = '<div class="dlg-in" id="dlg-in"></div>';
     document.body.appendChild(d); dlg = d;
+    UI.wireSources(d, function () { return Store.item(openId); });
     d.addEventListener('close', function () { d.remove(); if (dlg === d) { dlg = null; openId = null; } if (trigger && document.body.contains(trigger)) trigger.focus(); });
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }

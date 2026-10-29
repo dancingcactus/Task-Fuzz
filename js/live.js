@@ -190,7 +190,7 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
+      sources: src.map(function (s) { return { id: s.id, mine: s.role === 'attachment' && !!s.has_file, type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
@@ -402,12 +402,15 @@
     S.progress = function (it) { return { done: it.steps || 0, total: Math.max((it.steps || 0) + 1, 3) }; };
     S.live = true;
 
-    wrap('assign', function (id, instr) {
-      var it = S.item(id), text = (instr || '').trim();
-      return then(decide(it, 'assign', { instructions: text }, 'assign', { instructions: text }), function () { return kick(it); });
+    /* A source not in the core yet (a file still uploading) goes by its name: the upload is ahead of this in line */
+    wrap('assign', function (id, instr, read) {
+      var it = S.item(id), text = (instr || '').trim(), v = { instructions: text };
+      if (read && read.length) v.refs = read.map(function (s) { return s.id != null ? s.id : s.title; });
+      return then(decide(it, 'assign', v, 'assign', v), function () { return kick(it); });
     });
     wrap('handToFuzz', function (id) { var it = S.item(id); return then(decide(it, 'assign', {}, 'assign'), function () { return kick(it); }); });
     wrap('attach', function (id, files) { var it = S.item(id); return function () { return upload(it.coreId, files); }; });
+    wrap('removeSource', function (id, src) { var it = S.item(id); return src && src.id != null ? function () { return api('DELETE', '/tasks/' + it.coreId + '/files/' + src.id); } : null; });
     wrap('mine', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('session', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });

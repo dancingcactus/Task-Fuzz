@@ -164,12 +164,14 @@
     leave: function (id) { var it = S.item(id); if (it) it.atEnd = false; state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
-    assign: function (id, instructions) {
+    /* read: sources you pointed Fuzz to with this ask */
+    assign: function (id, instructions, read) {
       var it = S.item(id);
       S.leave(id);
       if (instructions && instructions.trim() && instructions.trim() !== (it.hint || '').trim()) {
         S.log(it, 'guidance', 'You said: ' + instructions.trim());
       }
+      if (read && read.length) S.log(it, 'guidance', 'Read these first: ' + read.map(function (s) { return '“' + s.title + '”'; }).join(', ') + '.');
       it.instr = instructions;
       it.handedBack = false; it.askBack = null;
       it.workStep = 0; it.nextAt = Date.now() + 4500;
@@ -362,7 +364,15 @@
     /* Files you add to a task in triage: more for Fuzz to read. They join its Sources. */
     attach: function (id, files) {
       var it = S.item(id);
-      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      /* With the core, a file can be removed once the core has it (live.js gives it its id then) */
+      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name, mine: !S.live }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      emit({ type: 'attach', id: id });
+    },
+    /* A file you added by mistake comes off the task */
+    removeSource: function (id, src) {
+      var it = S.item(id); if (!it) return;
+      it.sources = it.sources.filter(function (s) { return s !== src; });
+      S.log(it, 'status', 'You removed ' + src.title + '.');
       emit({ type: 'attach', id: id });
     },
     parkThought: function (text) {

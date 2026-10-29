@@ -111,15 +111,43 @@
     }).join('') + '</ol>';
   }
 
+  var ICON_TRASH = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+  /* A file you added (s.mine) carries a Remove button, for one you uploaded by mistake */
+  function sourceHTML(s, i) {
+    /* A saved file opens in the viewer in this tab; a new tab per file would each hold a connection to the core */
+    var away = s.url && s.url.indexOf('artifact.html') !== 0 ? ' target="_blank" rel="noopener"' : '';
+    var href = s.url ? '<a href="' + esc(s.url) + '"' + away + ' class="source">' : '<a href="#" data-noop class="source">';
+    return href + '<span class="pill pill--muted">' + esc(s.type) + '</span><span class="source-title">' + esc(s.title) + '</span>' +
+      (s.when ? '<time class="source-when" datetime="' + esc(s.at) + '">' + esc(s.when) + '</time>' : '') +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a>' +
+      (s.mine ? '<button type="button" class="src-rm" data-rmsrc="' + i + '" aria-label="Remove ' + esc(s.title) + ' from this task" title="Remove from this task">' + ICON_TRASH + '</button>' : '');
+  }
   function sourcesHTML(list) {
-    return '<ul class="sources">' + list.map(function (s) {
-      /* A saved file opens in the viewer in this tab; a new tab per file would each hold a connection to the core */
-      var away = s.url && s.url.indexOf('artifact.html') !== 0 ? ' target="_blank" rel="noopener"' : '';
-      var href = s.url ? '<a href="' + esc(s.url) + '"' + away + ' class="source">' : '<a href="#" data-noop class="source">';
-      return '<li>' + href + '<span class="pill pill--muted">' + esc(s.type) + '</span><span class="source-title">' + esc(s.title) + '</span>' +
-        (s.when ? '<time class="source-when" datetime="' + esc(s.at) + '">' + esc(s.when) + '</time>' : '') +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a></li>';
-    }).join('') + '</ul>';
+    return '<ul class="sources">' + list.map(function (s, i) { return '<li>' + sourceHTML(s, i) + '</li>'; }).join('') + '</ul>';
+  }
+  /* Removing asks once, in place of the row: Fuzz erases its copy, so it can't be undone. Your own copy is
+     wherever you uploaded it from. item() is the task the list belongs to. */
+  function wireSources(el, item) {
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-rmsrc],[data-rmsrc-yes],[data-rmsrc-no]'); if (!b || !el.contains(b)) return;
+      var li = b.closest('li'), it = item();
+      if (b.dataset.rmsrc !== undefined) li.dataset.i = b.dataset.rmsrc;
+      var i = parseInt(li.dataset.i, 10), s = it && it.sources[i];
+      if (!s) return;
+      if (b.dataset.rmsrcYes !== undefined) {
+        var list = li.parentNode; li.remove();
+        Store.removeSource(it.id, s);
+        Say.announce(s.title + ' is no longer on this task.');
+        var next = list && list.querySelector('a, button'); if (next) next.focus();
+      } else if (b.dataset.rmsrcNo !== undefined) {
+        li.className = ''; li.innerHTML = sourceHTML(s, i); li.querySelector('[data-rmsrc]').focus();
+      } else {
+        li.className = 'src-asking';
+        li.innerHTML = '<span class="src-ask" role="status">Remove “' + esc(s.title) + '” from this task? Fuzz erases its copy.</span>' +
+          '<button type="button" class="btn small dark" data-rmsrc-yes>Remove</button><button type="button" class="btn small" data-rmsrc-no>Keep</button>';
+        li.querySelector('[data-rmsrc-no]').focus();
+      }
+    });
   }
 
   /* Modal dialog built on <dialog> (focus trap and Escape come for free). */
@@ -139,5 +167,5 @@
     return d;
   }
 
-  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, dialog: dialog, KINDS: KINDS };
+  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, wireSources: wireSources, dialog: dialog, KINDS: KINDS };
 })();

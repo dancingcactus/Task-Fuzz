@@ -36,6 +36,32 @@ class Attach(CoreCase):
         for f in files.listing(self.core, tid):
             self.assertTrue(f["path"].startswith(files.task_dir(self.core, tid) + os.sep))
 
+    def test_assign_points_fuzz_to_the_sources_you_picked(self):
+        tid = tasks.capture(self.core, "Summarise the budget")
+        f = files.attach(self.core, tid, "budget.pdf", PDF)
+        files.attach(self.core, tid, "notes.txt", b"x")
+        # by id, and by name for a file the UI added before it knew the id
+        tasks.assign(self.core, tid, "Just the totals", refs=[f["id"], "notes.txt"])
+        t = tasks.require(self.core, tid)
+        self.assertIn("You said: Just the totals\nRead these first: “budget.pdf”, “notes.txt”.", t["notes"])
+        self.assertEqual(events.task_log(self.core, tid, 1)[0]["text"],
+                         "You said: Just the totals\nRead these first: “budget.pdf”, “notes.txt”.")
+        self.assertEqual(events.check_replay(self.core), [])
+
+    def test_assign_refuses_a_source_from_another_task(self):
+        tid, other = tasks.capture(self.core, "Summarise the budget"), tasks.capture(self.core, "Something else")
+        theirs = files.attach(self.core, other, "budget.pdf", PDF)
+        with self.assertRaises(FuzzError) as e:
+            tasks.assign(self.core, tid, refs=[theirs["id"]])
+        self.assertEqual(e.exception.field, "refs")
+
+    def test_only_a_file_you_added_comes_off(self):
+        tid = tasks.capture(self.core, "Summarise the budget")
+        src = self.core.q("INSERT INTO sources (user_id, task_id, role, title) VALUES (1,?,?,?)", (tid, "origin", "Budget email")).lastrowid
+        with self.assertRaises(FuzzError) as e:
+            files.detach(self.core, tid, src)
+        self.assertEqual(e.exception.status, 404)
+
     def test_limits_name_the_field(self):
         cfg = self.core.config
         cfg["files"] = {"max_mb": 1, "max_per_task": 2}

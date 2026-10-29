@@ -18,8 +18,8 @@
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
-  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, attachOpen = {};
-  var docClick = null, docKey = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
+  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, refs = {}, refPick = {};
+  var docClick = null, docKey = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -93,11 +93,12 @@
     Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
     if (docKey) document.removeEventListener('keydown', docKey); docKey = null;
+    if (docDrag) Object.keys(docDrag).forEach(function (n) { window.removeEventListener(n, docDrag[n]); }); docDrag = null;
     if (offSay) offSay(); offSay = null; clearTimeout(echoTimer);
     if (onScroll) window.removeEventListener('scroll', onScroll); onScroll = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
+  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
@@ -133,6 +134,7 @@
       if (card.style.display === 'none' && !ciOpen) showNext();
     } else if (e.type === 'attach') {
       var it = cur(); if (it && it.id === e.id && $('#rich')) { tab = 'sources'; $('#rich').innerHTML = richHTML(it); }
+      if (it && it.id === e.id) paintRefs();
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
       if (card.style.display === 'none' && !ciOpen) showNext();
@@ -287,20 +289,59 @@
         '</div></div>' + (res ? '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S">Ask me later' + kbd('S') + '</button>' + assignBtn : '') + '</div>';
   }
 
-  /* Extra context for Fuzz: folded away until you want it, so the card stays one decision */
-  function attachHTML(it) {
-    return '<details class="attach" id="attach"' + (attachOpen[it.id] ? ' open' : '') + '><summary><b>Add files</b> <span>Optional. More for Fuzz to read.</span></summary>' +
-      '<div class="drop" id="adrop"><button type="button" class="dropbtn" id="adropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
-        '<span class="droptxt"><b>Drop files here</b><small>Fuzz reads them with this task. They show up under Sources.</small></span><span class="droplink">Choose files</span></button>' +
-        '<input type="file" id="afile" multiple hidden></div></details>';
+  /* The drop zone shows only while a file is dragged onto the screen; + is the way in otherwise */
+  function dropHTML() {
+    return '<div class="drop" id="adrop" hidden><button type="button" class="dropbtn" id="adropbtn" tabindex="-1"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
+      '<span class="droptxt"><b>Drop files anywhere</b><small>Fuzz reads them with your instructions. They show up under Sources.</small></span></button>' +
+      '<input type="file" id="afile" multiple hidden></div>';
   }
   function addFiles(list) {
     var it = cur(), picked = Array.prototype.slice.call(list || []);
     if (!it || !picked.length) return;
+    /* A file you just added is part of what you're asking: it's picked to read with the instructions */
+    picked.forEach(function (f) { setRef(it, { title: f.name }, true); });
     Store.attach(it.id, picked);
     var line = picked.length === 1 ? 'Got ' + picked[0].name + '. I’ll read it with the task.' : 'Got ' + picked.length + ' files. I’ll read them with the task.';
     Fuzz.say(line, { type: false }); Say.announce(line);
   }
+
+  /* Sources you point Fuzz to with this ask. A source is known by its core id, or by its name until it has one
+     (a file still uploading), so a pick made by name still holds once the core's copy arrives. */
+  function srcKey(s) { return s.id != null ? 'id:' + s.id : 'name:' + s.title; }
+  function isPicked(it, s) { var r = refs[it.id] || []; return r.indexOf(srcKey(s)) > -1 || r.indexOf('name:' + s.title) > -1; }
+  function pickedRefs(it) { return it.sources.filter(function (s) { return isPicked(it, s); }); }
+  function setRef(it, s, on) {
+    var r = (refs[it.id] || []).filter(function (k) { return k !== srcKey(s) && k !== 'name:' + s.title; });
+    if (on) r.push(srcKey(s));
+    refs[it.id] = r;
+  }
+  function refChipsHTML(it) {
+    var on = pickedRefs(it);
+    if (!on.length) return '';
+    return '<ul class="refchips" aria-label="Fuzz reads these first">' + on.map(function (s) {
+      return '<li class="refchip"><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refchip-t">' + esc(s.title) + '</span>' +
+        '<button type="button" class="refx" data-unref="' + esc(srcKey(s)) + '" aria-label="Don’t point Fuzz to ' + esc(s.title) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
+    }).join('') + '</ul>';
+  }
+  /* + adds a source to this ask, as in a chat box: upload a file, or pick one the task already has */
+  function refsHTML(it) {
+    var n = it.sources.length, open = !!refPick[it.id] && n > 0;
+    return '<div class="composer-bar"><div class="plus"><button type="button" class="plusbtn" data-act="plus" aria-haspopup="menu" aria-expanded="false" aria-controls="plusmenu" aria-label="Add a source for Fuzz" title="Add a source"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>' +
+      '<div class="menu plusmenu" role="menu" id="plusmenu" hidden aria-label="Add a source">' +
+        '<button type="button" role="menuitem" data-act="upload"><b>Upload files</b><span>Or drag them anywhere onto the screen.</span></button>' +
+        (n ? '<button type="button" role="menuitem" data-act="refpick"><b>Pick from Sources</b><span>' + n + (n === 1 ? ' source' : ' sources') + ' on this task to point Fuzz to.</span></button>' : '') +
+      '</div></div><div class="refchips-wrap" id="refchips">' + refChipsHTML(it) + '</div></div>' +
+      '<fieldset class="refpick" id="refpick"' + (open ? '' : ' hidden') + '><legend>Point Fuzz to these sources</legend>' + it.sources.map(function (s) {
+        return '<label class="refopt"><input type="checkbox" data-ref="' + esc(srcKey(s)) + '"' + (isPicked(it, s) ? ' checked' : '') + '><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refopt-t">' + esc(s.title) + '</span></label>';
+      }).join('') + '<button type="button" class="linkbtn refpick-done" data-act="refpick">Done</button></fieldset>';
+  }
+  function plusMenu(open, keepFocus) {
+    var m = $('#plusmenu'), b = card.querySelector('[data-act="plus"]'); if (!m || !b) return;
+    m.hidden = !open; b.setAttribute('aria-expanded', String(open));
+    if (open) m.querySelector('button').focus(); else if (!keepFocus) b.focus();
+  }
+  function paintRefs() { var it = cur(), el = $('#refs'); if (it && el) el.innerHTML = refsHTML(it); }
+  function paintRefChips() { var it = cur(), el = $('#refchips'); if (it && el) el.innerHTML = refChipsHTML(it); }
 
   function richAvail(it) {
     var a = [];
@@ -429,8 +470,7 @@
         '<div class="stale-btns"><button type="button" class="btn" data-act="keep" aria-keyshortcuts="K">Yes, keep it' + kbd('K') + '</button><button type="button" class="btn dark" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>';
     } else if (isTask) {
       var val = edits[it.id + ':instr'] !== undefined ? edits[it.id + ':instr'] : (it.instr || it.hint || '');
-      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><textarea id="instr" rows="3">' + esc(val) + '</textarea></div>';
-      h += attachHTML(it);
+      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><div class="composer"><textarea id="instr" rows="3">' + esc(val) + '</textarea><div class="refs" id="refs">' + refsHTML(it) + '</div></div>' + dropHTML() + '</div>';
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
@@ -557,7 +597,7 @@
     var box = !$('#draft') && window.matchMedia && matchMedia('(pointer: fine)').matches && ($('#instr') || $('#note'));
     return box || $('#ask');
   }
-  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); }
+  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); delete refs[id]; delete refPick[id]; }
   function refocus(el) {
     var a = document.activeElement;
     if (booting || !el || (a && a !== document.body && document.contains(a) && !stack.contains(a))) return;
@@ -829,7 +869,8 @@
     /* The card heads for Fuzz while his reaction is still playing. */
     await sleep(rush ? 150 : 250);
     var waited, title = it.title;
-    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr); });
+    var read = pickedRefs(it);
+    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr, read); });
     forgetEdits(it.id);
     /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting.
        Once Fuzz starts on it, it can't be undone any more; you'd pull it back from Lineup instead. */
@@ -1086,6 +1127,7 @@
   /* ---------- Wiring ---------- */
   function wire() {
     offSay = Fuzz.onSay(echo);
+    UI.wireSources(card, cur);
     $('#keysbtn').addEventListener('click', openKeys);
     $('#keysdlg').addEventListener('click', function (e) { if (e.target === e.currentTarget || e.target.closest('[data-close]')) e.currentTarget.close(); });
     $('#keysdlg').addEventListener('close', function () { var b = $('#keysbtn'); if (b && b.offsetParent) b.focus(); });
@@ -1099,12 +1141,57 @@
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
     /* Add files: the button opens the picker, a drop lands on the task */
-    card.addEventListener('toggle', function (e) { var it = cur(); if (e.target.id === 'attach' && it) attachOpen[it.id] = e.target.open; }, true);
-    card.addEventListener('change', function (e) { if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; } });
-    ['dragenter', 'dragover'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (d) { e.preventDefault(); d.classList.add('over'); } }); });
-    ['dragleave', 'drop'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (!d) return; e.preventDefault(); d.classList.remove('over'); if (n === 'drop' && e.dataTransfer) addFiles(e.dataTransfer.files); }); });
+    card.addEventListener('change', function (e) {
+      if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; return; }
+      var it = cur();
+      if (it && e.target.dataset.ref !== undefined) { var rs = it.sources.filter(function (x) { return srcKey(x) === e.target.dataset.ref; })[0]; if (rs) { setRef(it, rs, e.target.checked); paintRefChips(); } }
+    });
+    /* A file dragged anywhere onto the screen opens the drop zone; letting go anywhere adds it to the task.
+       The zone goes back to how it was once the drag is over. */
+    var depth = 0;
+    function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') > -1; }
+    function zone() { var it = cur(); return it && it.kind === 'task' && !busy && !ciOpen && card.style.display !== 'none' && $('#adrop'); }
+    function endDrag() {
+      depth = 0; document.documentElement.classList.remove('dragging-file');
+      var d = $('#adrop'); if (d) { d.classList.remove('over'); d.hidden = true; }
+    }
+    docDrag = {
+      dragenter: function (e) {
+        if (!hasFiles(e)) return;
+        var d = zone(); if (!d) return;
+        e.preventDefault();
+        if (depth++ > 0) return;
+        d.hidden = false; d.classList.add('over');
+        document.documentElement.classList.add('dragging-file');
+        d.scrollIntoView({ block: 'nearest', behavior: Fuzz.isCalm() ? 'auto' : 'smooth' });
+        Fuzz.setMood('eager'); Fuzz.say('Drop it anywhere. I’ll read it with this one.', { type: false });
+      },
+      dragover: function (e) { if (hasFiles(e) && zone()) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
+      dragleave: function (e) { if (hasFiles(e) && depth > 0 && --depth === 0) { endDrag(); Fuzz.setMood('idle'); } },
+      drop: function (e) {
+        if (!hasFiles(e) || !zone()) return;
+        e.preventDefault(); endDrag();
+        addFiles(e.dataTransfer.files);
+      }
+    };
+    Object.keys(docDrag).forEach(function (n) { window.addEventListener(n, docDrag[n]); });
     card.addEventListener('click', function (e) {
       if (e.target.closest('#adropbtn')) { $('#afile').click(); return; }
+      var ux = e.target.closest('[data-unref]'), ci = cur();
+      if (ux && ci) {
+        refs[ci.id] = (refs[ci.id] || []).filter(function (k) { return k !== ux.dataset.unref; });
+        var gone = ci.sources.filter(function (s) { return srcKey(s) === ux.dataset.unref; })[0];
+        if (gone) setRef(ci, gone, false);
+        paintRefs(); card.querySelector('[data-act="plus"]').focus();
+        return;
+      }
+      if (e.target.closest('[data-act="plus"]')) { plusMenu(!$('#plusmenu').hidden ? false : true); return; }
+      if (e.target.closest('[data-act="upload"]')) { plusMenu(false, true); $('#afile').click(); return; }
+      if (e.target.closest('[data-act="refpick"]') && ci) {
+        refPick[ci.id] = !refPick[ci.id]; paintRefs();
+        var first = refPick[ci.id] && card.querySelector('#refpick input'); (first || card.querySelector('[data-act="plus"]')).focus();
+        return;
+      }
       var t = e.target.closest('[data-act],[data-when],[data-tab],[data-quick],[data-sched],[data-who]');
       if (!t || !card.contains(t)) return;
       if (t.dataset.who) { waitOn(t.dataset.who); return; }
@@ -1163,6 +1250,8 @@
     docClick = function (e) {
       var mm = root && root.querySelector('#moremenu');
       if (mm && !mm.hidden && !e.target.closest('.split')) { mm.hidden = true; var mb = root.querySelector('.more-btn'); if (mb) mb.setAttribute('aria-expanded', 'false'); }
+      var pm = root && root.querySelector('#plusmenu');
+      if (pm && !pm.hidden && !e.target.closest('.plus')) { pm.hidden = true; root.querySelector('[data-act="plus"]').setAttribute('aria-expanded', 'false'); }
     };
     document.addEventListener('click', docClick);
     card.addEventListener('keydown', function (e) {
@@ -1193,6 +1282,8 @@
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }
       /* T parks a stray thought from any card without leaving it */
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
+      var pm = $('#plusmenu');
+      if (e.key === 'Escape' && pm && !pm.hidden) { e.preventDefault(); plusMenu(false); return; }
       var mm = $('#moremenu');
       if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
