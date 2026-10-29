@@ -265,7 +265,7 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `hand_back(id, question, options?)` | Sends the task to triage with an either/or question | Goes to the end of the queue |
 | `create_task(ask, done_when, sources)` | Splits off a task or captures a follow-up. A split-off task joins the original's group | Goes through matching like any other ask |
 | `request_permission(id, scope, resource, why)` | Asks to read a new source or use a connector | Creates a permission card. The task waits until you answer |
-| `suggest_schedule(id, anchor, reason)` | Adds a human-time option for this task | Checked by the core. See [AI suggestions](#ai-suggestions) |
+| `suggest_schedule(id, anchor, reason, you_said?)` | Adds a human-time option for this task. With `you_said`, also schedules it there | Checked by the core. See [AI suggestions](#ai-suggestions) and [When Fuzz puts a task off](#when-fuzz-puts-a-task-off) |
 | `update_brief(id, context_md?, summary?, question?)` | Writes the Markdown brief, the summary above it and the one question shown to you | The task card's prompt is the question; answering clears it |
 | `release(id)` | Gives up the lease | A lease that runs out releases itself |
 
@@ -896,6 +896,24 @@ see Sam", and an event whose title matches a term on the task gives "Before the 
 - **Checked by the core:** the event must exist, be in the future and fall before the due date. A
   suggestion that fails is dropped without a word. If its event moves or is cancelled later, the
   option updates or disappears.
+
+### When Fuzz puts a task off
+
+Scheduling can be taken back (Lineup brings a task back at any time), so it doesn't need your OK the
+way sending does. When you asked for a task later ("can we bring this up next week?"), Fuzz schedules
+it itself, instead of turning your answer into a card to approve.
+
+- **Only when you asked.** `suggest_schedule` with `you_said` quotes your words. The core checks them
+  against what you said on that task (your instructions and answers, or the ask if you captured it)
+  and refuses otherwise, so Fuzz can't put off work it would rather not do.
+- **The most specific time that fits.** A moment when it hangs on a meeting or a person ("before the
+  Goals sync with Jacob"), otherwise the start of the window you named: "next week" is Monday morning,
+  "later" is later today.
+- **You can see it.** The task waits under Later in Lineup, its log says "Fuzz put this off as you
+  asked (…)", and it comes back to triage at that time like one you scheduled. It isn't on the Undo
+  list, since undoing would hand it back to a run that has ended: bring it back from Lineup instead.
+- **A prep note is still for groundwork.** When Fuzz has prepared something for the later step, it
+  saves a prep note, and approving the note is what schedules the task.
 
 ### Putting the list together
 

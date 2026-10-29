@@ -126,14 +126,17 @@ def build(core, role):
             return _call(tools.request_permission, core, task_id, scope, resource, why)
 
         @srv.tool()
-        def suggest_schedule(task_id: int, anchor: dict[str, Any], reason: str) -> dict:
+        def suggest_schedule(task_id: int, anchor: dict[str, Any], reason: str, you_said: str | None = None) -> dict:
             """Offer a time for this task's Schedule options. For a meeting or a person, look it up with your
             calendar connector and hand in a moment: {"type": "moment", "key": "leadership-1030",
             "label": "Before the leadership meeting", "at": "2026-10-30T09:00:00Z"}, where at is when the task
             should come back. Re-send the same key with a new at if it moved, or "cancelled": true.
             Other anchors: {"type": "before_due", "lead": "1d"}, {"type": "day_part", "day": "monday"}.
-            At most two are kept; it must be in the future and before the due date."""
-            return _call(tools.suggest_schedule, core, task_id, anchor, reason)
+            At most two are kept; it must be in the future and before the due date.
+            you_said: only when the person asked for it later ("can we bring this up next week?"): quote their
+            words from the task. Fuzz then schedules the task on this anchor and your turn on it ends, with
+            nothing for them to approve. Without it, the time is only offered."""
+            return _call(tools.suggest_schedule, core, task_id, anchor, reason, you_said)
 
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
