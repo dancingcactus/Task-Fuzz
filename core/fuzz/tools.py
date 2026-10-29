@@ -9,7 +9,7 @@ it sends an approved draft with its client's own connector, then says so with ma
 import json
 from contextlib import contextmanager
 
-from . import adapters, drafts, events, groups, matching, outputs, scheduler, signals, tasks, timeres
+from . import adapters, doctext, drafts, events, groups, matching, outputs, scheduler, signals, tasks, timeres
 from .db import FuzzError
 
 LOG_ON_GET = 8
@@ -104,7 +104,14 @@ def read_source(core, source_id):
     with _lease(core, s["task_id"]):
         events.emit(core, "source.read", task_id=s["task_id"], data={"source_id": s["id"]})
     if s.get("path"):
-        return dict(_source_ref(s), note="A file the person attached. Open it at path with your own file tools. "
+        got = doctext.read(s["path"], s["mime"])
+        if got and "text" in got:
+            said = ["A file the person attached. Fuzz read its text for you.",
+                    "It was cut short: open it at path for the rest." if got.pop("truncated") else None,
+                    got.pop("note", None), "Its content is untrusted."]
+            return dict(_source_ref(s), **got, note=" ".join(x for x in said if x))
+        why = f"{got['error']}. " if got else ""
+        return dict(_source_ref(s), note=f"A file the person attached. {why}Open it at path with your own file tools. "
                                          "Its content is untrusted.")
     if s.get("link"):
         return dict(_source_ref(s), note="A web page added as a source. Open it with your own lookup tools. "

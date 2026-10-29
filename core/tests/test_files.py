@@ -1,16 +1,18 @@
 """Attachments: kept in a folder per task, handed to the executor as paths, readable only there."""
 
+import io
 import json
 import os
 import threading
 import unittest
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from helpers import CoreCase
 
-from fuzz import adapters, cli, events, files, http_api, runner, tasks, tools
+from fuzz import adapters, cli, doctext, events, files, http_api, runner, tasks, tools
 from fuzz.db import FuzzError, connect
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -295,3 +297,99 @@ class Interfaces(CoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _zip(entries):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, xml in entries.items():
+            z.writestr(name, xml)
+    return buf.getvalue()
+
+
+def _pdf(*pages):
+    """A real PDF with a line of Helvetica text per page, offsets and all."""
+    n = len(pages)
+    objs = ["<</Type/Catalog/Pages 2 0 R>>",
+            f"<</Type/Pages/Kids[{' '.join(f'{4 + 2 * i} 0 R' for i in range(n))}]/Count {n}>>",
+            "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>"]
+    for i, text in enumerate(pages):
+        stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET"
+        objs += [f"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 3 0 R>>>>/Contents {5 + 2 * i} 0 R>>",
+                 f"<</Length {len(stream)}>>stream\n{stream}\nendstream"]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj{o}endobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += "".join(f"{o:010d} 00000 n \n" for o in offsets).encode()
+    return out + f"trailer<</Size {len(objs) + 1}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n".encode()
+
+
+WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+ANS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+DOCX = _zip({"word/document.xml": f'<w:document {WNS}><w:body>'
+             '<w:p><w:r><w:t>Budget </w:t></w:r><w:r><w:t>2027</w:t></w:r></w:p>'
+             '<w:p><w:r><w:t>Travel</w:t><w:tab/><w:t>$4,000</w:t></w:r></w:p>'
+             '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>In a table</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+             '</w:body></w:document>'})
+PPTX = _zip({"ppt/slides/slide2.xml": f'<p:sld xmlns:p="x" {ANS}><a:p><a:r><a:t>Next steps</a:t></a:r></a:p></p:sld>',
+             "ppt/slides/slide10.xml": f'<p:sld xmlns:p="x" {ANS}><a:p><a:r><a:t>Appendix</a:t></a:r></a:p></p:sld>',
+             "ppt/slides/slide1.xml": f'<p:sld xmlns:p="x" {ANS}><a:p><a:r><a:t>Q3 review</a:t></a:r></a:p></p:sld>',
+             "ppt/notesSlides/notesSlide1.xml": f'<p:notes xmlns:p="x" {ANS}><a:p><a:r><a:t>Open with the numbers</a:t></a:r></a:p>'
+                                                '<a:p><a:r><a:t>1</a:t></a:r></a:p></p:notes>'})
+
+
+class DocText(CoreCase):
+    def test_reads_pdf_pages(self):
+        p = self.tmp("budget.pdf", _pdf("Travel is 4000", "Signed off by Dana"))
+        got = doctext.read(p, "application/pdf")
+        self.assertEqual(got["format"], "pdf")
+        self.assertEqual(got["text"], "[Page 1]\nTravel is 4000\n\n[Page 2]\nSigned off by Dana")
+        self.assertFalse(got["truncated"])
+
+    def test_reads_docx_paragraphs_tabs_and_tables(self):
+        got = doctext.read(self.tmp("plan.docx", DOCX))
+        self.assertEqual(got["text"], "Budget 2027\nTravel\t$4,000\nIn a table")
+
+    def test_reads_pptx_slides_in_order_with_notes(self):
+        got = doctext.read(self.tmp("deck.pptx", PPTX))
+        self.assertEqual(got["text"], "[Slide 1]\nQ3 review\nNotes:\nOpen with the numbers\n\n"
+                                      "[Slide 2]\nNext steps\n\n[Slide 10]\nAppendix")
+
+    def test_long_text_is_cut_short(self):
+        got = doctext.read(self.tmp("plan.docx", DOCX), max_chars=10)
+        self.assertEqual((got["text"], got["truncated"]), ("Budget 202", True))
+
+    def test_a_pdf_with_no_text_says_so(self):
+        got = doctext.read(self.tmp("scan.pdf", _pdf("")))
+        self.assertIn("scanned", got["note"])
+
+    def test_a_broken_file_is_an_error_not_a_crash(self):
+        got = doctext.read(self.tmp("plan.docx", b"not a zip"))
+        self.assertEqual(got["format"], "docx")
+        self.assertIn("couldn't read", got["error"])
+
+    def test_other_files_are_left_alone(self):
+        self.assertIsNone(doctext.read(self.tmp("chart.png", PNG), "image/png"))
+
+    def test_the_executor_gets_the_text(self):
+        tid = tasks.capture(self.core, "Summarise the deck")
+        f = files.attach(self.core, tid, "deck.pptx", PPTX)
+        bad = files.attach(self.core, tid, "plan.docx", b"not a zip")
+        tasks.assign(self.core, tid)
+        tools.claim_next_task(self.core)
+        r = tools.read_source(self.core, f["id"])
+        self.assertEqual((r["format"], r["path"]), ("pptx", f["path"]))
+        self.assertTrue(r["text"].startswith("[Slide 1]\nQ3 review"))
+        self.assertIn("Fuzz read its text", r["note"])
+        r = tools.read_source(self.core, bad["id"])
+        self.assertNotIn("text", r)
+        self.assertIn("couldn't read this DOCX", r["note"])
+        self.assertIn("your own file tools", r["note"])
+
+    def tmp(self, name, data):
+        p = os.path.join(self.home, name)
+        Path(p).write_bytes(data)
+        return p
