@@ -264,8 +264,12 @@ html.calm .echo { animation: none; }
 .actions.review { grid-template-columns: 1fr 1fr; }
 .actions.review .split { grid-column: 1 / -1; } /* Approve and send, with Mark done behind its arrow, gets the whole row */
 .actions.review .split .menu { left: 0; width: auto; max-width: none; }
-/* A result: Done leads, and sending Fuzz further sits beside it */
-.actions.result { grid-template-columns: 3fr 2fr; }
+/* A result: Done leads on its own row, with Ask me later and sending Fuzz further under it */
+.actions.result { grid-template-columns: 1fr 1fr; grid-template-areas: "done done" "sched assign"; }
+.actions.result .split { grid-area: done; }
+.actions.result .split .menu { left: 0; width: auto; max-width: none; }
+.actions.result [data-act="schedule"] { grid-area: sched; }
+.actions.result [data-act="assign"] { grid-area: assign; }
 .split .done-btn.primary svg { color: currentColor; }
 .split .more-btn.primary { border-left-color: color-mix(in srgb, currentColor 35%, transparent); }
 .sendnote { margin: 8px 0 0; font-size: 13px; color: var(--muted); text-align: center; }

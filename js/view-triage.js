@@ -254,6 +254,7 @@
       tiles.push('<button type="button" class="when" data-sched="back" aria-keyshortcuts="E"><span>End of the list' + kbd('E') + '</span><small>After everything else waiting here</small></button>');
       if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
       var meta = it.state === 'review' ? 'Pick a rough time. The draft waits, unsent, and comes back then for your OK.'
+        : it.result ? 'Pick a rough time. What Fuzz found waits, and comes back then to ask if it’s done.'
         : 'Pick a rough time. Fuzz finds the right moment around your day. Anything you wrote in the instructions, Fuzz looks into before it comes back.';
       return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">' + meta + '</p>' +
         '<div class="when-grid">' + tiles.join('') + '</div>' +
@@ -270,7 +271,8 @@
         '<div class="sched-links"><button type="button" class="linkbtn" data-act="wait-cancel" aria-keyshortcuts="Escape">Back to the card</button></div></form>';
     }
     if (it.state === 'review') return reviewActionsHTML(it);
-    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further */
+    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further.
+       Not sure yet? Ask me later opens the Schedule picker, and the result comes back to ask again. */
     var res = !!it.result;
     var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
     return '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
@@ -282,7 +284,7 @@
           '<button type="button" role="menuitem" data-act="park" aria-keyshortcuts="P"><b>Park it' + kbd('P') + '</b><span>Out of triage with no date. It waits in Parked until someone follows up, or you bring it back.</span></button>' +
           '<button type="button" role="menuitem" data-act="waiting" aria-keyshortcuts="W"><b>Waiting on someone' + kbd('W') + '</b><span>You’re blocked until they get back to you. Fuzz checks back.</span></button>' +
           '<button type="button" role="menuitem" data-act="theirs" aria-keyshortcuts="X"><b>Not mine' + kbd('X') + '</b><span>It’s someone else’s to do. Fuzz lets it go, and brings it back if a new ask needs you.</span></button>' +
-        '</div></div>' + (res ? assignBtn : '') + '</div>';
+        '</div></div>' + (res ? '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S">Ask me later' + kbd('S') + '</button>' + assignBtn : '') + '</div>';
   }
 
   /* Extra context for Fuzz: folded away until you want it, so the card stays one decision */
@@ -902,11 +904,11 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     if ($('#instr')) edits[it.id + ':instr'] = $('#instr').value;
-    var review = it.state === 'review';
+    var review = it.state === 'review', res = !!it.result;
     if (review && $('#draft')) edits[it.id + ':draft'] = $('#draft').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
-    Fuzz.setMood('eager'); Fuzz.say(review ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
+    Fuzz.setMood('eager'); Fuzz.say(review || res ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
     var pickedIdx = await new Promise(function (resolve) { schedResolve = resolve; });
     schedResolve = null;
     if (pickedIdx === -1) {
@@ -927,7 +929,7 @@
     var typed = (edits[it.id + ':instr'] || '').trim(), look = typed && typed !== (it.instr || it.hint || '').trim() ? typed : '';
     Fuzz.setMood('happy'); Fuzz.setArm('none'); Fuzz.pAnim('hop');
     var text = review ? edits[it.id + ':draft'] : undefined;
-    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
+    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : res && !look ? 'Okay. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
     Fuzz.schedGlyph(Sched.glyph(w), Sched.osd(w));
     offer((review ? 'Not now: “' + it.title + '” asks for your OK again ' : 'Scheduled “' + it.title + '”: ') + when + (look ? '. Fuzz looks into it first.' : '.'), Store.track([it.id], function () { Store.schedule(it.id, w, look, text); }));
     forgetEdits(it.id);

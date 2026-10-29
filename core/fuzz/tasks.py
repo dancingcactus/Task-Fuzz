@@ -291,9 +291,11 @@ def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=N
         extra["notes"] = ((t.get("notes") or "") + f"\nYou said: {said}").strip()
         log = ("guidance", f"You scheduled this: {when}. You said: {said}")
     look = bool(said and gather)
+    # "Ask me later" on a result: it comes back as the same result, still asking if it's done
+    keep = ("result",) if "result" in (t.get("variant_tags") or []) and not look else ()
     with core.tx("human"):
         ch = events.Changes()
-        move(core, ch, t, "queued" if look else "scheduled", card=card, add_tags=("gather",) if look else (),
+        move(core, ch, t, "queued" if look else "scheduled", card=card, add_tags=("gather",) if look else keep,
              schedule_anchor=anchor, schedule_fire_at=fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
              question=None, attempts=0, **extra)
         _answered(core, ch, card, "schedule", {"anchor": anchor, "instructions": said} if said else {"anchor": anchor})
