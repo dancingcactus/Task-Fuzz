@@ -318,6 +318,36 @@ class Api(Server):
         tasks.park(self.core, tid)
         self.assertEqual(self.req("POST", f"/tasks/{tid}/back", {})[0], 409)
 
+    def test_work_in_opens_a_session_on_the_engine(self):
+        from unittest import mock
+        from fuzz import sessions
+        core = self.srv.app.core(1)
+        tid = self.req("POST", "/tasks", {"text": "Decide the pricing page copy"})[1]["task_id"]
+        self.assertEqual(self.req("GET", "/tasks")[1]["work_in"], "Claude", "Claude Code until an engine is picked")
+        with mock.patch("fuzz.sessions.launch") as launch, mock.patch("fuzz.sessions.sys.platform", "darwin"):
+            self.req("POST", f"/tasks/{tid}/session", {})
+            status, body = self.req("POST", f"/tasks/{tid}/open", {})
+        self.assertEqual((status, body["client"], body["label"], body["opened"]), (200, "claude-code", "Claude", True))
+        launch.assert_called_once_with(body["script"])
+        script = open(body["script"]).read()
+        self.assertIn("claude", script)
+        self.assertIn("Decide the pricing page copy", open(body["script"][:-len(".command")] + ".md").read())
+        log = [x["text"] for x in self.req("GET", f"/tasks/{tid}")[1]["log"][:2]]
+        self.assertEqual(log[0], "You started working on it in Claude.")
+        self.assertIn("working session with Claude.", log[1])
+
+        cfg = core.config
+        cfg["engine"]["client"] = "copilot"
+        core.save_config(cfg)
+        self.assertEqual(self.req("GET", "/tasks")[1]["work_in"], "Copilot")
+        with mock.patch("fuzz.sessions.launch"), mock.patch("fuzz.sessions.sys.platform", "linux"):
+            body = self.req("POST", f"/tasks/{tid}/open", {})[1]
+        self.assertEqual((body["label"], body["opened"]), ("Copilot", False), "off a Mac the script waits for you")
+        self.assertIn("copilot", open(body["script"]).read())
+        self.assertIn(" -i ", open(body["script"]).read())
+        self.assertEqual(self.req("POST", "/tasks/999/open", {})[0], 404)
+        self.assertTrue(sessions.prompt(core, tid).startswith("I'm working on this task"))
+
     def test_engine_status(self):
         st = self.req("GET", "/engine")[1]
         self.assertEqual({c["client"] for c in st["clients"]}, {"claude-code", "copilot"})

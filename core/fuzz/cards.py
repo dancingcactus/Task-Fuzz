@@ -188,7 +188,7 @@ def task_summary(t):
         return None
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
-            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id")
+            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step")
     return {k: t.get(k) for k in keys}
 
 

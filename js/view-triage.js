@@ -154,7 +154,7 @@
   /* The key guide (press ? on Triage). Letters act on a task card; numbers pick from whatever choice is showing. */
   function keysHTML() {
     var g = [
-      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
+      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in ' + Store.workIn], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
       ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
       ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
@@ -269,7 +269,7 @@
     var res = !!it.result;
     var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
     return '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
-      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in Claude' + kbd('C') + '</button>') +
+      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>') +
       (res ? '' : '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Schedule' + kbd('S') + '</button>') +
       '<div class="split"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
         '<button type="button" class="btn more-btn" data-act="more" aria-haspopup="menu" aria-expanded="false" aria-label="Clear it another way" title="Clear it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
@@ -917,8 +917,9 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     var b = card.querySelector('[data-act="claude"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
-    Fuzz.setMood('stare'); Fuzz.say('Oh. Claude.', { type: false });
-    offer('Opened “' + it.title + '” in Claude.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in Claude. In this demo it just moves to Current.');
+    var who = Store.workIn;
+    Fuzz.setMood('stare'); Fuzz.say('Oh. ' + who + '.', { type: false });
+    offer('Opened “' + it.title + '” in ' + who + '.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in ' + who + '.' + (Live.on() ? ' It’s in a Terminal window.' : ' In this demo it just moves to Current.'));
     var shown = null, exit = sleep(350).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
       return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 460, easing: 'cubic-bezier(.5,0,.8,.4)' });

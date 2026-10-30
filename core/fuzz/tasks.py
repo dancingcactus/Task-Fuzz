@@ -202,9 +202,10 @@ def assign(core, task_id, instructions=None, card=None, option="assign", value=N
 
 
 def session(core, task_id, card=None):
+    from .sessions import label
     t = require(core, task_id)
     return _one(core, "human", "task.assigned", t, "session",
-                ("status", "You opened this in a working session with Claude. Fuzz keeps the sources ready."),
+                ("status", f"You opened this in a working session with {label(core)}. Fuzz keeps the sources ready."),
                 card=card, option="session", data={"to": "session"}, question=None)
 
 

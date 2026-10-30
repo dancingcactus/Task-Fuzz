@@ -7,7 +7,7 @@
   var finQ = '', finHits = null, finAsk = 0, finTimer = 0;
 
   var TABS = {
-    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
+    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude or Copilot, or coming back later. Fuzz works on a few at once.' },
     parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
     waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'You’re blocked until someone gets back to you. Fuzz checks back on each one, and a reply brings it straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
@@ -15,7 +15,7 @@
   };
   function cells(it, key) {
     if (key === 'current') {
-      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
+      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In ' + Store.workIn, 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
       if (it.gathering) m = ['Gathering context', 'accent'];
       return { tone: m[1], c2: m[0], c3: it.age, c4: Store.nowText(it) || '—' };
     }
@@ -77,7 +77,7 @@
     var mine = Store.inState('review').filter(function (it) { return !Store.inQueue(it.id); });
     var r = mine.map(function (it) { return rowHTML(it, 'Needs your OK', 'warn', 'You set it aside'); });
     Store.inState('mine').forEach(function (it) { r.push(rowHTML(it, 'With you', 'accent', it.now)); });
-    Store.inState('session').forEach(function (it) { r.push(rowHTML(it, 'In Claude', 'muted', 'Fuzz keeps the sources open')); });
+    Store.inState('session').forEach(function (it) { r.push(rowHTML(it, 'In ' + Store.workIn, 'muted', it.now || 'Fuzz keeps the sources open')); });
     return r;
   }
 
@@ -182,6 +182,7 @@
       act('Hand to Fuzz', 'secondary', function () { Store.handToFuzz(id); }, 'Handed to Fuzz.');
     } else if (it.state === 'session') {
       act('Mark done', 'primary', function () { Store.markDone(id); }, 'Marked done.');
+      if (Live.on()) act('Open in ' + Store.workIn + ' again', 'secondary', function () { Live.openSession(id); }, 'Opening it in ' + Store.workIn + '.');
       act('Pull back into triage', 'secondary', function () { Store.bringBack(id, 'front'); }, 'Pulled back into triage.');
     } else if (it.state === 'scheduled') {
       act('Bring back now', 'primary', function () { Store.bringBack(id, 'front'); }, 'Moved back into triage.');

@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, scheduler, tasks
+from . import answers, cards, config, engine, events, groups, scheduler, sessions, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -115,6 +115,7 @@ class App:
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
+            ("POST", r"/tasks/(\d+)/open", self.open_session),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
@@ -154,7 +155,8 @@ class App:
         return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"), closed_days=days)],
                 "max_working": scheduler.budget(core)["max_working"],
                 "finished_window_days": tasks.FINISHED_WINDOW_DAYS,
-                "finished_older": 0 if days is None else tasks.finished_older(core)}
+                "finished_older": 0 if days is None else tasks.finished_older(core),
+                "work_in": sessions.label(core)}
 
     def search_tasks(self, core, m, body, q):
         return {"tasks": [task_view(core, t) for t in tasks.search_finished(core, q.get("q"), q.get("limit") or 50)]}
@@ -200,6 +202,10 @@ class App:
             tasks.bring_back(core, tid, where=where, reason="You brought this back.", type="task.reopened",
                              tags=("returning",))
         return {"task_id": tid, "state": tasks.get(core, tid)["state"]}
+
+    def open_session(self, core, m, body, q):
+        """Work in Claude (or Copilot, when that's the engine): a Terminal session started on the task."""
+        return sessions.open_session(core, int(m.group(1)))
 
     def upload(self, core, m, body, q):
         """The raw file is the body: POST /tasks/14/files?name=budget.pdf with its Content-Type."""

@@ -89,6 +89,14 @@
     });
   }
 
+  /* A session in Terminal, started on the task. Off a Mac the core writes the script but can't open it. */
+  function openSession(it) {
+    return api('POST', '/tasks/' + it.coreId + '/open').then(function (r) {
+      if (!r.opened) Say.tell('To start working on “' + it.title + '” in ' + r.label + ', run ' + r.script + ' in a terminal.', { stay: true });
+      return r;
+    });
+  }
+
   /* Answer the task's open card when it offers this option; otherwise act on the task directly
      (from Lineup there is often no card). */
   function decide(it, option, value, action, body) {
@@ -227,7 +235,7 @@
     if (state === 'scheduled' || (f.gathering && t.schedule_anchor)) { f.scheduledFor = whenText(t.schedule_fire_at); f.now = 'Back ' + f.scheduledFor; }
     else if (state === 'review') f.now = 'Draft ready to review';
     else if (state === 'sending') f.now = 'Sending' + (f.sendTo ? ' to ' + f.sendTo.to : '');
-    else if (state === 'session') f.now = 'Open in Claude';
+    else if (state === 'session') f.now = t.next_step ? 'Next: ' + t.next_step : 'Open in ' + Store.workIn;
     else if (state === 'done') f.now = 'Done';
     else if (state === 'letgo') f.now = f.theirs ? 'Someone else’s' : 'Let go';
     else f.now = '';
@@ -263,6 +271,7 @@
       api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
+      if (r[0].work_in) Store.workIn = r[0].work_in;
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
       offerFuzzUndo(r[2].recent || []);
       /* The full task (log, sources, drafts) only when something about it changed */
@@ -412,7 +421,8 @@
     wrap('attach', function (id, files) { var it = S.item(id); return function () { return upload(it.coreId, files); }; });
     wrap('removeSource', function (id, src) { var it = S.item(id); return src && src.id != null ? function () { return api('DELETE', '/tasks/' + it.coreId + '/files/' + src.id); } : null; });
     wrap('mine', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
-    wrap('session', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
+    /* Work in Claude: the task moves to Current, then the core opens a Terminal session on it */
+    wrap('session', function (id) { var it = S.item(id); return then(decide(it, 'session', undefined, 'session'), function () { return openSession(it); }); });
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('markDone', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('park', function (id) { return decide(S.item(id), 'park', undefined, 'park'); });
@@ -567,6 +577,8 @@
       }, function (e) { token = prev; throw e; });
     },
     useDemo: function () { pick('demo'); },
+    /* Lineup's Open again, for a task that's already in Claude */
+    openSession: function (id) { var it = Store.item(id); return openSession(it).catch(function (e) { Say.tell('It didn’t open: ' + e.message); }); },
     /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
     saveMe: function (body) { return api('PUT', '/me', body); },
     /* Guided setup (js/setup.js): who you are, the tools Fuzz may use, the folder it may write to */

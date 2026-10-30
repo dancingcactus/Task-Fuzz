@@ -303,6 +303,24 @@ Copilot gets `--add-dir <folder>` with shell and write still denied; whether its
 added folders is still to confirm. Fuzz's log records that a file was handed over; reads made with
 the client's own tool aren't in it.
 
+## Working sessions (Work in Claude / Copilot)
+
+Work in Claude (Work in Copilot when that's the engine) moves the task to `session` and
+`POST /tasks/{id}/open` opens a Terminal window running the engine's own CLI on it, interactive. Fuzz
+writes `<store>/sessions/u<user>/t<task>.command` (the script), `.md` (the prompt: the task, its
+sources and files) and `.mcp.json`: Fuzz's session server for that one task
+(`fuzz mcp --role session --task <id>`), loaded beside your own servers with its tools allowed. Nothing
+is installed for it, so it works with either engine as is.
+
+The session keeps the task current with `get_task`, `read_source`, `log_progress`, `set_next_step`
+(shown as the task's Now line), `add_source`, and `end_session`: done, pause (back in triage at
+`come_back_at`, or tomorrow 9am), fuzz (Fuzz takes the next step) or waiting (on a person).
+
+Open it again and the same conversation resumes: the task keeps its id (`--resume` for Claude Code,
+`--session-id` for Copilot). A session that ends without saying how still comes back to the front of
+triage: the script calls `fuzz session-closed` when its window closes (only the newest window on a task
+counts), and the tick brings back any session quiet for a day.
+
 ## Not built yet
 
 - The Settings > Engine page. (The UI itself runs on the core: open the link `fuzz serve` prints. See

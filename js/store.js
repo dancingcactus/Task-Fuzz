@@ -27,6 +27,8 @@
     slots: function () { return MAX_RUNNING; },
     setSlots: function (n) { if (n > 0) MAX_RUNNING = n; },
     clock: clock,
+    /* The engine you work with yourself: Work in Claude, or Work in Copilot when Fuzz runs on Copilot */
+    workIn: 'Claude',
 
     reset: function () {
       state = Demo.build();
@@ -190,7 +192,7 @@
       S.log(it, 'status', 'You took this one yourself. Fuzz keeps the sources ready.');
     },
     done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); wrapCheck(it); },
-    session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
+    session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in ' + S.workIn; S.log(it, 'status', 'You opened this in a working session with ' + S.workIn + '. Fuzz keeps the sources ready.'); },
     /* opt is one of S.scheduleOptions(it), or an exact time: the core's Schedule options, as the API sends them */
     /* instr: Fuzz looks into it meanwhile, and it still comes back at that time */
     schedule: function (id, opt, instr, text) {

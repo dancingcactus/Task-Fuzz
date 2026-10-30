@@ -376,7 +376,7 @@ def put_off(core, task_id, anchor, you_said, actor="fuzz:executor"):
 
 def tick(core):
     """Run every minute by `fuzz serve` (and by `fuzz tick`). Returns what moved."""
-    from . import review
+    from . import review, sessions
     out = {"released": expire_leases(core), "came_back": 0, "deadline": 0, "stale": 0, "gather_timeout": 0}
     now = core.now_iso()
     # Gathering never keeps a task from you for long: no run picked it up in time, so it goes to triage as is
@@ -436,6 +436,7 @@ def tick(core):
             events.emit(core, "task.stale", task_id=t["id"], changes=ch)
         out["stale"] += 1
     out["review"] = review.release(core)
+    out["quiet_sessions"] = sessions.quiet(core)
     return out
 
 

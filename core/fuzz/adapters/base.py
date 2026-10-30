@@ -52,6 +52,7 @@ class Adapter:
     name = None
     exe = None
     label = None
+    short = None   # what the UI calls it: "Work in Claude"
 
     # ---- the client
     def find(self):
@@ -73,11 +74,14 @@ class Adapter:
     def mcp_name(self, role):
         return f"fuzz-{role}"
 
-    def mcp_server(self, role, fuzz_home=None, run_id=None, user_id=None):
-        """How a client starts Fuzz's server: this Python, the fuzz package, the role."""
+    def mcp_server(self, role, fuzz_home=None, run_id=None, user_id=None, task_id=None):
+        """How a client starts Fuzz's server: this Python, the fuzz package, the role. task_id: a working
+        session's server, which can touch that one task only."""
         args = ["-m", "fuzz", "mcp", "--role", role]
         if run_id:
             args += ["--run", str(run_id)]
+        if task_id:
+            args += ["--task", str(task_id)]
         env = {"PYTHONPATH": PKG_PARENT}
         if fuzz_home:
             env["FUZZ_HOME"] = str(fuzz_home)
@@ -97,7 +101,7 @@ class Adapter:
         raise NotImplementedError
 
     # ---- headless runs
-    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None):
+    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None, task_id=None):
         raise NotImplementedError
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
@@ -106,6 +110,13 @@ class Adapter:
         send_tools: for the sender, the connector tools it may call to send, as this client names them.
         read_tools: for the executor and the extractor, the connector tools it may call to look things up.
         write_dir: for the executor, the output folder: the one place it may create and change files."""
+        raise NotImplementedError
+
+    # ---- working sessions, for Work in Claude / Work in Copilot
+    def session_command(self, exe, prompt, dirs=(), mcp_config=None, session_id=None, resume=False):
+        """An interactive session that starts on prompt, with dirs readable. exe: the client's path.
+        mcp_config: Fuzz's session server for this task, loaded beside your own, its tools allowed without
+        asking. session_id: the conversation's id, new or (resume) one to pick up again."""
         raise NotImplementedError
 
     # ---- discovery, for `fuzz setup`
