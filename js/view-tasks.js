@@ -8,7 +8,7 @@
 
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude or Copilot, or coming back later. Fuzz works on a few at once.' },
-    parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
+    parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. A few a week come back, on days you have room, to ask if you still want them, and one wakes up if something new comes in about it.' },
     waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'You’re blocked until someone gets back to you. Fuzz checks back on each one, and a reply brings it straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
     letgo: { label: 'Let go', cols: ['Status', 'Let go', 'Note'], states: ['letgo'], blurb: 'Things you decided not to carry. Bring any of them back, no questions asked.' }

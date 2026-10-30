@@ -381,7 +381,7 @@
       var id = 'thought' + (++captureN);
       var it = {
         id: id, kind: 'task', state: 'parked', title: text.trim(), source: 'Parked thought', who: 'You', age: 'Just now', stage: 'fresh', parkedAgo: 'Just now', now: '', mins: 5, energy: 'normal', order: ++state.maxOrder,
-        incoming: 'A stray thought you parked without leaving what you were doing.', aiNote: 'Parked with no date. Fuzz will only speak up if something new comes in about it.',
+        incoming: 'A stray thought you parked without leaving what you were doing.', aiNote: 'Parked with no date. Once it has sat a week, Fuzz may bring it back on a day you have room to ask if you still want it.',
         log: [], sources: [], context: [], conversation: []
       };
       S.log(it, 'status', 'You parked this thought.');

@@ -212,6 +212,7 @@ html.calm .pg-seg { transition: none; }
 .parkform { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .parkform[hidden] { display: none; }
 .parkform label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.parkhint { font-size: 13px; color: var(--muted); margin: 0; }
 .parkrow { display: flex; gap: 8px; }
 .playground { background: var(--surface); border: 1px dashed var(--line); border-radius: 16px; padding: 4px 14px; }
 .playground summary { cursor: pointer; padding: 10px 0; font-weight: 600; min-height: 44px; display: flex; align-items: center; gap: 8px; }
