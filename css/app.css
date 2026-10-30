@@ -464,6 +464,7 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .view--artifacts { max-width: 760px; }
 .artifacts .tasks-head .meta { margin: 4px 0 0; }
 .afilters .lcount { margin-left: 2px; }
+.alist { display: flex; flex-direction: column; gap: 18px; }
 .arow { text-decoration: none; }
 .arow .rt { font-weight: 600; overflow-wrap: anywhere; }
 .arow .rs { font-size: 13px; color: var(--muted); }

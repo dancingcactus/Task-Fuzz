@@ -84,7 +84,7 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
         cards.sync(core, t["id"])
     if result:   # the result is kept in the task's output folder too
         from . import outputs
-        outputs.save_markdown(core, t["id"], "Result.md", t["context_md"], actor=actor)
+        outputs.save_markdown(core, t["id"], outputs.markdown_name(core, t["id"], "Result"), t["context_md"], actor=actor)
     return t["id"]
 
 

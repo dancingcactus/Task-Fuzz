@@ -92,7 +92,7 @@ Whatever a run leaves in a task's subfolder is recorded on the task (a `sources`
 `GET /artifacts/<source id>` gives one to the viewer (`artifact.html`), which previews it in the browser.
 A file a browser would run as a page (HTML, SVG, XML) is served with `Content-Security-Policy: sandbox`,
 so opening it can't reach your token. Files are overwritten in place; once written they stay, and Undo doesn't
-remove them. Approved notes (`Note.md`) and results (`Result.md`) are saved there too. A draft can
+remove them. Approved notes (`<task title> - Note.md`) and results (`<task title> - Result.md`) are saved there too. A draft can
 name files in its subfolder in `attach`; the sender gets their paths, may read that folder, and
 attaches them, or reports that its tool can't.
 
