@@ -39,6 +39,15 @@
       '<span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source) + (it.updated ? ' · Updated' : '') + (Store.partOf(it) ? ' · ' + esc(Store.partOf(it)) : '') + '</span></span>' +
       '<span class="lrow-side">' + UI.pill(status, tone) + (sub ? '<span class="lrow-sub">' + esc(sub) + '</span>' : '') + '</span></button></li>';
   }
+  /* What's in Triage, closed until you ask. Picking one opens it first in Triage. */
+  function decideHTML(q) {
+    var rows = q.map(function (it) {
+      var kind = it.kind === 'entity' || it.kind === 'dup' ? 'Question' : it.state === 'review' ? 'Draft' : it.handedBack ? 'Came back' : 'Task';
+      return '<li><button type="button" class="lrow" data-pick="' + it.id + '"><span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source || '') + '</span></span>' +
+        '<span class="lrow-side">' + UI.pill(kind, it.dueAt ? 'warn' : 'muted') + '</span></button></li>';
+    });
+    return '<details class="decide-more" id="decide-list"' + (openSecs['decide-list'] ? ' open' : '') + '><summary>See what’s in Triage</summary><ul class="lrows" aria-label="Cards in Triage">' + rows.join('') + '</ul></details>';
+  }
   function sectionHTML(id, title, rows, empty, extra) {
     if (!rows.length && !empty) return '';
     return '<section class="lsec" aria-labelledby="sec-' + id + '"><h2 id="sec-' + id + '">' + title + (rows.length ? ' <span class="lcount">' + rows.length + '</span>' : '') + '</h2>' + (extra || '') +
@@ -124,6 +133,8 @@
     root.querySelector('#board').addEventListener('click', function (e) {
       var o = e.target.closest('[data-older]');
       if (o) { Live.loadFinished(o.dataset.older).then(function (it) { open(it.id, o); }, function () { Say.tell('That task wouldn’t open. Try again.'); }); return; }
+      var p = e.target.closest('[data-pick]');
+      if (p) { Store.pick(p.dataset.pick); location.hash = '#/triage'; return; }
       var b = e.target.closest('[data-open]'); if (!b) return;
       open(b.dataset.open, b);
     });
@@ -144,8 +155,8 @@
     var board = root.querySelector('#board');
     /* Live updates keep your place: focus returns to the same row */
     var ae = document.activeElement, keep = ae && board.contains(ae) ? (ae.dataset.open || ae.id || null) : null;
-    var q = Store.queue().length;
-    var h = q ? '<a class="decide" href="#/triage"><span class="decide-n">' + q + '</span><span class="decide-t"><strong>To decide</strong>' + (q === 1 ? '1 card' : q + ' cards') + ' in Triage</span><span class="decide-go" aria-hidden="true">→</span></a>'
+    var queue = Store.queue(), q = queue.length;
+    var h = q ? '<a class="decide" href="#/triage"><span class="decide-n">' + q + '</span><span class="decide-t"><strong>To decide</strong>' + (q === 1 ? '1 card' : q + ' cards') + ' in Triage</span><span class="decide-go" aria-hidden="true">→</span></a>' + decideHTML(queue)
       : '<p class="decide decide--clear">Nothing to decide. Triage is clear.</p>';
     h += sectionHTML('yours', 'Yours', yoursRows(), 'Nothing is waiting on you right now.');
     h += laneHTML();

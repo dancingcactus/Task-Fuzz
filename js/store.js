@@ -146,8 +146,8 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        var kx = [x.picked ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.picked ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
@@ -163,7 +163,9 @@
       S.sortQueue();
     },
     inQueue: function (id) { return state.queue.indexOf(id) > -1; },
-    leave: function (id) { var it = S.item(id); if (it) it.atEnd = false; state.queue = state.queue.filter(function (q) { return q !== id; }); },
+    /* You picked this one from Lineup: it goes first, ahead of deadlines, until it leaves triage */
+    pick: function (id) { var it = S.item(id); if (!it || !S.inQueue(id)) return; it.picked = true; state.queue = [id].concat(state.queue.filter(function (q) { return q !== id; })); },
+    leave: function (id) { var it = S.item(id); if (it) { it.atEnd = false; it.picked = false; } state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
     /* read: sources you pointed Fuzz to with this ask */
