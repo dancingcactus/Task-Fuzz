@@ -19,7 +19,7 @@
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, refs = {}, refPick = {};
-  var docClick = null, docKey = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
+  var docClick = null, docKey = null, unhold = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -92,6 +92,7 @@
     if (unsub) unsub(); unsub = null;
     Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
+    if (unhold) unhold(); unhold = null; Dictate.abort();
     if (docKey) document.removeEventListener('keydown', docKey); docKey = null;
     if (docDrag) Object.keys(docDrag).forEach(function (n) { window.removeEventListener(n, docDrag[n]); }); docDrag = null;
     if (offSay) offSay(); offSay = null; clearTimeout(echoTimer);
@@ -157,7 +158,7 @@
       ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in ' + Store.workIn], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
       ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
-      ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
+      ['Anywhere', [['N', 'New task (Esc goes back)'], [Dictate.key, 'Hold to dictate into the box for Fuzz'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
       '<p class="meta">A card without a draft starts with the cursor in its text box. Press Esc first to use the letter and number keys.</p>' +
@@ -321,7 +322,7 @@
       '<div class="menu plusmenu" role="menu" id="plusmenu" hidden aria-label="Add a source">' +
         '<button type="button" role="menuitem" data-act="upload"><b>Upload files</b><span>Or drag them anywhere onto the screen.</span></button>' +
         (n ? '<button type="button" role="menuitem" data-act="refpick"><b>Pick from Sources</b><span>' + n + (n === 1 ? ' source' : ' sources') + ' on this task to point Fuzz to.</span></button>' : '') +
-      '</div></div><div class="refchips-wrap" id="refchips">' + refChipsHTML(it) + '</div></div>' +
+      '</div></div>' + Dictate.button('instr', 'Dictate instructions', 'plusbtn') + '<div class="refchips-wrap" id="refchips">' + refChipsHTML(it) + '</div></div>' +
       '<fieldset class="refpick" id="refpick"' + (open ? '' : ' hidden') + '><legend>Point Fuzz to these sources</legend>' + it.sources.map(function (s) {
         return '<label class="refopt"><input type="checkbox" data-ref="' + esc(srcKey(s)) + '"' + (isPicked(it, s) ? ' checked' : '') + '><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refopt-t">' + esc(s.title) + '</span></label>';
       }).join('') + '<button type="button" class="linkbtn refpick-done" data-act="refpick">Done</button></fieldset>';
@@ -465,7 +466,7 @@
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
-      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span>Optional. Edit anything.</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
+      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span class="instr-side"><span>Optional. Edit anything.</span>' + Dictate.button('note', 'Dictate a note') + '</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
         '<div class="actions ent"><button type="button" class="btn primary" data-act="ent-primary" aria-keyshortcuts="1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' + esc(it.primary) + kbd(1) + '</button>' +
         '<button type="button" class="btn" data-act="ent-secondary" aria-keyshortcuts="2">' + esc(it.secondary) + kbd(2) + '</button>' +
         (it.third ? '<button type="button" class="btn" data-act="ent-third" aria-keyshortcuts="3">' + esc(it.third) + kbd(3) + '</button>' : '') +
@@ -508,7 +509,7 @@
       '<button type="button" class="btn" data-act="revise" aria-expanded="false" aria-controls="revise" aria-keyshortcuts="R">Ask Fuzz to change it' + kbd('R') + '</button>' +
       '<button type="button" class="btn" data-act="notnow" aria-keyshortcuts="L">Not now' + kbd('L') + '</button></div>' +
       (r ? '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>' : it.afterApprove ? '<p class="sendnote">' + esc(it.afterApprove) + '</p>' : '') +
-      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form>';
+      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes">' + Dictate.button('revise-text', 'Dictate what to change') + '<button class="btn" type="submit">Send back to Fuzz</button></div></form>';
   }
 
   /* Text boxes grow to show all their text, so nothing is cut off on a narrow screen */
@@ -519,6 +520,7 @@
     scheduling = false; askingWho = false; if (tab && !richAvail(it).some(function (a) { return a[0] === tab; })) tab = null;
     card.className = 'card'; card.style.display = ''; card.style.visibility = '';
     card.innerHTML = cardHTML(it);
+    if (Dictate.active() && !document.contains(Dictate.field())) Dictate.abort();
     var ex = stack.querySelector('.empty'); if (ex) ex.remove();
     var dt = $('#drop-label');
     $('#dropbtn').textContent = it.state === 'review' ? 'Discard this draft' : it.kind === 'task' ? 'Drop this task' : 'Dismiss this question';
@@ -1264,6 +1266,8 @@
     docKey = function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
+      /* Escape stops dictating first, keeping what was heard */
+      if (e.key === 'Escape' && Dictate.active()) { e.preventDefault(); Dictate.stop(); return; }
       /* Escape leaves the card's box, so the number keys work again */
       if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
       /* Escape folds the stray-thought box away, keeping what you typed */
@@ -1311,6 +1315,29 @@
       e.preventDefault(); b.click();
     };
     document.addEventListener('keydown', docKey);
+
+    /* Dictation into the box for Fuzz (dictate.js): the mic by each box, or hold Alt (Option) + Space for
+       the box you're in, else the one on the card (what to change, once you've asked for a change). */
+    var DICT = ['instr', 'note', 'revise-text'];
+    function dictOpts() {
+      return { done: 'Got it. Change anything, then pick what to do.', onChange: function (on) {
+        var f = Dictate.field(), b = f && root && root.querySelector('[data-dictate="' + f.id + '"]');
+        root && root.querySelectorAll('[data-dictate]').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        if (on && b) b.setAttribute('aria-pressed', 'true');
+      } };
+    }
+    function dictTarget() {
+      if (!alive || ciOpen || card.style.display === 'none' || scheduling) return null;
+      var a = document.activeElement;
+      if (a && DICT.indexOf(a.id) > -1 && root.contains(a)) return a;
+      var rv = $('#revise'); if (rv && !rv.hidden) return $('#revise-text');
+      return $('#instr') || $('#note');
+    }
+    card.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-dictate]'); if (!b) return;
+      if (Dictate.active()) Dictate.stop(); else Dictate.start($('#' + b.dataset.dictate), dictOpts());
+    });
+    unhold = Dictate.hold(dictTarget, dictOpts);
 
     card.addEventListener('submit', function (e) {
       if (e.target.id === 'wait-form') { e.preventDefault(); waitOn($('#wait-who').value); return; }
