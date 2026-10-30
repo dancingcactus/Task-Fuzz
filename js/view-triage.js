@@ -211,25 +211,16 @@
     /* count what's cleared, never what's left */
     document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
   }
+  /* The cards underneath are only a stack: what's on them, or how many, stays out of view until each is the one in front */
   function updateStack(arriveLast) {
-    stack.querySelectorAll('.ghost, .stacktags').forEach(function (g) { g.remove(); });
+    stack.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
     var q = Store.queue(), n = Math.min(Math.max(q.length - 1, 0), 3);
-    /* labels for the cards underneath sit above the whole stack, so the front card never covers them */
-    var tags = document.createElement('div'); tags.className = 'stacktags'; tags.setAttribute('aria-hidden', 'true');
     for (var i = n; i >= 1; i--) {
       var g = document.createElement('div'); g.className = 'ghost';
       g.style.transform = 'translateY(-' + (i * 9) + 'px) scale(' + (1 - i * 0.035) + ')';
-      var item = q[i];
-      if (item && item.handedBack) { var t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Handed back'; tags.appendChild(t); }
-      else if (item && item.dueAt) { var t2 = document.createElement('span'); t2.className = 'tag due t2'; t2.textContent = 'Due soon'; tags.appendChild(t2); }
       if (arriveLast && i === n && q.length - 1 <= 3) g.classList.add('arrive');
       stack.insertBefore(g, card);
     }
-    if (tags.children.length) stack.insertBefore(tags, card);
-    /* The tags are visual; screen readers get one sentence about what is behind this card */
-    var behind = q.slice(1), back = behind.filter(function (i) { return i.handedBack; }).length, due = behind.filter(function (i) { return i.dueAt; }).length;
-    var sr = stack.querySelector('#stack-sr') || stack.insertBefore(Object.assign(document.createElement('p'), { id: 'stack-sr', className: 'sr' }), stack.firstChild);
-    sr.textContent = behind.length ? behind.length + ' more after this' + (due ? ', ' + due + ' with a deadline' : '') + (back ? ', ' + back + ' handed back' : '') + '.' : '';
   }
 
   /* ---------- The card ---------- */
