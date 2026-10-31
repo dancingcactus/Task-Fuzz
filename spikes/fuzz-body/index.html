@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuzz Body Spike</title>
+<link rel="icon" type="image/svg+xml" href="../../assets/fuzz-favicon.svg">
+<link rel="stylesheet" href="../../css/app.css">
+<link rel="stylesheet" href="../../css/fuzz.css">
+<style>
+  body { padding: 0 16px 64px; }
+  main { max-width: 980px; margin: 0 auto; }
+  header.top { padding: 28px 0 8px; }
+  header.top h1 { font-family: var(--font-display); font-size: 26px; }
+  header.top p { color: var(--muted); max-width: 62ch; margin: 6px 0 0; }
+  h2 { font-family: var(--font-display); font-size: 18px; margin: 36px 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
+
+  /* ---- the rig ---- */
+  .rig { display: block; width: 100%; height: auto; overflow: visible; }
+  .rig #bot { width: 140px; height: 126px; display: inline; overflow: visible; }
+  .rig:not(.nobody) #bot > ellipse { display: none; }        /* the head's own floor shadow */
+  .rig.nobody .legs, .rig.nobody .arms, .rig.nobody .torso, .rig.nobody .neck, .rig.nobody .bshadow { display: none; }
+  .rig { --limb: color-mix(in srgb, var(--trim) 45%, #9c8f84); --limb-o: var(--bezel); }
+  .limb-o { fill: none; stroke: var(--limb-o); stroke-width: 6.6; stroke-linecap: round; }
+  .limb-i { fill: none; stroke: var(--limb); stroke-width: 4; stroke-linecap: round; }
+  .arm .limb-o, .leg .limb-o { stroke-width: 8.6; }
+  .arm .limb-i, .leg .limb-i { stroke-width: 5.8; }
+  .ring-b { fill: none; stroke: var(--limb-o); stroke-width: 3.2; stroke-linecap: butt; }
+  .ring-l { fill: none; stroke: var(--limb-o); stroke-width: 1.3; stroke-linecap: butt; opacity: .85; }
+  .hand .claw { fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.5; stroke-linejoin: round; }
+  .hand .wrist { fill: var(--limb-o); }
+  .foot .fo { fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.6; stroke-linejoin: round; }
+  .foot .fs { fill: var(--limb-o); }
+  .neck rect { fill: var(--bezel); }
+  .neck path { stroke: var(--limb); stroke-width: 1.2; opacity: .6; }
+  .bshadow { fill: #000; opacity: .12; }
+  .tled { fill: var(--ok); }
+
+  /* ---- hero ---- */
+  .hero { display: grid; grid-template-columns: minmax(0, 340px) 1fr; gap: 24px; align-items: center; margin-top: 12px; }
+  .stagebox { position: relative; background: var(--surface); border: var(--bw) solid var(--line); border-radius: 20px; padding: 26px 20px 22px; box-shadow: var(--shadow); }
+  .stagebox .bubble { position: absolute; top: 12px; right: 12px; left: auto; max-width: 62%; margin: 0; font-size: 13.5px; min-height: 0; }
+  .stagebox .rigbox { max-width: 280px; margin: 34px auto 0; cursor: pointer; }
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .reacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+  .reacts button { text-align: left; padding: 9px 12px; border-radius: 12px; border: var(--bw) solid var(--line); background: var(--surface); font-size: 14px; }
+  .reacts button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); }
+  .toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* ---- in-app mock ---- */
+  .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .variant { background: var(--field); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; }
+  .variant h3 { font-family: var(--font-display); font-size: 15px; }
+  .variant .meta { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
+  .variant .spacer { flex: 1; }
+  .mperch { display: flex; align-items: flex-end; gap: 8px; position: relative; z-index: 2; padding-left: 4px; }
+  .mperch .bubble { margin-bottom: 26px; font-size: 13px; min-height: 0; padding: 7px 11px; max-width: none; flex: 1; }
+  .mperch.stand { margin-bottom: -6px; }    /* feet land on the card's top edge */
+  .mperch.sit { margin-bottom: -14px; }     /* today's overlap */
+  .mcard { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 16px; padding: 16px 14px 14px; box-shadow: var(--shadow); position: relative; z-index: 1; }
+  .mcard b { font-family: var(--font-display); display: block; font-size: 16px; }
+  .mcard span { color: var(--muted); font-size: 13px; }
+  .mcard .acts { display: flex; gap: 6px; margin-top: 10px; }
+  .mcard .acts i { font-style: normal; font-size: 12.5px; padding: 4px 10px; border-radius: 999px; background: var(--chip); }
+
+  .notes { columns: 2 300px; gap: 28px; }
+  .notes li { margin-bottom: 8px; break-inside: avoid; }
+
+  @media (max-width: 700px) {
+    .hero { grid-template-columns: 1fr; }
+    .stagebox .rigbox { max-width: 220px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Fuzz, with a body</h1>
+    <p>A spike: the real Fuzz head (same SVG and moods as the app), on a small cabinet torso with segmented arms in the spirit of Bender
+      &mdash; ringed tubes with no elbows that stretch a little to reach &mdash; Lego-style claw hands, and can feet. Pick a reaction, or click Fuzz.</p>
+  </header>
+
+  <section class="hero">
+    <div class="stagebox">
+      <div class="bubble" id="say"></div>
+      <div class="rigbox" id="hero" title="Click to boop"></div>
+    </div>
+    <div class="controls">
+      <div class="reacts" id="reacts" role="group" aria-label="Reactions"></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="body" checked> Show body</label>
+        <label><input type="checkbox" id="slow"> Slow motion</label>
+        <label><input type="checkbox" id="calm"> Calm (app setting)</label>
+        <label><input type="checkbox" id="cycle"> Cycle through all</label>
+      </div>
+    </div>
+  </section>
+
+  <h2>In the triage perch</h2>
+  <p class="sub">The same reaction, at real app size, sitting on a task card. Today Fuzz is a 112&nbsp;px-wide head overlapping the card.
+    A body either makes the perch taller (same head size) or shrinks the face (same height).</p>
+  <div class="variants">
+    <div class="variant">
+      <h3>Today &mdash; head only</h3>
+      <div class="meta">112 &times; 101 px</div>
+      <div class="spacer"></div>
+      <div class="mperch sit"><div style="width:112px;flex:none" class="mini" data-body="0"></div><div class="bubble mbub"></div></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span><div class="acts"><i>Do it</i><i>Later</i><i>Not mine</i></div></div>
+    </div>
+    <div class="variant">
+      <h3>Body, same head size</h3>
+      <div class="meta">160 &times; 178 px &mdash; perch grows ~77 px</div>
+      <div class="spacer"></div>
+      <div class="mperch stand"><div style="width:160px;flex:none" class="mini"></div><div class="bubble mbub"></div></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span><div class="acts"><i>Do it</i><i>Later</i><i>Not mine</i></div></div>
+    </div>
+    <div class="variant">
+      <h3>Body, compact</h3>
+      <div class="meta">112 &times; 124 px &mdash; screen face ~30% smaller</div>
+      <div class="spacer"></div>
+      <div class="mperch stand"><div style="width:112px;flex:none" class="mini"></div><div class="bubble mbub"></div></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span><div class="acts"><i>Do it</i><i>Later</i><i>Not mine</i></div></div>
+    </div>
+  </div>
+
+  <h2>What to look at</h2>
+  <ul class="notes">
+    <li><b>Does the body say more than the face?</b> Pointing at a task, a shrug, hands on hips and arms crossed carry meaning the face alone can&rsquo;t.</li>
+    <li><b>Does it fight the face?</b> At perch size the screen face is the main signal. Watch whether busy limbs (rushing, dancing) pull the eye away from it.</li>
+    <li><b>Toggle &ldquo;Show body&rdquo;</b> on the big Fuzz to flip between the two versions mid-reaction.</li>
+    <li><b>Space:</b> the triage card would sit 60&ndash;80&nbsp;px lower, or the face gets smaller. The small logo marks and notice faces stay head-only either way.</li>
+    <li><b>Calm setting:</b> the head already turns down its motion; the limbs here don&rsquo;t yet, and would need to.</li>
+    <li><b>Layering:</b> raised arms (cheer, wave, antenna flick) swap behind the head so they don&rsquo;t cross the screen; hands near the face (chin, scratch) stay in front.</li>
+    <li><b>Cost:</b> limbs are three paths each, redrawn per frame with JavaScript (the head is pure CSS). Fine for one Fuzz on screen.</li>
+  </ul>
+</main>
+
+<script src="../../js/fuzz-svg.js"></script>
+<script src="fuzz-body.js"></script>
+<script>
+(function () {
+  var FB = window.FuzzBody, R = FB.reactions;
+  var say = document.getElementById('say'), reacts = document.getElementById('reacts');
+  var buttons = {};
+
+  function showLine(r) {
+    say.textContent = r.say;
+    document.querySelectorAll('.mbub').forEach(function (b) { b.textContent = r.say; });
+  }
+  var hero = FB.rig(document.getElementById('hero'), {
+    onPlay: function (name, r) {
+      showLine(r);
+      Object.keys(buttons).forEach(function (k) { buttons[k].setAttribute('aria-pressed', String(k === name)); });
+    }
+  });
+  var minis = [].map.call(document.querySelectorAll('.mini'), function (el) {
+    return FB.rig(el, { body: el.dataset.body !== '0' });
+  });
+  function playAll(name) { hero.play(name); minis.forEach(function (m) { m.play(name); }); }
+
+  Object.keys(R).forEach(function (name) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = R[name].label; b.setAttribute('aria-pressed', String(name === 'idle'));
+    b.addEventListener('click', function () { stopCycle(); playAll(name); });
+    reacts.appendChild(b); buttons[name] = b;
+  });
+  showLine(R.idle);
+
+  document.getElementById('hero').addEventListener('click', function () { playAll('boop'); });
+  document.getElementById('body').addEventListener('change', function (e) { hero.setBody(e.target.checked); });
+  document.getElementById('slow').addEventListener('change', function (e) { FB.setSpeed(e.target.checked ? .3 : 1); });
+  document.getElementById('calm').addEventListener('change', function (e) { document.documentElement.classList.toggle('calm', e.target.checked); });
+
+  // eyes follow the pointer on the big Fuzz, like the app
+  window.addEventListener('pointermove', function (e) {
+    if (hero.bot.dataset.mood === 'chill') return;
+    var r = hero.bot.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    var d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / 160), eyes = hero.bot.querySelector('#eyes');
+    if (eyes) eyes.style.transform = 'translate(' + (dx / d * 5 * k) + 'px,' + (dy / d * 3.6 * k) + 'px)';
+  });
+
+  var cyc = null, cycEl = document.getElementById('cycle');
+  function stopCycle() { if (cyc) { clearInterval(cyc); cyc = null; cycEl.checked = false; } }
+  cycEl.addEventListener('change', function (e) {
+    if (!e.target.checked) return stopCycle();
+    var names = Object.keys(R).filter(function (n) { return !R[n].once; }), i = names.indexOf(hero.name);
+    cyc = setInterval(function () { i = (i + 1) % names.length; playAll(names[i]); }, 3200);
+  });
+})();
+</script>
+</body>
+</html>
