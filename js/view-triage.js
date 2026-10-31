@@ -340,6 +340,7 @@
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
     if (it.contextMd) a.push(['context', 'Context', null]);
     else if (it.context.length) a.push(['context', 'Context', it.context.length]);
+    if (it.people && it.people.length) a.push(['people', 'People', it.people.length]);
     if (it.code && it.code.length) a.push(['code', 'Code', it.code.length]);
     if (it.log.length) a.push(['done', 'Done so far', it.log.length]);
     if (it.sources.length) a.push(['sources', 'Sources', it.sources.length]);
@@ -354,6 +355,7 @@
     if (t === 'conversation') body = '<ol class="convo">' + it.conversation.map(function (m) { var you = m.who === 'You'; return '<li class="' + (you ? 'you' : 'fuzz') + '"><span class="who">' + (you ? '' : Fuzz.mini('good', { cls: 'who-av' })) + esc(m.who) + ' · <span>' + esc(m.time) + '</span></span><span class="bub">' + esc(m.text) + '</span></li>'; }).join('') + '</ol>';
     else if (t === 'context' && it.contextMd) body = '<div class="md">' + UI.md(it.contextMd) + '</div>';
     else if (t === 'context') body = '<ul class="ctx">' + it.context.map(function (c) { return '<li><i aria-hidden="true"></i><span>' + esc(c) + '</span></li>'; }).join('') + '</ul>';
+    else if (t === 'people') body = UI.peopleHTML(it.people);
     else if (t === 'code') body = CodeView.section(it.code, 'card:' + it.id);
     else if (t === 'done') body = UI.logHTML(it.log);
     else body = UI.sourcesHTML(it.sources);

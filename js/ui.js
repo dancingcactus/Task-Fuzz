@@ -167,5 +167,23 @@
     return d;
   }
 
-  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, wireSources: wireSources, dialog: dialog, KINDS: KINDS };
+  /* Who's on a task and what each of them added: what they said, that they were on the thread, that
+     you're waiting on them. Newest first under each person. */
+  function initials(name) { return (name || '?').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join(''); }
+  /* Each person on a task gets their own colour, in list order. Past MONO_COLOURS they repeat, ringed with dots. */
+  var MONO_COLOURS = 6;
+  function peopleHTML(list) {
+    return '<ul class="people">' + list.map(function (p, i) {
+      var av = 'person-av pc-' + (i % MONO_COLOURS + 1) + (i >= MONO_COLOURS ? ' again' : '');
+      return '<li class="person"><span class="' + av + '" aria-hidden="true"><span>' + esc(initials(p.name)) + '</span></span><div class="person-body">' +
+        '<span class="person-name">' + esc(p.name) + (p.email && p.email !== p.name ? '<span class="person-sub">' + esc(p.email) + '</span>' : '') + '</span>' +
+        '<ul class="person-did">' + p.did.map(function (d) {
+          var meta = [d.via, d.when].filter(Boolean);
+          return '<li><span class="person-what">' + esc(d.text) + '</span>' + (meta.length ? '<span class="person-meta">' + meta.map(esc).join(' &middot; ') + '</span>' : '') +
+            (d.quote ? '<span class="person-quote">' + esc(d.quote) + '</span>' : '') + '</li>';
+        }).join('') + '</ul></div></li>';
+    }).join('') + '</ul>';
+  }
+
+  window.UI = { esc: esc, text: text, md: md, pill: pill, idTag: idTag, logHTML: logHTML, sourcesHTML: sourcesHTML, peopleHTML: peopleHTML, wireSources: wireSources, dialog: dialog, KINDS: KINDS };
 })();

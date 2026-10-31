@@ -199,6 +199,7 @@
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
       sources: src.map(function (s) { return { id: s.id, mine: s.role === 'attachment' && !!s.has_file, type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
+      people: (t.people || []).map(function (p) { return { name: p.name, email: p.email || '', did: p.contributions.map(function (c) { return { text: c.text, via: c.via || '', quote: c.quote || '', when: stampOf(c.ts), at: c.ts || '' }; }) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',

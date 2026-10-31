@@ -452,6 +452,24 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .log-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); }
 .log-kind { font-weight: 600; color: var(--ink); }
 .log-text { line-height: 1.5; }
+.people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.person { display: flex; gap: 12px; align-items: flex-start; }
+/* Monograms: six colours, ordered so the closest pair (ochre, olive) are never neighbours. Tinted into the
+   surface, so ink on them stays above 5.4:1 in light, dark and high contrast. Past six they repeat, dotted. */
+.person-av { --pc: var(--accent); --pc-mix: 45%; flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--pc) var(--pc-mix), var(--surface)); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1; }
+:root[data-mode="dark"] .person-av { --pc-mix: 50%; }
+/* Trimmed to the capitals, so the letters sit in the middle of the circle, not the line box with room for descenders */
+.person-av > span { text-box: trim-both cap alphabetic; }
+.pc-1 { --pc: #C8552E; } .pc-2 { --pc: #1E93A6; } .pc-3 { --pc: #C9921A; } .pc-4 { --pc: #5A62D0; } .pc-5 { --pc: #6F9A2E; } .pc-6 { --pc: #B0509A; }
+.person-av.again { border: 2px dotted color-mix(in srgb, var(--pc) 60%, var(--ink)); }
+.person-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.person-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-height: 34px; padding-top: 6px; font-weight: 600; line-height: 1.4; }
+.person-sub { font-size: 13px; font-weight: 500; color: var(--muted); overflow-wrap: anywhere; }
+.person-did { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.person-did li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; line-height: 1.5; }
+.person-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.person-quote { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
+.person-quote::before { content: "“"; } .person-quote::after { content: "”"; }
 .sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .source { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); text-decoration: none; }
 .source:hover { border-color: var(--accent); }

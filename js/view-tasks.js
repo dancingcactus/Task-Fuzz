@@ -255,6 +255,7 @@
     if (it.aiNote) h += '<section class="ainote"><h3>' + (it.state === 'review' ? 'What Fuzz did' : HEAD[tab]) + '</h3><p>' + UI.text(Store.nowText(it) && tab === 'current' && it.state === 'ai' ? Store.nowText(it).replace(/[.!]+$/, '') + '. ' + it.aiNote : it.aiNote) + '</p></section>';
     if (it.code && it.code.length) h += '<section><h3>Code</h3>' + CodeView.section(it.code, 'dlg:' + it.id) + '</section>';
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
+    if (it.people && it.people.length) h += '<section><h3>People</h3>' + UI.peopleHTML(it.people) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
     if (!draft) h += actionsRow(acts, false);
     return h + UI.idTag(it);

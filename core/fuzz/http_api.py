@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, scheduler, sessions, tasks
+from . import answers, cards, config, engine, events, groups, people, scheduler, sessions, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -68,6 +68,7 @@ def task_view(core, t, full=False):
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
                                   "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
+        out["people"] = people.for_task(core, t)
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
         out["files"] = files.listing(core, t["id"])

@@ -88,9 +88,11 @@ class Api(Server):
             for i, ts, q in ((1, "2026-10-20T08:00:00Z", "Can you send the Q4 numbers?"),
                              (2, "2026-10-20T08:45:00Z", "Any update on the numbers?"))])
         tid = tasks.list_tasks(core)[0]["id"]
-        src = self.req("GET", f"/tasks/{tid}")[1]["sources"]
-        self.assertEqual([(s["role"], s["ts"]) for s in src],
+        full = self.req("GET", f"/tasks/{tid}")[1]
+        self.assertEqual([(s["role"], s["ts"]) for s in full["sources"]],
                          [("update", "2026-10-20T08:45:00Z"), ("origin", "2026-10-20T08:00:00Z")])
+        self.assertEqual([(p["name"], [c["text"] for c in p["contributions"]]) for p in full["people"]],
+                         [("Dana", ["Followed up", "Asked for this"])])
 
     def test_a_message_read_twice_is_one_source(self):
         core = self.srv.app.core(1)
