@@ -20,13 +20,9 @@
   var GROUND = 214;
   var ARM = 50, LEG = 40;                    // resting hose lengths
 
-  var HANDS = {
-    open:  [[-38, 6.5], [0, 7], [38, 6.5]],
-    fist:  [[-40, 2], [0, 2.4], [40, 2]],
-    point: [[-58, 2], [0, 10.5], [55, 2]],
-    thumb: [[-90, 8], [8, 2.4], [44, 2]],
-    gun:   [[-80, 6.5], [0, 11], [52, 2]]
-  };
+  var RINGS = 6;                             // segments per arm; they spread apart when an arm stretches
+  /* Lego-style C hands: the shape is only how far the claw is open (half-angle of the gap, in degrees). */
+  var GAP = { open: 36, fist: 12, point: 26, thumb: 30, gun: 22 };
 
   function S(t, f, p) { return Math.sin(t * f + (p || 0)); }
   function pos(x) { return x > 0 ? x : 0; }
@@ -41,6 +37,7 @@
       y: 0, rot: 0, head: 0,           // body bob, body lean, head tilt
       lL: ARM, rL: ARM,                // arm hose length (stretch it to reach around the head)
       lback: false, rback: false,      // draw that arm behind the head
+      lclack: 0, rclack: 0,            // claw snapping open and shut (0 = still)
       mood: 'idle', urgency: 0, cool: false
     };
   }
@@ -56,7 +53,7 @@
   } };
   R.cheer = { label: 'Cheer', say: 'Inbox zero! Look at you go!', pose: function (t) {
     var h = Math.abs(S(t, 6)), air = pos(S(t, 6));
-    return P({ mood: 'happy', lh: [42, 84 + h * 4], rh: [158, 84 + h * 4], lhand: 'fist', rhand: 'fist', lback: true, rback: true,
+    return P({ mood: 'happy', lh: [42, 84 + h * 4], rh: [158, 84 + h * 4], lhand: 'open', rhand: 'open', lclack: 1, rclack: 1, lL: 58, rL: 58, lback: true, rback: true,
       y: -h * 12, lf: [86, 204 - h * 12 + h * 3], rf: [114, 204 - h * 12 + h * 3], llb: 1 + air, rlb: 1 + air, head: S(t, 3) * 3 });
   } };
   R.dance = { label: 'Dance', say: 'Done, done, and done.', pose: function (t) {
@@ -67,8 +64,8 @@
   R.proud = { label: 'Hands on hips', say: 'Three tasks before lunch. Not bad.', pose: function (t) {
     return P({ mood: 'proud', lh: [80, 160], rh: [120, 160], lhand: 'fist', rhand: 'fist', y: -1.5 + S(t, 1.5) * .6, head: -4, lf: [84, 204], rf: [116, 204] });
   } };
-  R.thumb = { label: 'Thumbs up', say: 'Nice one. Marked it done.', pose: function (t) {
-    return P({ mood: 'happy', rh: [146, 128 + S(t, 2) * 1.5], rhand: 'thumb', rrot: 0, head: -6, rot: -2 });
+  R.thumb = { label: 'Claw clack', say: 'Nice one. Marked it done.', pose: function (t) {
+    return P({ mood: 'happy', rh: [150, 112 + S(t, 2) * 1.5], rL: 56, rrot: -70, rclack: 1, head: -6, rot: -2 });
   } };
   R.point = { label: 'Point at a task', say: 'This one’s due tomorrow — want to start it?', pose: function (t) {
     return P({ mood: 'eager', rh: [176 + S(t, 3) * 2, 128], rhand: 'point', lh: [64, 172], rot: -4, head: -6, lf: [86, 204], rf: [116, 204] });
@@ -100,7 +97,7 @@
   } };
   R.shrug = { label: 'Shrug', say: 'No idea where that one goes. You pick?', pose: function (t) {
     var u = pos(S(t, 2.4)) * 3;
-    return P({ mood: 'bored', lh: [50, 122 - u], rh: [150, 122 - u], lrot: 200, rrot: -20, y: -u * .6, head: 8 });
+    return P({ mood: 'bored', lh: [44, 126 - u], rh: [156, 126 - u], lb: -1, rb: -1, lL: 46, rL: 46, lrot: 235, rrot: -55, y: -u * .6, head: 8 });
   } };
   R.grateful = { label: 'Grateful', say: 'Aw, thanks for checking in with me.', pose: function (t) {
     return P({ mood: 'grateful', lh: [103, 140], rh: [109, 146], lb: -1, rb: 1, rot: S(t, 1.6) * 3, head: S(t, 1.6) * 4 });
@@ -123,7 +120,8 @@
   R.twang = { label: 'Flick antenna', once: 2.2, say: 'Boing.', pose: function (t) {
     var up = t < .7, k = up ? Math.min(1, t / .45) : Math.max(0, 1 - (t - .9) * 1.5);
     return P({ mood: up ? 'idle' : 'happy', lh: [62 - 2 * k, 175 - 160 * k], lL: ARM + 100 * k, lb: 1, lback: true,
-      lhand: t > .55 && t < .75 ? 'point' : 'open', head: 6 * k, rot: 2 * k });
+      lhand: t > .55 && t < .75 ? 'fist' : 'open',  // the claw pinches the antenna, then lets go
+      head: 6 * k, rot: 2 * k });
   }, fx: function (rig, t) {
     if (t < .62 || rig.fired) return;
     rig.fired = true;
@@ -138,19 +136,45 @@
     var c = d < L ? Math.sqrt(3 * (L * L - d * d) / 4) : 0;
     var cx = (a[0] + b[0]) / 2 - dy / d * c * bend, cy = (a[1] + b[1]) / 2 + dx / d * c * bend;
     return { d: 'M' + f(a[0]) + ' ' + f(a[1]) + 'Q' + f(cx) + ' ' + f(cy) + ' ' + f(b[0]) + ' ' + f(b[1]),
-      ang: Math.atan2(b[1] - cy, b[0] - cx) * 180 / Math.PI };
+      ang: Math.atan2(b[1] - cy, b[0] - cx) * 180 / Math.PI, a: a, c: [cx, cy], b: b };
+  }
+  /* Segment rings: short bands across the arm, spaced evenly along its length. A fixed number of rings
+     means a stretched arm shows wider gaps, like an accordion pulled open. Returns two paths: wide bands
+     (drawn under the arm fill, so they bump the outline) and thin groove lines (drawn on top). */
+  function rings(l, n) {
+    var N = 32, pts = [], len = [0], i;
+    for (i = 0; i <= N; i++) {
+      var t = i / N, u = 1 - t;
+      pts.push([u * u * l.a[0] + 2 * u * t * l.c[0] + t * t * l.b[0], u * u * l.a[1] + 2 * u * t * l.c[1] + t * t * l.b[1]]);
+      if (i) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    }
+    var total = len[N], bump = '', line = '', j = 1;
+    for (var r = 0; r < n; r++) {
+      var want = total * (.14 + .74 * r / (n - 1));
+      while (j < N && len[j] < want) j++;
+      var k = (want - len[j - 1]) / ((len[j] - len[j - 1]) || 1);
+      var x = pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * k, y = pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * k;
+      var dx = pts[j][0] - pts[j - 1][0], dy = pts[j][1] - pts[j - 1][1], dl = Math.hypot(dx, dy) || 1, nx = -dy / dl, ny = dx / dl;
+      bump += 'M' + f(x - nx * 4.9) + ' ' + f(y - ny * 4.9) + 'L' + f(x + nx * 4.9) + ' ' + f(y + ny * 4.9);
+      line += 'M' + f(x - nx * 3) + ' ' + f(y - ny * 3) + 'L' + f(x + nx * 3) + ' ' + f(y + ny * 3);
+    }
+    return { bump: bump, line: line };
   }
   function f(n) { return Math.round(n * 100) / 100; }
-  function handSvg(shape) {
-    var fs = HANDS[shape] || HANDS.open, o = '', i = '';
-    fs.forEach(function (p) {
-      var r = p[0] * Math.PI / 180, x = 3 + Math.cos(r) * (p[1] + 3), y = Math.sin(r) * (p[1] + 3);
-      o += '<path d="M3 0L' + f(x) + ' ' + f(y) + '"/>';
-    });
-    return '<g class="ho">' + o + '<circle cx="3" cy="0" r="6.6"/></g><g class="hi">' + o + '<circle cx="3" cy="0" r="5.2"/></g>';
+  /* Lego hand: a C-shaped claw on a short wrist peg, opening along the arm (local +x). */
+  function clawPath(gap) {
+    var cx = 8.5, R = 6.4, r = 3.1, g = Math.max(4, gap) * Math.PI / 180;
+    function pt(rad, a) { return f(cx + rad * Math.cos(a)) + ' ' + f(rad * Math.sin(a)); }
+    return 'M' + pt(R, g) + 'A' + R + ' ' + R + ' 0 1 1 ' + pt(R, -g) +
+      'L' + pt(r, -g) + 'A' + r + ' ' + r + ' 0 1 0 ' + pt(r, g) + 'Z';
   }
+  var HAND = '<rect class="wrist" x="-1.5" y="-2.6" width="5" height="5.2" rx="1.2"/><path class="claw"/>';
   var FOOT = '<path class="fo" d="M-5.5 -3H5.5L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/><path class="fs" d="M-9.6 7H9.6L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/>';
 
+  function armSvg(s) {
+    return '<g class="arm ' + s + 'arm"><path class="limb-o ' + s + 'a"/><path class="ring-b ' + s + 'ab"/><path class="limb-i ' + s + 'a"/>' +
+      '<path class="ring-l ' + s + 'al"/><g class="hand ' + s + 'hand">' + HAND + '</g></g>';
+  }
   function Rig(host, opts) {
     this.host = host; this.opts = opts || {};
     this.body = this.opts.body !== false;
@@ -171,18 +195,17 @@
           '</g>' +
           '<g class="arms aback"></g>' +
           '<g class="headg">' + window.FUZZ_SVG + '</g>' +
-          '<g class="arms afront"><g class="arm larm"><path class="limb-o la"/><path class="limb-i la"/><g class="hand lhand"></g></g>' +
-            '<g class="arm rarm"><path class="limb-o ra"/><path class="limb-i ra"/><g class="hand rhand"></g></g></g>' +
+          '<g class="arms afront">' + armSvg('l') + armSvg('r') + '</g>' +
         '</g>' +
       '</svg>';
     var q = function (s) { return host.querySelector(s); }, qa = function (s) { return host.querySelectorAll(s); };
     this.svg = q('svg.rig'); this.bot = q('#bot');
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
-    this.el = { ll: qa('.ll'), rl: qa('.rl'), la: qa('.la'), ra: qa('.ra'), lhand: q('.lhand'), rhand: q('.rhand'),
+    this.el = { ll: qa('.ll'), rl: qa('.rl'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
       lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
       larm: q('.larm'), rarm: q('.rarm'), aback: q('.aback'), afront: q('.afront') };
     this.back = { l: false, r: false };
-    this.shapes = { l: '', r: '' };
+    this.gap = { l: null, r: null };
     this.cur = null; this.ang = { l: 90, r: 90 };
     this.setBody(this.body);
     this.play('idle');
@@ -242,8 +265,11 @@
     var la = limb(SH_L, c.lh, c.lL, c.lb), ra = limb(SH_R, c.rh, c.rL, -c.rb);
     this.layer('l', tg.lback); this.layer('r', tg.rback);
     setD(e.la, la.d); setD(e.ra, ra.d);
-    this.hand('l', e.lhand, c.lh, tg.lrot == null ? la.ang : tg.lrot, tg.lhand, k);
-    this.hand('r', e.rhand, c.rh, tg.rrot == null ? ra.ang : tg.rrot, tg.rhand, k);
+    var lr = rings(la, RINGS), rr = rings(ra, RINGS);
+    e.lab.setAttribute('d', lr.bump); e.lal.setAttribute('d', lr.line);
+    e.rab.setAttribute('d', rr.bump); e.ral.setAttribute('d', rr.line);
+    this.hand('l', e.lhand, c.lh, tg.lrot == null ? la.ang : tg.lrot, gapOf(tg.lhand, tg.lclack, t), k);
+    this.hand('r', e.rhand, c.rh, tg.rrot == null ? ra.ang : tg.rrot, gapOf(tg.rhand, tg.rclack, t + .2), k);
   };
   Rig.prototype.layer = function (side, back) {
     back = !!back;
@@ -252,8 +278,14 @@
     var arm = this.el[side + 'arm'], to = back ? this.el.aback : this.el.afront;
     if (side === 'l') to.insertBefore(arm, to.firstChild); else to.appendChild(arm);
   };
-  Rig.prototype.hand = function (side, g, p, target, shape, k) {
-    if (this.shapes[side] !== shape) { g.innerHTML = handSvg(shape); this.shapes[side] = shape; }
+  function gapOf(shape, clack, t) {
+    var g = GAP[shape] == null ? GAP.open : GAP[shape];
+    return clack ? 8 + 32 * pos(Math.sin(t * 11)) : g;
+  }
+  Rig.prototype.hand = function (side, g, p, target, gap, k) {
+    var cur = this.gap[side] == null ? gap : this.gap[side];
+    cur += (gap - cur) * Math.min(1, k * 2.2); this.gap[side] = cur;
+    g.lastChild.setAttribute('d', clawPath(cur));
     var a = this.ang[side], d = ((target - a + 540) % 360) - 180;
     a += d * k; this.ang[side] = a;
     g.setAttribute('transform', 'translate(' + f(p[0]) + ' ' + f(p[1]) + ') rotate(' + f(a) + ')' + (side === 'l' ? ' scale(1 -1)' : ''));

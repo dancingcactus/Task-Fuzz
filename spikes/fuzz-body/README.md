@@ -8,10 +8,12 @@ its moods and its colours are exactly what the app ships.
 
 ## What's here
 
-- **Rig** (`fuzz-body.js`): the head sits on a small cabinet torso with a tape slot. The arms and legs are
-  rubber-hose limbs, like Bender's: no elbows or knees. Each one is a single curve that keeps about the same length,
-  so it bows when the hand comes in close and goes straight when the hand reaches out. The hands are three-finger
-  mittens (open, fist, point, thumb, finger-gun) and the feet are little cans.
+- **Rig** (`fuzz-body.js`): the head sits on a small cabinet torso with a tape slot. The arms are segmented tubes,
+  like Bender's: six ring bands and no elbows. Each arm is a single curve that keeps about the same length, so it
+  bows when the hand comes in close and goes straight when the hand reaches out. A pose can also make an arm a little
+  longer or shorter (to reach overhead, or around the head to the antenna). The rings spread apart when an arm
+  stretches, like an accordion. The hands are Lego-style C claws: a pose sets how far the claw is open, and some
+  reactions snap it open and shut. The legs are plain bendy tubes with little can feet.
 - **20 reactions**: idle, wave, cheer, dance, hands on hips, thumbs up, point at a task, finger guns, thinking,
   working, rushing, worried, sheepish, shrug, grateful, arms crossed, sit & doze, power off, boop, and antenna flick.
   Each one pairs an existing head mood with a body pose. Switching reactions blends from one pose to the next.
@@ -21,7 +23,8 @@ its moods and its colours are exactly what the app ships.
 ## First impressions
 
 - **Better:** the body adds gestures the face can't make. Pointing at the task, a shrug, hands on hips, arms
-  crossed, a hand on the chin, and scratching the head all land right away. Running finally looks like running.
+  crossed, a claw on the chin, and scratching the head all land right away. The claws can't point or give a
+  thumbs up, so those gestures come from where the arm aims, and the claw clack takes the thumbs-up's place. Running finally looks like running.
 - **Risk:** at perch size the screen face does most of the talking. The body either pushes the card down
   about 77 px (same head size) or shrinks the face by about 30% (same footprint). Busy limbs (rush, dance) pull
   the eye away from the face.
