@@ -20,7 +20,7 @@
   var GROUND = 214;
   var ARM = 50, LEG = 40;                    // resting hose lengths
 
-  var RINGS = 6;                             // segments per arm; they spread apart when an arm stretches
+  var RINGS = 6, LEG_RINGS = 5;                             // segments per arm; they spread apart when an arm stretches
   /* Lego-style C hands: the shape is only how far the claw is open (half-angle of the gap, in degrees). */
   var GAP = { open: 36, fist: 12, point: 26, thumb: 30, gun: 22 };
 
@@ -175,13 +175,16 @@
     return '<g class="arm ' + s + 'arm"><path class="limb-o ' + s + 'a"/><path class="ring-b ' + s + 'ab"/><path class="limb-i ' + s + 'a"/>' +
       '<path class="ring-l ' + s + 'al"/><g class="hand ' + s + 'hand">' + HAND + '</g></g>';
   }
+  function legSvg(s) {
+    return '<g class="leg"><path class="limb-o ' + s + 'l"/><path class="ring-b ' + s + 'lb"/><path class="limb-i ' + s + 'l"/><path class="ring-l ' + s + 'll"/></g>';
+  }
   function Rig(host, opts) {
     this.host = host; this.opts = opts || {};
     this.body = this.opts.body !== false;
     host.innerHTML =
       '<svg class="rig" viewBox="0 0 200 222" role="img" aria-label="Fuzz with a body">' +
         '<ellipse class="bshadow" cx="100" cy="' + (GROUND + .5) + '" rx="34" ry="3.6"/>' +
-        '<g class="legs"><path class="limb-o ll"/><path class="limb-i ll"/><path class="limb-o rl"/><path class="limb-i rl"/>' +
+        '<g class="legs">' + legSvg('l') + legSvg('r') +
           '<g class="foot lfoot">' + FOOT + '</g><g class="foot rfoot">' + FOOT + '</g></g>' +
         '<g class="bodyg">' +
           '<g class="neck"><rect x="91" y="108" width="18" height="14" rx="3"/><path d="M91 116H109M91 119.5H109"/></g>' +
@@ -201,7 +204,7 @@
     var q = function (s) { return host.querySelector(s); }, qa = function (s) { return host.querySelectorAll(s); };
     this.svg = q('svg.rig'); this.bot = q('#bot');
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
-    this.el = { ll: qa('.ll'), rl: qa('.rl'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
+    this.el = { ll: qa('.ll'), rl: qa('.rl'), llb: q('.llb'), rlb: q('.rlb'), lll: q('.lll'), rll: q('.rll'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
       lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
       larm: q('.larm'), rarm: q('.rarm'), aback: q('.aback'), afront: q('.afront') };
     this.back = { l: false, r: false };
@@ -256,6 +259,9 @@
     function world(p) { var x = p[0] - PIVOT[0], y = p[1] - PIVOT[1]; return [PIVOT[0] + x * cs - y * sn, PIVOT[1] + x * sn + y * cs + c.y]; }
     var lleg = limb(world(HIP_L), c.lf, LEG, c.llb), rleg = limb(world(HIP_R), c.rf, LEG, -c.rlb);
     setD(e.ll, lleg.d); setD(e.rl, rleg.d);
+    var lg = rings(lleg, LEG_RINGS), rg = rings(rleg, LEG_RINGS);
+    e.llb.setAttribute('d', lg.bump); e.lll.setAttribute('d', lg.line);
+    e.rlb.setAttribute('d', rg.bump); e.rll.setAttribute('d', rg.line);
     e.lfoot.setAttribute('transform', 'translate(' + f(c.lf[0]) + ' ' + f(c.lf[1]) + ') rotate(' + f(c.lfr) + ')');
     e.rfoot.setAttribute('transform', 'translate(' + f(c.rf[0]) + ' ' + f(c.rf[1]) + ') rotate(' + f(c.rfr) + ')');
     var air = Math.max(0, Math.min(1, (GROUND - 10 - Math.max(c.lf[1], c.rf[1]) + 8) / 30));

@@ -13,7 +13,7 @@ its moods and its colours are exactly what the app ships.
   bows when the hand comes in close and goes straight when the hand reaches out. A pose can also make an arm a little
   longer or shorter (to reach overhead, or around the head to the antenna). The rings spread apart when an arm
   stretches, like an accordion. The hands are Lego-style C claws: a pose sets how far the claw is open, and some
-  reactions snap it open and shut. The legs are plain bendy tubes with little can feet.
+  reactions snap it open and shut. The legs use the same ringed tubes (five bands each) and end in little can feet.
 - **20 reactions**: idle, wave, cheer, dance, hands on hips, thumbs up, point at a task, finger guns, thinking,
   working, rushing, worried, sheepish, shrug, grateful, arms crossed, sit & doze, power off, boop, and antenna flick.
   Each one pairs an existing head mood with a body pose. Switching reactions blends from one pose to the next.
