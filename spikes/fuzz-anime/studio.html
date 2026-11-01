@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuzz Studio</title>
+<link rel="icon" type="image/svg+xml" href="../../assets/fuzz-favicon.svg">
+<link rel="stylesheet" href="../../css/app.css">
+<link rel="stylesheet" href="../../css/fuzz.css">
+<link rel="stylesheet" href="rig.css">
+<style>
+  body { padding: 0 16px 64px; }
+  main { max-width: 1320px; margin: 0 auto; }
+  header.top { padding: 20px 0 14px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  header.top h1 { font-family: var(--font-display); font-size: 24px; }
+  header.top p { color: var(--muted); margin: 0; flex: 1 1 320px; }
+  h2 { font-family: var(--font-display); font-size: 15px; margin: 0 0 6px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .studio { display: grid; grid-template-columns: 168px minmax(340px, 430px) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .picker, .stagecol { position: sticky; top: 12px; }
+  .picker { max-height: calc(100vh - 24px); overflow-y: auto; }
+
+  /* ---- picker ---- */
+  .list { display: flex; flex-direction: column; gap: 1px; margin-bottom: 16px; }
+  .list button { display: flex; justify-content: space-between; gap: 6px; text-align: left; padding: 5px 9px; border: 0; border-radius: 8px; background: none; font-size: 14px; }
+  .list button:hover { background: var(--field); }
+  .list button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  .list .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); align-self: center; flex: none; }
+  .list button[aria-pressed="true"] .dot { background: var(--on-accent); }
+
+  /* ---- stage ---- */
+  .stage { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 18px; padding: 10px 14px 14px; box-shadow: var(--shadow); }
+  .sizes { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 14px; align-items: end; }
+  .rigbox { position: relative; z-index: 2; }
+  .big .rigbox { max-width: 216px; margin: 0 auto; }
+  .small .rigbox { width: 90px; margin: 0 auto; }
+  .rigbox .rig { margin-bottom: -4%; }
+  .ledge { background: var(--field); border: var(--bw) solid var(--line); border-radius: 12px; position: relative; z-index: 1; }
+  .big .ledge { height: 62px; }
+  .small .ledge { height: 34px; }
+  .say { margin: 10px 0 0; font-size: 14px; min-height: 1.4em; color: var(--muted); }
+
+  /* ---- transport ---- */
+  .transport { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 14px; }
+  .tbtn { padding: 5px 11px; border-radius: 9px; border: var(--bw) solid var(--line); background: var(--surface); font-size: 14px; }
+  .tbtn:hover { background: var(--field); }
+  .tbtn.main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); min-width: 66px; }
+  .scrub { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .scrub input { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .scrub output { font-family: var(--font-code); font-size: 12px; min-width: 112px; text-align: right; white-space: nowrap; }
+  .speeds { display: inline-flex; border: var(--bw) solid var(--line); border-radius: 9px; overflow: hidden; }
+  .speeds button { border: 0; background: none; padding: 4px 9px; font-size: 13px; }
+  .speeds button[aria-pressed="true"] { background: var(--chip); font-weight: 700; }
+  .row label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; }
+  .row select { max-width: 170px; padding: 4px 6px; border-radius: 8px; border: var(--bw) solid var(--line); background: var(--surface); }
+  .status { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+
+  .strip { display: flex; gap: 2px; height: 22px; }
+  .bseg { display: flex; min-width: 6px; border: 0; padding: 0; background: none; border-radius: 4px; overflow: hidden; }
+  .bseg i { display: block; height: 100%; }
+  .bseg .mv { background: color-mix(in srgb, var(--accent) 45%, var(--field)); }
+  .bseg .hd { background: repeating-linear-gradient(135deg, var(--chip) 0 3px, var(--field) 3px 6px); }
+  .bseg.loop .mv { background: color-mix(in srgb, var(--accent) 22%, var(--field)); }
+  .bseg.now .mv { background: var(--accent); }
+  .bseg.held { outline: 2px solid var(--ink); outline-offset: -1px; }
+
+  /* ---- editor ---- */
+  .edit { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 14px; padding: 11px 13px; }
+  details.panel > summary { font-family: var(--font-display); font-size: 15px; font-weight: 700; cursor: pointer; }
+  details.panel[open] > summary { margin-bottom: 9px; }
+  .ehead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ehead h2 { font-size: 20px; margin: 0; flex: 1; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .text { width: 100%; padding: 6px 9px; border-radius: 9px; border: var(--bw) solid var(--line); background: var(--field); margin-bottom: 8px; }
+
+  .beat { border: var(--bw) solid var(--line); border-radius: 12px; padding: 7px 10px 8px; margin-top: 7px; }
+  .beat.now { border-color: var(--accent); }
+  .beat.held { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; font-size: 13px; }
+  .bhead b { font-family: var(--font-display); min-width: 18px; }
+  .bhead label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+  .bhead .acts { margin-left: auto; display: flex; gap: 2px; }
+  .bhead .acts button { border: 0; background: none; padding: 2px 6px; border-radius: 6px; font-size: 13px; color: var(--muted); }
+  .bhead .acts button:hover { background: var(--field); color: var(--ink); }
+  input.n, input.e, .f select { font-family: var(--font-code); font-size: 12.5px; padding: 2px 4px; border-radius: 6px; border: var(--bw) solid var(--line); background: var(--field); }
+  input.n { width: 68px; }
+  input.e { width: 118px; }
+  .fields { display: flex; flex-wrap: wrap; gap: 5px 7px; margin-top: 7px; align-items: center; }
+  .f { display: inline-flex; align-items: center; gap: 3px; background: var(--field); border-radius: 8px; padding: 2px 3px 2px 7px; font-size: 12.5px; }
+  .f input.n { background: var(--surface); }
+  .f .x { border: 0; background: none; color: var(--muted); padding: 0 3px; font-size: 13px; line-height: 1; }
+  .add { font-size: 12.5px; padding: 2px 4px; border-radius: 8px; border: 1px dashed var(--line); background: none; color: var(--muted); max-width: 120px; }
+
+  .moods { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+  .emo { border: var(--bw) solid var(--line); border-radius: 10px; background: none; padding: 5px 4px 3px; font-size: 12px; }
+  .emo:hover { background: var(--field); }
+  .emo[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .emo .thumb { width: 58px; margin: 0 auto 2px; pointer-events: none; }
+
+  .feel { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13.5px; }
+  .feel label { display: inline-flex; align-items: center; gap: 5px; }
+  #out { width: 100%; min-height: 130px; font-family: var(--font-code); font-size: 12.5px; padding: 8px; border-radius: 9px; border: var(--bw) solid var(--line); background: var(--field); }
+
+  @media (max-width: 1040px) {
+    .studio { grid-template-columns: 150px minmax(0, 1fr); }
+    .edit { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) {
+    .studio { grid-template-columns: minmax(0, 1fr); }
+    .picker, .stagecol { position: static; max-height: none; }
+    .list { flex-direction: row; flex-wrap: wrap; gap: 3px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Fuzz Studio</h1>
+    <p>Tune the anime.js motion. Edits stay in this browser until you copy them out. <a href="index.html">Before and after</a></p>
+  </header>
+  <div class="studio">
+    <nav class="picker" aria-label="What to edit">
+      <h2>Reactions</h2><div class="list" id="reactions"></div>
+      <h2>Transitions</h2><div class="list" id="transitions"></div>
+    </nav>
+
+    <section class="stagecol">
+      <div class="stage">
+        <div class="sizes">
+          <div class="big"><div class="rigbox" id="main"></div><div class="ledge"></div></div>
+          <div class="small"><div class="rigbox" id="mini"></div><div class="ledge"></div></div>
+        </div>
+        <p class="say" id="say"></p>
+      </div>
+      <div class="transport">
+        <div class="row">
+          <button class="tbtn main" id="play" type="button">Pause</button>
+          <button class="tbtn" id="replay" type="button" title="R">Replay</button>
+          <button class="tbtn" id="back" type="button" aria-label="Back one frame" title="Left arrow">&lsaquo;</button>
+          <button class="tbtn" id="fwd" type="button" aria-label="Forward one frame" title="Right arrow">&rsaquo;</button>
+          <span class="speeds" id="speeds" role="group" aria-label="Speed"></span>
+        </div>
+        <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Scrub"><output id="time"></output></div>
+        <div class="strip" id="strip"></div>
+        <div class="row">
+          <label>Start from <select id="from"></select></label>
+          <label><input type="checkbox" id="repeat"> Repeat</label>
+          <label><input type="checkbox" id="calm"> Calm</label>
+        </div>
+        <div class="status" id="status" role="status"></div>
+      </div>
+    </section>
+
+    <section class="edit">
+      <div class="ehead"><h2 id="title"></h2><button class="tbtn" id="reset" type="button">Reset this</button></div>
+      <div class="panel" id="stance"></div>
+      <details class="panel" open><summary>Emotions</summary><div class="moods" id="moods"></div></details>
+      <div id="beats"></div>
+      <details class="panel"><summary>Feel</summary>
+        <p class="hint">These shape every reaction. Lead is how far into a beat that part of the body starts moving, so a higher number makes it trail further behind the hips.</p>
+        <div class="feel" id="feel"></div>
+      </details>
+      <div class="panel">
+        <div class="ehead"><h2 style="font-size:15px">Changes</h2><button class="tbtn" id="copy" type="button">Copy changes</button><button class="tbtn" id="resetall" type="button">Reset everything</button></div>
+        <textarea id="out" readonly aria-label="Changes to copy" style="margin-top:8px"></textarea>
+      </div>
+    </section>
+  </div>
+</main>
+
+<datalist id="eases"></datalist>
+<script src="../../js/fuzz-svg.js"></script>
+<script src="vendor/anime.umd.min.js"></script>
+<script src="../fuzz-joints/fuzz-joints.js"></script>
+<script src="studio.js"></script>
+</body>
+</html>
