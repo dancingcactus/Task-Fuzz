@@ -14,7 +14,7 @@
   var CHOICE = { mood: MOODS, lhand: ['open', 'fist', 'point', 'shut'], rhand: ['open', 'fist', 'point', 'shut'], llay: ['afront', 'aback', 'aunder'], rlay: ['afront', 'aback', 'aunder'] };
   var FIELDS = [
     ['Body', { y: 'Body y', x: 'Hips x', rot: 'Lean', head: 'Head tilt', br: 'Breath', sit: 'Seated' }],
-    ['Arms', { lh: 'L hand', rh: 'R hand', lL: 'L arm length', rL: 'R arm length', lrot: 'L wrist', rrot: 'R wrist', lgap: 'L claw gap', rgap: 'R claw gap', lhand: 'L claw', rhand: 'R claw', llay: 'L arm layer', rlay: 'R arm layer' }],
+    ['Arms', { lh: 'L hand', rh: 'R hand', lL: 'L arm length', rL: 'R arm length', lst: 'L straight path', rst: 'R straight path', lrot: 'L wrist', rrot: 'R wrist', lgap: 'L claw gap', rgap: 'R claw gap', lhand: 'L claw', rhand: 'R claw', llay: 'L arm layer', rlay: 'R arm layer' }],
     ['Legs', { lf: 'L foot', rf: 'R foot', llb: 'L knee', rlb: 'R knee', lfr: 'L foot tilt', rfr: 'R foot tilt', dg: 'Leg swing' }],
     ['Face', { mood: 'Mood', urgency: 'Urgency', cool: 'Shades', ex: 'Eyes x', ey: 'Eyes y' }],
     ['Tape', { tp: 'Tape out', th: 'Tape to claw', tr: 'Tape tilt', tf: 'Tape turn' }]

@@ -58,6 +58,7 @@
     var la = polar(SH_L, o.lh), ra = polar(SH_R, o.rh);
     return {
       lA: la.a, lR: la.r, rA: ra.a, rR: ra.r, lL: num(o.lL, ARM), rL: num(o.rL, ARM),
+      lX: o.lh[0], lY: o.lh[1], rX: o.rh[0], rY: o.rh[1], lst: num(o.lst, 0), rst: num(o.rst, 0),
       llb: num(o.llb, .75), rlb: num(o.rlb, .75),
       lfx: o.lf[0], lfy: o.lf[1], rfx: o.rf[0], rfy: o.rf[1], lfr: num(o.lfr, 0), rfr: num(o.rfr, 0),
       x: num(o.x, 0), y: num(o.y, 0), rot: num(o.rot, 0), head: num(o.head, 0),
@@ -72,7 +73,7 @@
   /* The order things move in, as a fraction of the beat: hips and feet first, the claws last. */
   var GROUPS = [
     { keys: ['x', 'y', 'rot', 'lfx', 'lfy', 'rfx', 'rfy', 'lfr', 'rfr', 'llb', 'rlb', 'br', 'sit', 'dg', 'tp', 'ex', 'ey'], start: 0 },
-    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'th'], start: .08, arm: true },
+    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th'], start: .08, arm: true },
     { keys: ['head'], start: .18 },
     { keys: ['lgap', 'rgap', 'lrot', 'rrot', 'lw', 'rw', 'tr', 'tf'], start: .26 }
   ];
@@ -135,6 +136,22 @@
     floss(-1, { llay: 'afront', rlay: 'afront' }),
     floss(1, { llay: 'aunder', rlay: 'afront' }),
     floss(-1, { llay: 'aunder', rlay: 'aunder' })
+  ] };
+  /* One arm points up and out, then sweeps down across the body, and the other hand stays on the hip. On
+     the up the whole body makes one line with the arm, so the hips go the other way from the hand. */
+  function disco(s, up) {
+    var arm = s > 0 ? 'r' : 'l', hip = s > 0 ? 'l' : 'r', o = { d: 240, hold: 220, ease: OUT, aease: 'outBack(1.4)' };
+    o[arm + 'h'] = up ? [100 + s * 72, 78] : [100 - s * 16, 168];
+    o[arm + 'L'] = up ? 72 : 56;
+    o[arm + 'hand'] = 'point'; o[hip + 'hand'] = 'fist'; o[hip + 'h'] = [100 - s * 20, 160];
+    o.x = s * (up ? -6 : 4); o.y = up ? -2 : 3; o.rot = s * (up ? 5 : -3); o.head = s * (up ? -5 : 4);
+    o[arm + 'f'] = up ? [100 + s * 18, 204] : [100 + s * 12, 199];
+    o[arm + 'fr'] = up ? 0 : s * 10;
+    return o;
+  }
+  R.disco = { label: 'Disco', say: 'All clear. Stayin’ alive.', s: { mood: 'happy', cool: true, llay: 'aback', rlay: 'aback', lst: 1, rst: 1, lf: [84, 204], rf: [116, 204], br: 0 }, loop: [
+    disco(1, true), disco(1, false), disco(1, true), disco(1, false),
+    disco(-1, true), disco(-1, false), disco(-1, true), disco(-1, false)
   ] };
   R.proud = { label: 'Hands on hips', say: 'Three tasks before lunch. Not bad.', s: { mood: 'proud', lhand: 'fist', rhand: 'fist', lh: [80, 160], rh: [120, 160], lf: [84, 204], rf: [116, 204] },
     enter: [{ d: 150, ease: IO, y: 3, lh: [70, 170], rh: [130, 170], head: 3 }],
@@ -373,7 +390,13 @@
   }
   function at(g, p) { g.setAttribute('transform', 'translate(' + f(p[0]) + ' ' + f(p[1]) + ')'); }
   function setD(list, d) { for (var i = 0; i < list.length; i++) list[i].setAttribute('d', d); }
-  function hand(p, side) { var sh = side === 'l' ? SH_L : SH_R, a = p[side + 'A'] * Math.PI / 180, r = p[side + 'R']; return [sh[0] + Math.cos(a) * r, sh[1] + Math.sin(a) * r]; }
+  /* Hands swing round the shoulder unless a pose asks otherwise: lst and rst blend toward a straight line
+     between poses, 0 for the full arc and 1 for dead straight. */
+  function hand(p, side) {
+    var sh = side === 'l' ? SH_L : SH_R, a = p[side + 'A'] * Math.PI / 180, r = p[side + 'R'], s = p[side + 'st'];
+    var x = sh[0] + Math.cos(a) * r, y = sh[1] + Math.sin(a) * r;
+    return [x + (p[side + 'X'] - x) * s, y + (p[side + 'Y'] - y) * s];
+  }
 
   function Rig(host, opts) {
     this.host = host; this.opts = opts || {};

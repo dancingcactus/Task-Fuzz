@@ -15,13 +15,16 @@ anime.js copy from that folder, so keep the two spikes together.
 - **Show hinges**: a toggle on the page draws the same pivots as pinned joints, with the tube's corner left sharp.
   The two share all their motion, so you can flip between them during a reaction.
 - **Elbows that find their own way**: each elbow is pulled toward a point down and out from its shoulder. That
-  replaces the per-pose bend settings, and the bend comes out right in all 21 reactions: elbows drop when the hands go
+  replaces the per-pose bend settings, and the bend comes out right in every reaction: elbows drop when the hands go
   up and stick out on the hips. When a hand crosses that line the elbow swings past the viewer, so it never snaps across.
 - **The studio runs here**: `spikes/fuzz-anime/studio.html` uses this rig, so this file also carries what the studio
   needs from the anime.js spike: sitting on the card, swinging legs, the slower Floss, and the transitions.
 - **Wave hello**: the upper arm holds still and the forearm swings from the elbow. To change it, edit `WAVE_ARM`,
   `WAVE_DROP` and the forearm angles in the `wave()` calls.
-- **Finger guns are gone**: the pose didn't read on claws, so there are 21 reactions here.
+- **Finger guns are gone**: the pose didn't read on claws.
+- **Disco**: a new reaction, on this rig only. The classic point, four counts on each arm, in shades.
+- **Straight hand paths**: hands swing round the shoulder by default. A pose can set `lst` or `rst` to blend toward a
+  straight line, from 0 for the full arc to 1 for dead straight. Disco uses 1, and the studio calls this Straight path.
 - **Same timing**: the reactions are the ones from the anime.js spike. A few poses changed: Thinking and Shrug lost
   their shortened arms because the elbow now folds, Cheer lost an exaggerated leg bend, Sit & doze and Power off rest
   their hands on the knees, and the arm in Flick antenna stretches less.
