@@ -31,6 +31,7 @@ anime.js copy from that folder, so keep the two spikes together.
 
 - **Bored: old tape**: a new reaction, on this rig only. Fuzz slumps, looks down, and a VHS tape pops out of the chest
   slot. The claw pulls it out and holds it up, Fuzz reads the label, turns it over to the back, then slides it home.
+  The tape turns as a box, so edge-on it shows its spine, and the claw twists with it.
   It plays once and goes back to what Fuzz was doing.
 
 ## First impressions

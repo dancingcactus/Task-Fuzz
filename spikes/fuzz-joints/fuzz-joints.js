@@ -374,12 +374,14 @@
   var HAND = '<rect class="wrist" x="-1.5" y="-2.6" width="5" height="5.2" rx="1.2"/><path class="claw"/>';
   var FOOT = '<path class="fo" d="M-5.5 -3H5.5L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/><path class="fs" d="M-9.6 7H9.6L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/>';
 
+  var SPINE = 7;   // how thick the tape is, seen from the side
   var JOINT = '<g class="joint %"><circle r="4.5"/><circle class="pin" r="1.5"/></g>';
 
-  var TAPE = '<g class="vhs"><rect class="vb" x="-17" y="-10" width="34" height="20" rx="1.8"/>' +
+  var TAPE = '<g class="vhs"><g class="vface"><rect class="vb" x="-17" y="-10" width="34" height="20" rx="1.8"/>' +
     '<g class="vfront"><rect class="vl" x="-14.5" y="-8.5" width="29" height="6.6" rx=".8"/><text class="vt" y="-3.7" text-anchor="middle" font-size="4.2">INBOX ’94</text>' +
       '<rect class="vw" x="-11" y="-.4" width="22" height="7.6" rx="1.2"/><circle class="vs" cx="-5.5" cy="3.4" r="2.5"/><circle class="vs" cx="5.5" cy="3.4" r="2.5"/></g>' +
-    '<g class="vback"><rect class="vl" x="-13" y="-6.5" width="26" height="13" rx=".8"/><text class="vt" y="-1.2" text-anchor="middle" font-size="3.9">BE KIND,</text><text class="vt" y="3.6" text-anchor="middle" font-size="3.9">REWIND</text></g></g>';
+    '<g class="vback"><rect class="vl" x="-13" y="-6.5" width="26" height="13" rx=".8"/><text class="vt" y="-1.2" text-anchor="middle" font-size="3.9">BE KIND,</text><text class="vt" y="3.6" text-anchor="middle" font-size="3.9">REWIND</text></g></g>' +
+    '<g class="vside"><rect class="vb" x="-3.5" y="-10" width="7" height="20" rx="1"/><rect class="vl" x="-2" y="-7.5" width="4" height="15" rx=".6"/></g></g>';
 
   function armSvg(s) {
     return '<g class="arm ' + s + 'arm"><path class="limb-o ' + s + 'a"/><path class="ring-b ' + s + 'ab"/><path class="limb-i ' + s + 'a"/>' +
@@ -428,7 +430,7 @@
     this.svg = q('svg.rig'); this.bot = q('#bot');
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
     this.el = { ll: qa('.ll'), rl: qa('.rl'), llb: q('.llb'), rlb: q('.rlb'), lll: q('.lll'), rll: q('.rll'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
-      vhs: q('.vhs'), vfront: q('.vfront'), vback: q('.vback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
+      vhs: q('.vhs'), vface: q('.vface'), vside: q('.vside'), vfront: q('.vfront'), vback: q('.vback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
       larm: q('.larm'), rarm: q('.rarm'), lshcap: q('.lshcap'), rshcap: q('.rshcap'), aunder: q('.aunder'), aback: q('.aback'), afront: q('.afront') };
     this.layerOf = { l: 'afront', r: 'afront' };
     this.p = expand({}, {});
@@ -590,13 +592,14 @@
     e.lab.setAttribute('d', lr.bump); e.lal.setAttribute('d', lr.line);
     e.rab.setAttribute('d', rrg.bump); e.ral.setAttribute('d', rrg.line);
     this.hand('l', e.lhand, lh, la.ang, c.lrot, c.lw, c.lgap);
-    this.tape(rh, this.hand('r', e.rhand, rh, ra.ang, c.rrot, c.rw, c.rgap));
+    this.tape(rh, this.hand('r', e.rhand, rh, ra.ang, c.rrot, c.rw, c.rgap, c.tf));
     this.look();
   };
   /* The wrist follows the arm until a pose gives it its own angle; lw and rw blend between the two. */
-  Rig.prototype.hand = function (side, g, p, armAng, rot, w, gap) {
+  Rig.prototype.hand = function (side, g, p, armAng, rot, w, gap, twist) {
     var a = armAng + (((rot - armAng + 540) % 360) - 180) * w;
     g.lastChild.setAttribute('d', clawPath(gap));
+    if (twist != null) g.lastChild.setAttribute('transform', 'scale(1 ' + f((twist < 0 ? -1 : 1) * Math.max(.22, Math.abs(twist))) + ')');  // a claw seen edge-on still has some width
     g.setAttribute('transform', 'translate(' + f(p[0]) + ' ' + f(p[1]) + ') rotate(' + f(a) + ')' + (side === 'l' ? ' scale(1 -1)' : ''));
     return a;
   };
@@ -606,10 +609,15 @@
     g.style.display = on ? 'inline' : 'none';
     if (!on) return;
     var x = 100 + (p[0] + Math.cos(r) * GRIP - 100) * c.th, y = 132.5 + (p[1] + Math.sin(r) * GRIP - 132.5) * c.th;
-    var size = .86 + .14 * c.th, sy = c.tp + (1 - c.tp) * c.th, sx = Math.max(.06, Math.abs(c.tf));
+    var size = .86 + .14 * c.th, sy = c.tp + (1 - c.tp) * c.th, side = Math.sqrt(Math.max(0, 1 - c.tf * c.tf));
     this.el.vfront.style.display = c.tf < 0 ? 'none' : 'inline';
     this.el.vback.style.display = c.tf < 0 ? 'inline' : 'none';
-    g.setAttribute('transform', 'translate(' + f(x) + ' ' + f(y) + ') rotate(' + f(c.tr * c.th) + ') scale(' + f(size * sx) + ' ' + f(size * sy) + ')');
+    // turning a box: the face narrows and slides one way while the spine widens across the middle
+    this.el.vface.style.display = Math.abs(c.tf) < .02 ? 'none' : 'inline';
+    this.el.vside.style.display = side < .02 ? 'none' : 'inline';
+    this.el.vface.setAttribute('transform', 'translate(' + f((c.tf < 0 ? 1 : -1) * SPINE / 2 * side) + ' 0) scale(' + f(Math.abs(c.tf)) + ' 1)');
+    this.el.vside.setAttribute('transform', 'translate(' + f(c.tf * 17) + ' 0) scale(' + f(side) + ' 1)');
+    g.setAttribute('transform', 'translate(' + f(x) + ' ' + f(y) + ') rotate(' + f(c.tr * c.th) + ') scale(' + f(size) + ' ' + f(size * sy) + ')');
   };
   /* The bored mood's eyes wander on a CSS animation, so aiming them means switching that off. */
   Rig.prototype.look = function () {
