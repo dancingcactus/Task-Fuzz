@@ -202,7 +202,7 @@ that would be handling the request. The page has to survive that and reconnect.
 ## As built
 
 - **The order.** Fuzz introduces himself first, asks two questions (name and app), asks his first
-  question on a card in Triage (working hours), and only then asks for a task, pointing at the New task
+  question on a card in Triage (working hours), only then asks for a task, then says how he helps, pointing at the New task
   button (the floating one on a phone). The app's header appears with the Triage question; until then it,
   Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
   reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
@@ -222,10 +222,13 @@ that would be handling the request. The page has to survive that and reconnect.
   N stays off until it's answered.
 - **Then the new task.** Answering (or skipping) brings Fuzz's ask for one real task, with the New task
   button ringed and pointed at.
+- **How Fuzz helps, guilt-free** is its own step, right after the first task goes to him (and while he
+  reads up on it). The three first tips are told as what Fuzz does: one queue, so a short session is enough
+  (with the calendar file); nothing he does is final; he doesn't keep score. Each has "Why this helps"
+  folded away, and Got it (Enter) moves on.
 - **The wait** teaches the next habit: keep an eye on Triage, where Fuzz brings tasks he has looked into
   and any questions he has. The Triage tab is ringed and pointed at. Going there early is fine: Fuzz is
-  shown reading up on the task, and when it lands the lesson is on its card. The three tips sit below. The calendar file is a 20-minute event each weekday (or each day, for weekends and
-  no fixed hours), at a time inside your hours, with a link back to Triage.
+  shown reading up on the task, and when it lands the lesson is on its card.
 - **The first card** is picked to the front of Triage and carries the lesson above its question. Acting on
   it in any way ends the onboarding: the Undo tip, the one line on what's next, and a first read (Run now).
 - **The intro is calm**: Calm mode is on from the form to the first card, whatever the setting.

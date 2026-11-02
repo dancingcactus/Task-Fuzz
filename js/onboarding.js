@@ -67,7 +67,7 @@
     root.addEventListener('submit', onSubmit);
     root.addEventListener('change', onChange);
     root.addEventListener('input', onChange);
-    unsub = Store.on(function () { if (st && st.step === 'wait') paintWait(); });
+    unsub = Store.on(function () { if (st && st.step === 'wait') paintWait(); else if (st && st.step === 'how') taskItem(); /* keeps the task's id once the core has it */ });
     if (!st) { root.innerHTML = '<p class="meta" role="status">One moment…</p>'; load().then(paint); return; }
     paint();
   };
@@ -89,6 +89,7 @@
     if (s === 'form') return paintForm();
     if (s === 'question') { App.navigate('#/triage'); return; }
     if (s === 'capture') return paintAsk();
+    if (s === 'how') return paintHow();
     if (s === 'wait') return paintWait(true);
     if (s === 'card') { App.navigate('#/triage'); return; }
     App.navigate('#/triage');
@@ -319,13 +320,29 @@
 
   /* ---------- 5. Tips during the wait ---------- */
   var TIPS = [
-    { key: 'sessions', line: 'Set aside 20 minutes, once or twice a day, to go through your queue.',
+    { key: 'sessions', title: 'I keep everything in one queue, so a short session is enough.',
+      line: 'Set aside 20 minutes, once or twice a day, and we’ll go through it together.',
       why: 'A short slot you’ve already decided on helps a lot of people get started, because the “when” is settled. Put it on your calendar so you don’t have to hold it in your head. I don’t send reminders of my own.' },
-    { key: 'sendback', line: 'Ask me to change things, or send a task back to me, as often as you like.',
+    { key: 'sendback', title: 'Nothing I do is final.',
+      line: 'Ask me to change things, or send a task back to me, as often as you like.',
       why: 'Getting it right the first time isn’t the job. On a draft, press R and say what to change. On other cards, write it in the instructions box. Sending something back costs nothing.' },
-    { key: 'nothinglost', line: 'Missing a session loses nothing.',
-      why: 'Everything waits where it was. Stopping at 20 minutes with cards left is fine too. The time is there to help you start, not to keep score.' }
+    { key: 'nothinglost', title: 'I don’t keep score.',
+      line: 'Miss a session and everything waits where you left it. Stopping with cards left is fine too.',
+      why: 'Nothing piles up against you: no overdue counts, no streaks to break. The time is there to help you start, not to measure you.' }
   ];
+  /* Its own step, right after your first task goes to Fuzz: how he helps you get things done, guilt-free */
+  function paintHow() {
+    var it = taskItem();
+    root.innerHTML = '<section class="onb onb-how" aria-labelledby="onb-h">' +
+      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">Here’s how I help you get things done, guilt-free.</h1>' +
+        '<p class="meta">' + (it ? 'While I read up on “' + esc(it.title) + '”: three' : 'Three') + ' things that help a lot of people. None of them is required.</p></div></div>' +
+      '<ol class="onb-tips">' + TIPS.map(function (t, i) {
+        return '<li class="onb-tip"><p class="tip-title">' + esc(t.title) + '</p><p class="tip-line">' + esc(t.line) + '</p>' + (i === 0 ? calendarHTML() : '') + '<details><summary>Why this helps</summary><p>' + esc(t.why) + '</p></details></li>';
+      }).join('') + '</ol>' +
+      '<div class="onb-actions"><button type="button" class="btn primary" data-onb="howdone">Got it<kbd aria-hidden="true">↵</kbd></button></div>' +
+      skipLink() + '</section>';
+    heading(true);
+  }
   function taskItem() {
     var it = st.task_id ? Store.item('t' + st.task_id) : null;
     if (!it && pendingItem) it = pendingItem;
@@ -354,10 +371,7 @@
     if (top && top.dataset.s === s && !first) return;
     if (!top || first) {
       root.innerHTML = '<section class="onb onb-wait" aria-labelledby="onb-h"><div id="onb-status" data-s="' + s + '">' + html + '</div>' + pointerHTML('Triage') +
-        '<section class="onb-tips" aria-labelledby="tips-h"><h2 id="tips-h">Meanwhile: three things that help a lot of people</h2><p class="meta">Read them or don’t. None of them is required.</p><ol>' +
-        TIPS.map(function (t, i) {
-          return '<li class="onb-tip"><p class="tip-line">' + esc(t.line) + '</p>' + (i === 0 ? calendarHTML() : '') + '<details><summary>Why this helps</summary><p>' + esc(t.why) + '</p></details></li>';
-        }).join('') + '</ol></section>' + skipLink() + '</section>';
+        skipLink() + '</section>';
       heading(true);
       spotlight('triage');
     } else {
@@ -428,11 +442,11 @@
   }
   /* Triage asks for the lesson on the card in front: one action, the one that fits */
   function guide(it) {
-    if (!st || st.done || (st.step !== 'card' && st.step !== 'wait') || !it) return null;
+    if (!st || st.done || ['how', 'wait', 'card'].indexOf(st.step) < 0 || !it) return null;
     var mine = taskItem();
     if (!mine || mine.id !== it.id) return null;
     guidedId = it.id;
-    if (st.step === 'wait') save({ step: 'card' });   /* you went to Triage yourself, which is the habit */
+    if (st.step !== 'card') save({ step: 'card' });   /* you went to Triage yourself, which is the habit */
     if (it.result) {
       return { line: 'This one’s already done. Have a look.',
         html: '<aside class="onb-guide" aria-labelledby="guide-h">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3 id="guide-h">I already did this one</h3>' +
@@ -546,6 +560,7 @@
     if (a === 'skip') return finish('skip');
     if (a === 'hello') return save({ step: needsForm() ? 'form' : afterForm() }).then(paint);
     if (a === 'show') return showCard();
+    if (a === 'howdone') return save({ step: 'wait' }).then(paint);
     if (a === 'ics') return downloadIcs();
   }
   function onSubmit(e) { if (e.target.id === 'onb-form') { e.preventDefault(); submitForm(); } }
@@ -556,7 +571,7 @@
   /* Enter on the ready screen from anywhere on the page */
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' || !root || e.defaultPrevented) return;
-    var go = root.querySelector('#onb-show, [data-onb="hello"]'); if (!go) return;   /* Open Triage, Show me, Nice to meet you */
+    var go = root.querySelector('#onb-show, [data-onb="hello"], [data-onb="howdone"]'); if (!go) return;   /* Open Triage, Got it, Nice to meet you */
     var t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT|BUTTON|A|SUMMARY)$/.test(t.tagName)) return;
     e.preventDefault(); go.click();
   });
@@ -589,7 +604,7 @@
     captured: function (it) {
       if (!active() || st.step !== 'capture') return false;
       pendingItem = it;
-      save({ step: 'wait', task_id: it.coreId || null });
+      save({ step: 'how', task_id: it.coreId || null });
       App.navigate('#/welcome');
       return true;
     },

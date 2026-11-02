@@ -120,8 +120,7 @@ yet.
 
 **Onboarding.** The first time the core serves a browser, `js/onboarding.js` takes over (`#/welcome`):
 Fuzz's introduction, a short form (name and app), Fuzz's first question as a card in Triage (your working
-hours), then New task pointed out for one real task, three tips while Fuzz looks into it, and
-that task's card with one lesson (Assign, or what Fuzz already did). Then a first read, and setup cards
+hours), then New task pointed out for one real task, how Fuzz helps you get things done guilt-free, and that task's card with one lesson (Assign, or what Fuzz already did). Then a first read, and setup cards
 (a lookup source, an output folder, a colour theme) arrive later, one at a time, after real work. Later
 tips are each said once, when they fit. Closing the page at any step comes back to it. **Settings > Show
 me around again** runs the intro and tips again, in the demo too. Fuzz's lines follow
