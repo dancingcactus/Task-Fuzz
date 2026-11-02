@@ -144,7 +144,7 @@ def approve(core, card):
     if d["kind"] == "note":   # an approved note is kept in the task's output folder too
         from . import outputs
         body = core.one("SELECT body FROM drafts WHERE id=?", (d["id"],))["body"]
-        outputs.save_markdown(core, t["id"], "Note.md", body, actor="human")
+        outputs.save_markdown(core, t["id"], outputs.markdown_name(core, t["id"], "Note"), body, actor="human")
 
 
 def _file_prep(core, ch, card, d, t):
@@ -293,6 +293,11 @@ def request_permission(core, task_id, scope, resource, why, actor="fuzz:executor
     return {"granted": False, "card_id": cid, "waiting": True}
 
 
+def _plain(resource):
+    from .onboarding import _plain as plain   # "claude.ai Gmail" is Gmail
+    return plain(resource or "")
+
+
 def answer_permission(core, card, option):
     p = card.get("payload") or {}
     t = tasks.require(core, card["task_id"])
@@ -304,7 +309,7 @@ def answer_permission(core, card, option):
             ch.task(t["id"], variant_tags=tags, notes=notes)
             cards.mark_answered(core, ch, card, option)
             events.emit(core, "permission.denied", task_id=t["id"], changes=ch, data=p,
-                        log=("status", f"You said no to {p.get('resource')}."))
+                        log=("status", f"You said no to {_plain(p.get('resource'))}."))
             return
         gid = core.new_id("grants")
         ch.grant(gid, scope=p["scope"], resource=p["resource"], kind="always" if option == "always_allow" else "once",
@@ -317,5 +322,5 @@ def answer_permission(core, card, option):
             from . import connectors
             added = [x for _, _, got in connectors.allow_for_grant(core, p["resource"]) for x in got]
         events.emit(core, "permission.granted", task_id=t["id"], changes=ch, data=dict(p, kind=option, tools=added),
-                    log=("status", ("You always allow " if option == "always_allow" else "You allowed ") + p["resource"]
+                    log=("status", ("You always allow " if option == "always_allow" else "You allowed ") + _plain(p["resource"])
                          + "." + (f" Fuzz can now use {len(added)} of its lookup tools." if added else "")))

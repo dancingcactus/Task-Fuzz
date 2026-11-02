@@ -21,9 +21,10 @@ EVENT_TYPES = {
     "task.brief_updated", "task.notes_saved", "task.released", "task.session",
     "task.schedule_suggested", "task.retitled", "source.read", "task.file_attached", "task.gathered",
     "task.file_written", "task.file_deleted", "task.link_added", "task.review_due", "task.kept_parked", "task.check_back_set",
+    "task.session_opened", "task.next_step", "task.session_ended",
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "entity.merged", "entity.kept_separate", "entity.defined",
-    "card.created", "card.answered", "card.postponed", "card.expired",
+    "card.created", "card.answered", "card.postponed", "card.expired", "card.updated",
     "permission.asked", "permission.granted", "permission.denied",
     "checkin.due", "checkin.answered",
     "run.started", "run.finished",
@@ -33,7 +34,7 @@ EVENT_TYPES = {
 # Projected tables and their key column. user_state is keyed by (user_id, key).
 TABLES = {"tasks": "id", "groups": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
 
-ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "system")
+ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "fuzz:session", "fuzz:onboarding", "system")
 
 LOG_KINDS = ("research", "action", "guidance", "status", "sent", "blocked")
 

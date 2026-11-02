@@ -4,7 +4,7 @@
 (function () {
   var V = {};
   var esc = UI.esc;
-  var root = null, unsub = null, items = null, folder, filter = 'all', failed = null, timer = 0;
+  var root = null, unsub = null, items = null, folder, filter = 'all', query = '', failed = null, timer = 0;
 
   var FILTERS = [
     ['all', 'All', null],
@@ -54,43 +54,67 @@
       '<span class="arow-go">' + ICON_OPEN + '</span></a></li>';
   }
 
+  /* Every word you type has to appear in the file's name or its task's title, in any order */
+  function matches(a) {
+    var hay = (a.name + ' ' + (a.task || '')).toLowerCase();
+    return query.toLowerCase().split(/\s+/).every(function (w) { return hay.indexOf(w) > -1; });
+  }
+  function ofKind(x) { return function (a) { return !x[2] || x[2].indexOf(a.kind) > -1; }; }
+
   function paint() {
     var head = '<div class="tasks-head"><h1>Artifacts</h1><p class="meta">What Fuzz has written for your tasks: documents, decks, checklists.</p></div>';
     if (failed) { root.innerHTML = head + '<p class="lempty">Fuzz couldn’t list your files: ' + esc(failed) + '</p>'; return; }
     if (!items) { root.innerHTML = head + '<p class="lempty">Looking in your Fuzz folder…</p>'; return; }
     if (folder === null) {
-      root.innerHTML = head + '<div class="empty aempty"><p>Fuzz has nowhere to write files yet. Pick a folder and he’ll keep each task’s documents there.</p><button type="button" class="btn small" data-setup="1">Set up Fuzz</button></div>';
+      root.innerHTML = head + '<div class="empty aempty"><p>Fuzz has nowhere to write files yet. Pick a folder and he’ll keep each task’s documents there.</p><a class="btn small linklike" href="#/settings">Pick a folder in Settings</a></div>';
       return;
     }
+    if (!items.length) {
+      root.innerHTML = head + '<p class="lempty">Nothing yet. When Fuzz writes a document, a deck or a checklist for a task, it shows up here' + (folder && folder !== 'demo' ? ', and in ' + esc(folder) : '') + '.</p>';
+      return;
+    }
+    /* the search box is built once, so typing in it, or a refresh while Fuzz writes, keeps your place */
+    if (!root.querySelector('#aq')) {
+      root.innerHTML = head + '<div class="asearch"><label class="sr" for="aq">Search artifacts</label>' +
+        '<input id="aq" type="search" autocomplete="off" placeholder="Search by file or task" value="' + esc(query) + '"></div>' +
+        '<div class="alist"></div>';
+    }
+    paintList();
+  }
+  function paintList() {
+    var hits = items.filter(matches);
     var f = FILTERS.filter(function (x) { return x[0] === filter; })[0] || FILTERS[0];
-    var shown = items.filter(function (a) { return !f[2] || f[2].indexOf(a.kind) > -1; });
-    var chips = items.length ? '<div class="segrow afilters" role="group" aria-label="Show">' + FILTERS.map(function (x) {
-      var n = items.filter(function (a) { return !x[2] || x[2].indexOf(a.kind) > -1; }).length;
-      return n || x[0] === 'all' ? '<button type="button" class="seg" data-filter="' + x[0] + '" aria-pressed="' + (x[0] === filter) + '">' + x[1] + ' <span class="lcount">' + n + '</span></button>' : '';
-    }).join('') + '</div>' : '';
-    var body = !items.length
-      ? '<p class="lempty">Nothing yet. When Fuzz writes a document, a deck or a checklist for a task, it shows up here' + (folder && folder !== 'demo' ? ', and in ' + esc(folder) : '') + '.</p>'
-      : shown.length ? '<ul class="lrows">' + shown.map(rowHTML).join('') + '</ul>' : '<p class="lempty">None of these yet.</p>';
-    root.innerHTML = head + chips + body;
+    var shown = hits.filter(ofKind(f));
+    var chips = '<div class="segrow afilters" role="group" aria-label="Show">' + FILTERS.map(function (x) {
+      var n = hits.filter(ofKind(x)).length;
+      return items.some(ofKind(x)) ? '<button type="button" class="seg" data-filter="' + x[0] + '" aria-pressed="' + (x[0] === filter) + '">' + x[1] + ' <span class="lcount">' + n + '</span></button>' : '';
+    }).join('') + '</div>';
+    var body = shown.length ? '<ul class="lrows">' + shown.map(rowHTML).join('') + '</ul>'
+      : '<p class="lempty">' + (query.trim() ? 'Nothing matches “' + esc(query.trim()) + '”' + (f[2] ? ' in ' + f[1] : '') + '.' : 'None of these yet.') + '</p>';
+    root.querySelector('.alist').innerHTML = chips + body;
   }
 
   V.mount = function (el) {
     root = document.createElement('section'); root.className = 'lineup artifacts'; el.appendChild(root);
     items = null; failed = null;
     root.addEventListener('click', onClick);
+    root.addEventListener('input', onInput);
+    root.addEventListener('keydown', onKey);
     paint(); load();
     unsub = Live.on() ? Live.onEvent(soon) : Store.on(function (e) { if (e.type === 'reset') load(); });
   };
   V.unmount = function () {
     if (unsub) unsub(); unsub = null; clearTimeout(timer);
-    if (root) root.removeEventListener('click', onClick);
+    if (root) { root.removeEventListener('click', onClick); root.removeEventListener('input', onInput); root.removeEventListener('keydown', onKey); }
     root = null;
   };
   function onClick(e) {
     var b = e.target.closest('[data-filter]');
-    if (b) { filter = b.dataset.filter; paint(); var again = root.querySelector('[data-filter="' + filter + '"]'); if (again) again.focus(); return; }
-    if (e.target.closest('[data-setup]')) Setup.open(2);   /* the Folder step */
+    if (b) { filter = b.dataset.filter; paintList(); var again = root.querySelector('[data-filter="' + filter + '"]'); if (again) again.focus(); return; }
   }
+
+  function onInput(e) { if (e.target.id === 'aq') { query = e.target.value; paintList(); } }
+  function onKey(e) { if (e.target.id === 'aq' && e.key === 'Escape' && query) { e.preventDefault(); e.target.value = query = ''; paintList(); } }
 
   window.ArtifactsView = V;
 })();

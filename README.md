@@ -9,18 +9,32 @@ python3 -m http.server 8000
 ```
 
 Everything runs in the browser. Nothing is sent anywhere, and the data is invented. Only your theme,
-appearance and calm-mode choices are saved (in `localStorage`). **Settings > Reset demo data** starts over.
+appearance and calm-mode choices are saved (in `localStorage`). **Settings › Demo › Reset demo data** starts over.
+
+## Use it for real
+
+One paste in Terminal, on a Mac:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dancingcactus/Task-Fuzz/main/install.sh | sh
+```
+
+It downloads Fuzz, installs the core in its own Python environment, starts `fuzz serve` and opens your
+browser, already signed in. Everything after that happens in the browser (see
+[`docs/onboarding.md`](docs/onboarding.md)): your name, the app Fuzz works through (Claude Code or
+Copilot, installed from the page), your working hours, then one real task. Run it again to update; your
+data stays. `FUZZ_REF=<branch>` installs a branch instead of `main`.
 
 ## What's in it
 
 | Screen | Source artifact | What to try |
 | --- | --- | --- |
-| **Triage** | Triage Queue Mockup (layout, card information architecture) + Fuzz Triage (reactions, motion) | Assign, Work in Claude, Schedule, Done (and its menu: Park it, Waiting on someone), drop, park a stray thought, undo. Keys: **A** assign, **C** work in Claude, **D** done, **S** schedule (then **1** to **3** for a time, **M** for more times, **Esc** to go back), **P** park, **W** waiting on someone, **T** park a stray thought (**Esc** folds it away); **R** ask Fuzz to change a draft and **L** not now; **K** keep and **L** let go on a stale card. Numbers pick from the choice on screen: **1** to **3** on entity and duplicate cards, quick answers on a handback, **1** to **4** for your mood on a check-in and then its follow-up, **Esc** to skip. Press **?** (or Keys, under the card) for the full list. The next card takes input as soon as it is on screen, while Fuzz is still reacting. You arrive on a short "While you were away" card (what Fuzz finished, what came back, what is still running or waiting) and start with Enter, and an empty queue opens with a recap of the session |
+| **Triage** | Triage Queue Mockup (layout, card information architecture) + Fuzz Triage (reactions, motion) | Assign, Work in Claude, Schedule, Done (and its menu: Park it, Waiting on someone), drop, park a stray thought, undo. Keys: **A** assign, **C** work in Claude, **D** done, **S** schedule (then **1** to **3** for a time, **M** for more times, **Esc** to go back), **P** park, **W** waiting on someone, **T** park a stray thought (**Esc** folds it away); hold **Alt/Option + Space** to dictate into the box for Fuzz (or use the mic beside it); **R** ask Fuzz to change a draft and **L** not now; **K** keep and **L** let go on a stale card. Numbers pick from the choice on screen: **1** to **3** on entity and duplicate cards, quick answers on a handback, **1** to **4** for your mood on a check-in and then its follow-up, **Esc** to skip. Press **?** (or Keys, under the card) for the full list. The next card takes input as soon as it is on screen, while Fuzz is still reacting. You arrive on a short "While you were away" card (what Fuzz finished, what came back, what is still running or waiting) and start with Enter, and an empty queue opens with a recap of the session |
 | **Lineup** | Triage Queue Mockup | One page, by who has the ball: **To decide** (how many cards wait in Triage), **Yours** (taken on, in Claude, or drafts you set aside), **With Fuzz** (his lane: what he is doing right now, step dots, slots busy, and a note when a task finishes or comes back), **With others**, **Later** (scheduled, plus any parked task that woke up), **Parked** (collapsed) and **Finished** (collapsed). Open any row for the full "done so far" log, sources, drafts and actions |
-| **New task** | Triage Queue Mockup | Type or dictate (simulated), attach files (names only), Ctrl/Cmd+Enter. Press **N** anywhere to jump here and start typing, and **Esc** to go back to Triage (what you typed is kept for next time). From the field, Tab goes to Capture and Shift+Tab to attaching a document |
+| **New task** | Triage Queue Mockup | Type or dictate (the browser's speech recognition: click Dictate, or hold **Alt/Option + Space** to talk and let go to stop), attach files (names only), Ctrl/Cmd+Enter. Press **N** anywhere to jump here and start typing, and **Esc** to go back to Triage (what you typed is kept for next time). From the field, Tab goes to Capture and Shift+Tab to attaching a document |
 | **Artifacts** | — | Every file Fuzz has written in its folder, newest first, with the task it's for, filtered by Documents, Slides, PDFs and Other. Each opens in a new tab (`artifact.html`) with a preview: **Markdown** (headings, lists, checklists, tables), **Word** (.docx: headings, lists, tables, links, pictures), **PDF** (the browser's own viewer), **slides** (.pptx: each slide's text, pictures, tables and fills where the file puts them, with speaker notes; ← and → move between slides), plus CSV tables, pictures, text and HTML (sandboxed, scripts off). Saved files in a task's Sources open the same way. The demo files are in `assets/samples/` |
 | **Fuzz speaks** | Fuzz Triage | Everything the app tells you comes from Fuzz, never a toast: from the perch on Triage, from a small Fuzz bottom right on other pages. Screen readers hear outcomes and Fuzz's answers, not his quips |
-| **Theme** | Warm Theme System | Eight themes (Terracotta, Honey, Moss, Lagoon, Indigo, Plum, Espresso, Warm gray), Light / Dark / Match system, Standard or High contrast, and a code font |
+| **Theme** | Warm Theme System | Eight themes (Terracotta, Honey, Moss, Lagoon, Indigo, Plum, Espresso, Warm gray), plus Retro (a black-and-white TV: grey colours, faint scan lines, Fuzz in black and white), Technicolor (early colour film: cream stock, carmine and teal, a warm vignette and a little grain) and Random (a different one of the eight each time the page loads, never the same twice in a row). Light / Dark / Match system, Standard or High contrast, and a code font |
 | **Code preview** | Warm Theme System (code style) | When Fuzz shows his work, code appears on the card's **Code** tab and in the task detail on Lineup. Try the dashboard filter bug (TypeScript, highlighted line), the dashboard spike (diff) and the feedback summary (JSON) |
 
 Fuzz appears three ways: the full animated robot on the Triage perch, a small themed face used as the logo,
@@ -88,7 +102,7 @@ Principles 7 (simplest thing that works) is about the build, so it shows up as t
 ## What is simulated
 
 - The AI work: a timer walks assigned tasks through scripted steps (`js/store.js`, `tick`). Step length is `STEP_MS`.
-- Dictation inserts a fixed sentence. Attached files record only their names.
+- Attached files record only their names.
 - "Work in Claude" moves the task to Current instead of opening anything.
 - Sending goes nowhere: a few seconds after you approve, the demo marks it sent. **Ask Fuzz to change it** logs your note and brings the draft back as it was, since there is no model to rewrite it.
 - Source linking and matching (the Task matching doc) is represented by the duplicate and entity cards only.
@@ -100,9 +114,17 @@ the MCP server for the AI roles, the HTTP API and the installer for Claude Code 
 **Live mode.** `fuzz serve` also serves these screens, and prints a link with your token
 (`http://127.0.0.1:8765/?token=…`). Open it once and the same screens run on your real queue
 (`js/live.js`): every decision goes to the core, Undo is the core's, Assign starts the executor right away,
-and what Fuzz does shows up as it happens through the event stream. Settings > Use demo data goes back to
+and what Fuzz does shows up as it happens through the event stream. Settings › Your queue › Switch account goes back to
 the demo. The conversation tab and code previews are demo-only for now, since the core doesn't have them
 yet.
+
+**Onboarding.** The first time the core serves a browser, `js/onboarding.js` takes over (`#/welcome`):
+Fuzz's introduction, a short form (name and app), how Fuzz helps you get things done guilt-free, Fuzz's
+first question as a card in Triage (your working hours), then New task pointed out for one real task, and that task's card with one lesson (Assign, or what Fuzz already did). Then Fuzz's own task, "Let me find your asks": handing it over has him ask, one card per
+source, what he may read, then start the first read. Setup cards (an output folder, a colour theme) arrive later, one at a time, after real work. Later
+tips are each said once, when they fit. Closing the page at any step comes back to it. **Settings > Show
+me around again** runs the intro and tips again, in the demo too. Fuzz's lines follow
+[`docs/fuzz-tone.md`](docs/fuzz-tone.md).
 
 ## Layout of the code
 
@@ -110,7 +132,7 @@ yet.
 index.html          shell
 css/fuzz.css        Fuzz, card stack, stamps, check-in (ported from the Fuzz Triage prototype)
 css/app.css         everything else, driven by theme tokens
-js/themes.js        the Warm Theme System: foundation, eight themes, high contrast, code colours and fonts
+js/themes.js        the Warm Theme System: foundation, eight themes, Retro and Technicolor, Random, high contrast, code colours and fonts
 js/code.js          code preview
 js/data.js          demo tasks (all invented)
 js/store.js         shared state, per-change undo, the background work and sending loop
@@ -118,10 +140,13 @@ js/schedule.js      the core's Schedule options, as the API sends them (the demo
 js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, Lineup, New task
+js/onboarding.js    the first run, the later tips and the setup cards
+js/view-settings.js Settings: about you, the app, working hours, what Fuzz can read and send, files, look
 js/notify.js        Fuzz speaks: notices and Undo (no toasts)
 js/progress.js      the segmented triage progress bar
-js/app.js           router, header, theme popover
+js/app.js           router, header (the gear opens Settings), theme picker
 assets/             Fuzz logo files
+install.sh          the one-paste install
 ```
 
 To change a theme, edit `js/themes.js`. To change what Fuzz says or does on a moment, edit the lists near

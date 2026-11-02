@@ -89,6 +89,14 @@
     });
   }
 
+  /* A session in Terminal, started on the task. Off a Mac the core writes the script but can't open it. */
+  function openSession(it) {
+    return api('POST', '/tasks/' + it.coreId + '/open').then(function (r) {
+      if (!r.opened) Say.tell('To start working on “' + it.title + '” in ' + r.label + ', run ' + r.script + ' in a terminal.', { stay: true });
+      return r;
+    });
+  }
+
   /* Answer the task's open card when it offers this option; otherwise act on the task directly
      (from Lineup there is often no card). */
   function decide(it, option, value, action, body) {
@@ -165,6 +173,10 @@
     permission: { primary: ['allow_once', 'Allow once'], secondary: ['always_allow', 'Always allow'], third: ['deny', 'Don’t allow'], dismissed: 'deny' }
   };
 
+  /* The onboarding's "find your asks" task asks one card per source: reading only, so Yes or No */
+  var KICKOFF_ASK = { primary: ['always_allow', 'Yes, read it'], secondary: ['deny', 'Not this one'], dismissed: 'deny' };
+  function isKickoff(c) { return c.kind === 'permission' && !!(c.payload && c.payload.kickoff); }
+
   /* How a draft goes out: "Email", or "Email reply in “Eurobet - Go fwd Strategy”" when it answers a source */
   function via(d, t) {
     var how = VIA[(d.kind || '').split('.')[0]] || 'Its own app';
@@ -181,7 +193,7 @@
     var state = STATE[t.state] || t.state;
     var f = {
       id: 't' + t.id, coreId: t.id, kind: 'task', state: state, title: t.title || t.ask || 'Untitled',
-      source: origin ? (origin.title || 'Found by Fuzz') : 'Captured by you', who: '',
+      source: origin ? (origin.title || 'Found by Fuzz') : tags.indexOf('kickoff') > -1 ? 'A task for Fuzz' : 'Captured by you', who: '',
       age: ago(t.created_at) || 'Just now', stage: tags.indexOf('stale') > -1 ? 'stale' : 'fresh',
       mins: t.effort_mins || 5, energy: t.energy || 'normal',
       incoming: t.reason || (t.ask && t.ask !== t.title ? t.ask : origin ? '' : 'You captured this.'),
@@ -190,14 +202,15 @@
       aiHeading: 'What Fuzz found', aiNote: finding(t),
       context: [], contextMd: fullBrief(t.context_md) ? t.context_md : '',
       log: (t.log || []).map(function (l) { return { kind: l.kind, time: clockOf(l.ts), text: l.text }; }),
-      sources: src.map(function (s) { return { type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
+      sources: src.map(function (s) { return { id: s.id, mine: s.role === 'attachment' && !!s.has_file, type: ROLE[s.role] || 'Source', title: s.title || '', quote: s.quote || '', when: stampOf(s.ts), at: s.ts || '', url: (s.role === 'output' || s.role === 'attachment') && s.has_file ? fileUrl(s.id) : webUrl(s.link) }; }),
+      people: (t.people || []).map(function (p) { return { name: p.name, email: p.email || '', did: p.contributions.map(function (c) { return { text: c.text, via: c.via || '', quote: c.quote || '', when: stampOf(c.ts), at: c.ts || '' }; }) }; }),
       conversation: [], code: [],
       handedBack: tags.indexOf('handed_back') > -1 && state === 'triage',
       result: tags.indexOf('result') > -1 && state === 'triage',
       askBack: tags.indexOf('handed_back') > -1 ? t.question : null,
       quick: tags.indexOf('handed_back') > -1 && t.quick_answers && t.quick_answers.length ? t.quick_answers : null,
       updated: tags.indexOf('returning') > -1 || tags.indexOf('reopened') > -1 || tags.indexOf('woke') > -1,
-      woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1,
+      woke: tags.indexOf('woke') > -1, gathering: tags.indexOf('gather') > -1, kickoff: tags.indexOf('kickoff') > -1,
       /* A parked task back to ask if you still want it; after a few keeps the card leans toward letting go */
       review: tags.indexOf('review') > -1 && state === 'triage', leansGo: !!(c && c.suggested === 'drop'),
       /* A waiting task back to ask if they got back to you; and one you said was someone else's */
@@ -227,11 +240,11 @@
     if (state === 'scheduled' || (f.gathering && t.schedule_anchor)) { f.scheduledFor = whenText(t.schedule_fire_at); f.now = 'Back ' + f.scheduledFor; }
     else if (state === 'review') f.now = 'Draft ready to review';
     else if (state === 'sending') f.now = 'Sending' + (f.sendTo ? ' to ' + f.sendTo.to : '');
-    else if (state === 'session') f.now = 'Open in Claude';
+    else if (state === 'session') f.now = t.next_step ? 'Next: ' + t.next_step : 'Open in ' + Store.workIn;
     else if (state === 'done') f.now = 'Done';
     else if (state === 'letgo') f.now = f.theirs ? 'Someone else’s' : 'Let go';
     else f.now = '';
-    var q = c && QUESTION[c.kind];
+    var q = c && (isKickoff(c) ? KICKOFF_ASK : QUESTION[c.kind]);
     /* A permission card's task stays queued for Fuzz in the core, but it is waiting on you */
     if (q && (state === 'triage' || c.kind === 'permission')) {
       f.state = 'triage';
@@ -239,13 +252,22 @@
       f.entity = c.kind === 'entity_person' ? 'person' : c.kind === 'entity_term' ? 'term' : c.kind;
       f.dupOf = c.other ? 't' + c.other.id : null;
       f.primary = q.primary[1]; f.secondary = q.secondary ? q.secondary[1] : 'Not sure yet'; f.third = q.third ? q.third[1] : null;
+      f.kickoffAsk = isKickoff(c);
       f.answers = { primary: 'Got it. Next one.', secondary: 'Got it. Next one.', third: 'Got it. Next one.' };
       f.incoming = c.reason || f.incoming; f.boxLabel = q.note ? 'What is it?' : c.kind === 'permission' ? 'Anything else Fuzz needs?' : 'Anything that helps?'; f.placeholder = '';
       f.profiles = []; f.mentions = []; f.meta = '';
       /* Is it yours? needs what Fuzz found about the task itself; the reason already reads above the answers */
       if (c.kind !== 'is_task') { f.aiHeading = 'Why Fuzz asked'; f.aiNote = c.reason || f.aiNote; }
+      /* the reason reads once, as why he asked; above it, what he'll never do with it */
+      if (isKickoff(c)) f.incoming = 'I only read with it. Nothing goes out without your yes, and Settings can turn it off.';
+      /* Several asks from one message that may not be yours: one card, and you tick the ones that are */
+      if (c.asks && c.asks.length > 1) {
+        f.asks = c.asks.map(function (a) { return { id: a.id, title: a.title || a.ask || 'Untitled' }; });
+        f.title = c.asks.length + ' asks in one message';
+        f.primary = 'The ticked ones are mine'; f.secondary = 'None are mine';
+      } else delete it.asks;
     } else {
-      ['entity', 'dupOf', 'primary', 'secondary', 'third', 'answers', 'boxLabel', 'placeholder', 'profiles', 'mentions'].forEach(function (k) { delete it[k]; });
+      ['entity', 'dupOf', 'primary', 'secondary', 'third', 'answers', 'boxLabel', 'placeholder', 'profiles', 'mentions', 'asks'].forEach(function (k) { delete it[k]; });
     }
     /* What you typed but haven't sent stays; everything else is the core's */
     return Object.assign(it, f);
@@ -263,6 +285,7 @@
       api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
+      if (r[0].work_in) Store.workIn = r[0].work_in;
       undoBlocked = {}; (r[2].recent || []).forEach(function (u) { undoBlocked[u.group] = u.blocked; });
       offerFuzzUndo(r[2].recent || []);
       /* The full task (log, sources, drafts) only when something about it changed */
@@ -402,14 +425,18 @@
     S.progress = function (it) { return { done: it.steps || 0, total: Math.max((it.steps || 0) + 1, 3) }; };
     S.live = true;
 
-    wrap('assign', function (id, instr) {
-      var it = S.item(id), text = (instr || '').trim();
-      return then(decide(it, 'assign', { instructions: text }, 'assign', { instructions: text }), function () { return kick(it); });
+    /* A source not in the core yet (a file still uploading) goes by its name: the upload is ahead of this in line */
+    wrap('assign', function (id, instr, read) {
+      var it = S.item(id), text = (instr || '').trim(), v = { instructions: text };
+      if (read && read.length) v.refs = read.map(function (s) { return s.id != null ? s.id : s.title; });
+      return then(decide(it, 'assign', v, 'assign', v), function () { return kick(it); });
     });
     wrap('handToFuzz', function (id) { var it = S.item(id); return then(decide(it, 'assign', {}, 'assign'), function () { return kick(it); }); });
     wrap('attach', function (id, files) { var it = S.item(id); return function () { return upload(it.coreId, files); }; });
+    wrap('removeSource', function (id, src) { var it = S.item(id); return src && src.id != null ? function () { return api('DELETE', '/tasks/' + it.coreId + '/files/' + src.id); } : null; });
     wrap('mine', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
-    wrap('session', function (id) { return decide(S.item(id), 'session', undefined, 'session'); });
+    /* Work in Claude: the task moves to Current, then the core opens a Terminal session on it */
+    wrap('session', function (id) { var it = S.item(id); return then(decide(it, 'session', undefined, 'session'), function () { return openSession(it); }); });
     wrap('done', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('markDone', function (id) { return decide(S.item(id), 'done', undefined, 'done'); });
     wrap('park', function (id) { return decide(S.item(id), 'park', undefined, 'park'); });
@@ -453,11 +480,13 @@
     wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
     /* The demo's resolve acts out its own duplicates; here the card just leaves and the core decides */
     S.resolve = function (id, which) {
-      var it = S.item(id), q = QUESTION[it.cardKind];
+      var it = S.item(id), q = it.kickoffAsk ? KICKOFF_ASK : QUESTION[it.cardKind];
       var opt = q && (which === 'dismissed' ? q.dismissed : (q[which] || [])[0]), note = document.getElementById('note');
       var text = (note && note.value.trim()) || '', value = opt === 'define' ? text || undefined : undefined;
+      if (opt === 'mine' && it.asks) value = [].map.call(document.querySelectorAll('[data-ask]:checked'), function (b) { return +b.dataset.ask; });
       S.leave(id); it.state = 'resolved'; it.resolution = which;
-      if (opt && !quiet) { gen++; write(then(decide(it, opt, value), it.cardKind === 'permission' ? resume(it, text) : null)); }
+      /* the onboarding's reading permissions finish in the core, which starts the first read itself */
+      if (opt && !quiet) { gen++; write(then(decide(it, opt, value), it.cardKind === 'permission' && !it.kickoffAsk ? resume(it, text) : null)); }
     };
     /* After a permission answer the task is Fuzz's again: what you typed goes with it, then Fuzz starts */
     function resume(it, text) {
@@ -524,6 +553,8 @@
   function gathering(it) {
     var st = Store.get();
     it.state = 'ai-queued'; it.gathering = true;
+    /* It never reached you, so it doesn't count as a card you cleared; it counts when it lands */
+    if (st.queue.indexOf(it.id) > -1) st.totalEver = Math.max(0, st.totalEver - 1);
     st.queue = st.queue.filter(function (q) { return q !== it.id; });
   }
   /* The files you captured it with, one at a time, each filling the name the task was captured with.
@@ -564,15 +595,33 @@
       }, function (e) { token = prev; throw e; });
     },
     useDemo: function () { pick('demo'); },
+    /* Lineup's Open again, for a task that's already in Claude */
+    openSession: function (id) { var it = Store.item(id); return openSession(it).catch(function (e) { Say.tell('It didn’t open: ' + e.message); }); },
     /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
     saveMe: function (body) { return api('PUT', '/me', body); },
-    /* Guided setup (js/setup.js): who you are, the tools Fuzz may use, the folder it may write to */
+    /* Settings (js/view-settings.js): who you are, the tools Fuzz may use, the folder it may write to */
     setup: function (quick) { return api('GET', '/setup' + (quick ? '?check=0' : '')); },
     discover: function (client) { return api('POST', '/setup/discover', { client: client }); },
     saveTools: function (client, read, send) { return api('PUT', '/setup/tools', { client: client, read: read, send: send }); },
     chooseFolder: function (start) { return api('POST', '/setup/folder/choose', { start: start || null }); },
     saveFolder: function (folder) { return api('PUT', '/setup/folder', { folder: folder || null }); },
-    setupDone: function () { return api('POST', '/setup/done', {}); },
+    /* The onboarding (js/onboarding.js): where you are in it, your hours, the app Fuzz works through,
+       the setup cards after it, and the first read */
+    onboarding: function () { return api('GET', '/onboarding'); },
+    saveOnboarding: function (body) { return api('PUT', '/onboarding', body); },
+    answerSetup: function (name, answer) { return api('POST', '/onboarding/setup/' + name, { answer: answer }); },
+    me: function () { return api('GET', '/me'); },
+    hours: function () { return api('GET', '/hours'); },
+    saveHours: function (body) { return api('PUT', '/hours', body); },
+    engine: function () { return api('GET', '/engine?start=0'); },
+    checkEngine: function () { return api('POST', '/engine/check', {}); },
+    chooseEngine: function (client) { return api('PUT', '/engine', { client: client }); },
+    clientAction: function (client, what) { return api('POST', '/engine/clients/' + client + '/' + what, {}); },
+    firstRead: function () { return api('POST', '/engine/run', { role: 'extractor' }); },
+    /* Fuzz's own task to find your asks; assigning it starts the listing and the permission cards */
+    kickoff: function () { return api('POST', '/onboarding/kickoff', {}); },
+    /* Which server answered: the id changes when it restarts (installing a client restarts it) */
+    serverId: function () { return fetch('/health', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (h) { return h.ok ? h.boot || 'up' : null; }, function () { return null; }); },
     /* The Artifacts tab: what Fuzz wrote in your output folder, and a call whenever the core's events move */
     artifacts: function () { return api('GET', '/artifacts'); },
     /* Finished work older than Lineup shows, by words in its title or summary, newest first */

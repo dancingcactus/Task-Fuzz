@@ -51,6 +51,7 @@ class Copilot(Adapter):
     name = "copilot"
     exe = "copilot"
     label = "GitHub Copilot"
+    short = "Copilot"
 
     def skills_dir(self):
         return home() / ".copilot" / "skills"
@@ -58,8 +59,8 @@ class Copilot(Adapter):
     def config_path(self):
         return home() / MCP_CONFIG
 
-    def _spec(self, role, fuzz_home=None, run_id=None, user_id=None):
-        s = self.mcp_server(role, fuzz_home, run_id, user_id)
+    def _spec(self, role, fuzz_home=None, run_id=None, user_id=None, task_id=None):
+        s = self.mcp_server(role, fuzz_home, run_id, user_id, task_id)
         return {"type": "local", "command": s["command"], "args": s["args"], "env": s["env"], "tools": ["*"]}
 
     def register_mcp(self, role, fuzz_home=None, user_id=None):
@@ -79,8 +80,8 @@ class Copilot(Adapter):
     def mcp_registered(self, role):
         return self.mcp_name(role) in (read_json(self.config_path()).get("mcpServers") or {})
 
-    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None):
-        write_json(path, {"mcpServers": {self.mcp_name(role): self._spec(role, fuzz_home, run_id, user_id)}})
+    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None, task_id=None):
+        write_json(path, {"mcpServers": {self.mcp_name(role): self._spec(role, fuzz_home, run_id, user_id, task_id)}})
         return path
 
     def headless_command(self, role, config_path, model=None, task_id=None, verbose=False, files_dir=None,
@@ -113,6 +114,18 @@ class Copilot(Adapter):
                 argv += [ADD_DIR_FLAG, str(d)]
         if model:
             argv += ["--model", model]
+        return argv
+
+    def session_command(self, exe, prompt, dirs=(), mcp_config=None, session_id=None, resume=False):
+        """`copilot -i <prompt>` opens an interactive session and runs the prompt first. --session-id both
+        names a new session and resumes one that exists, so resume needs nothing else."""
+        argv = [exe, "-i", prompt]
+        if session_id:
+            argv += ["--session-id", session_id]
+        if mcp_config:
+            argv += [RUN_CONFIG_FLAG, f"@{mcp_config}", "--allow-tool", self.mcp_name("session")]
+        for d in dirs:
+            argv += [ADD_DIR_FLAG, str(d)]
         return argv
 
     def list_servers(self):

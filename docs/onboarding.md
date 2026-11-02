@@ -1,15 +1,17 @@
 # Onboarding: requirements
 
-Status: agreed direction, not built. The code facts below were checked against `claude/ask-me-later` at
-`895ecd3`.
+Status: built, steps 1 to 6 of the order of work, in `js/onboarding.js`, `core/fuzz/onboarding.py`,
+`install.sh` and `docs/fuzz-tone.md`. Step 7, trying it with someone who has ADHD, hasn't happened, and the
+tip wording hasn't been reviewed by someone qualified in ADHD yet. The code facts below were checked
+against `claude/ask-me-later` at `895ecd3`.
 
 ## Goal
 
 A new user goes from nothing to working a real card, in the browser, in one short sitting. On the way
 Fuzz introduces himself, sets up what he needs, and teaches how to be effective with ADHD.
 
-This replaces the guided setup in `js/setup.js` as the first-run experience. That four-step form stays
-in Settings for anyone who wants to change everything in one place.
+This replaces the old four-step guided setup (`js/setup.js`, now removed) as the first-run experience.
+Changing anything later happens on the Settings page (`#/settings`, see "As built").
 
 ## The flow
 
@@ -196,3 +198,69 @@ that would be handling the request. The page has to survive that and reconnect.
 5. Build the calendar file.
 6. Build setup cards and later tips.
 7. Try the flow with someone who has ADHD.
+
+## As built
+
+- **The order.** Fuzz introduces himself first, asks two questions (name and app), says how he helps,
+  asks his first question on a card in Triage (working hours), and only then asks for a task, pointing at the New task
+  button (the floating one on a phone). The app's header appears with the Triage question; until then it,
+  Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
+  reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
+  mode, but high contrast can't be switched on until the header appears.
+- **Where it lives.** The flow is a page, `#/welcome` (`js/onboarding.js`). Progress is kept by the core in `onboarding-u<user>.json` (`GET/PUT /onboarding`), not as
+  events, so Undo never reverses a step. People with tasks already, or the old guided setup finished, skip
+  it.
+- **The form** highlights the app it finds and sets Fuzz up in it when picked, or when you go on with the
+  default. Install and repair go through `POST /engine/clients/{client}/install|repair`, then the page
+  waits for the server's `boot` id in `GET /health` to change (or a few quiet seconds where nothing
+  restarts), checks the client and picks it with `PUT /engine`. A client that isn't there gets a link to
+  get it, "I've installed it" to look again, and Try the demo, which runs the same intro on demo data.
+- **Working hours are Fuzz's first question**, right after how he helps. The header fades in on Triage,
+  where a question card waits ("When do you work?", introduced as "This is Triage… here's an easy one to
+  start"), so the first card anyone works is an easy one. One key answers it: your usual hours on
+  weekdays, every day, no fixed hours, or Different hours for a picker. Esc keeps the usual hours for now.
+  N stays off until it's answered.
+- **Then the new task.** Answering (or skipping) brings Fuzz's ask for one real task, with the New task
+  button ringed and pointed at.
+- **How Fuzz helps, guilt-free** is its own step, right after the name and app, still with the header
+  hidden. The three first tips are told as what Fuzz does: one queue, so a short session is enough
+  (with the calendar file); nothing he does is final; he doesn't keep score. Each has "Why this helps"
+  folded away, and Got it (Enter) moves on.
+- **The wait** teaches the next habit: keep an eye on Triage, where Fuzz brings tasks he has looked into
+  and any questions he has. The Triage tab is ringed and pointed at. Going there early is fine: Fuzz is
+  shown reading up on the task, and when it lands the lesson is on its card.
+- **The first card** is picked to the front of Triage and carries the lesson above its question. Acting on
+  it in any way ends the onboarding: the Undo tip, and one line saying the next card is a task for Fuzz.
+- **Fuzz's own task, "Let me find your asks",** is the last card (`POST /onboarding/kickoff`, made once,
+  tagged `kickoff`). Assigning it doesn't start the executor (the tag keeps it off the executor's list):
+  Fuzz asks the app what it can reach (the guided setup's discovery run), then asks one permission card
+  per source, "Can I read Gmail?", reading only, Yes or Not this one. Yes turns on that source's lookup
+  tools; send tools are never asked about here. When every card is answered the task is done, its log
+  says what was allowed, and the first read starts (Run now). Nothing found, or the listing failing,
+  hands the task back with what to do. It replaces the lookup setup card. Check-ins wait until it's done.
+- **The intro is calm**: Calm mode is on from the form to the first card, whatever the setting.
+- **Setup cards** (output folder, then colour theme; lookup only for anyone without the kickoff task) are
+  drawn by Triage, like check-ins, with the core keeping the answers. One shows per
+  visit, after a card is cleared, never on the visit the onboarding ended. Not now always works (Escape),
+  and a second Not now retires the card. The lookup card asks the app what it can reach (the guided setup's
+  discovery run) and offers only its suggested ways to read, in the tools' own plain words.
+- **Later tips** are said by Fuzz, once each, a moment after the card they belong to arrives, and only if
+  you're still on it.
+
+- **Settings** (`#/settings`, `js/view-settings.js`, the gear in the header; there are no quick settings;
+  Escape or Back returns to the page it was opened from, and in a text box Escape only leaves the box)
+  replaces the four-step wizard with one page of sections, each saved on its own: About you (names,
+  emails, Slack IDs); App (status, set up, repair, switch, check again); Working hours (the same choices
+  as Fuzz's question); What Fuzz can read and send (one row per source in plain words, with Reading and
+  Sending switches, List again, and each tool by name under Details, with its token cost); Where Fuzz
+  saves files; Look and feel (theme, appearance, contrast, code font, Calm mode, applied at once and kept
+  in this browser); Your queue (Refresh now, or Reset demo data in the demo, and Switch account); and Show me
+  around again. In the demo the page has only Look and feel, Demo and the tour.
+
+Not built yet:
+
+- **Send tools when the first draft is approved.** Approving still works as before; the sender hands a
+  draft back when no send tools are allowed. The guided setup in Settings picks them.
+- **Identity from a connector.** Other emails and Slack IDs are no longer asked up front, but nothing reads
+  them from a connector yet, so they still come from Settings › About you or `fuzz me add`.
+- **Step 7.** No one with ADHD has tried the flow, and the tips haven't had the qualified review.

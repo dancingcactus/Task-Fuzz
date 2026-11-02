@@ -9,7 +9,7 @@
     parked: ['Parked', 'muted'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'] };
   var dlg = null, gid = null, opts = {}, renaming = false, unsub = null;
 
-  function label(it) { return STATE[it.state] || ['', 'muted']; }
+  function label(it) { return it.state === 'session' ? ['In ' + S().workIn, 'muted'] : STATE[it.state] || ['', 'muted']; }
   /* "1 done · 2 with others · 1 in Triage", done first */
   function summary(g) {
     var n = {}, order = [];

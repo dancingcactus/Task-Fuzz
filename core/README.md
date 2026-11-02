@@ -11,7 +11,14 @@ Python 3.11+, SQLite, the official MCP Python SDK (v2) and `jsonschema`. Nothing
 pip install -e core            # gives you the `fuzz` command (or: python3 -m fuzz, with core/ on PYTHONPATH)
 fuzz init --me-name Justin --me-email you@example.com --me-slack W123
 fuzz serve                     # the API, the event stream and the UI; open the ?token= link it prints
+fuzz start                     # or: keep serve running (launchd on a Mac) and open the browser signed in
 ```
+
+`install.sh` at the repo root does all of this in one paste, then the browser takes over (see
+[`docs/onboarding.md`](../docs/onboarding.md)). `fuzz start --restart` restarts a running server after an
+update. On a Mac, `fuzz start` writes the `fuzz serve` launchd job on its own; installing a client from the
+browser adds the role jobs and reloads them, which restarts the server (`GET /health` carries a `boot` id
+that changes when it does).
 
 The store lives in `~/Library/Application Support/Fuzz/` on a Mac (`~/.local/share/fuzz` elsewhere).
 Set `FUZZ_HOME` or pass `--home` to use another folder.
@@ -57,7 +64,11 @@ fuzz setup --step tools --client copilot --discover   # list the client's tools 
 fuzz setup --step folder --folder ~/Documents/Fuzz    # or - for none
 ```
 
-The UI walks through the same steps the first time you connect, and from Settings > Set up Fuzz.
+The UI's Settings page (`#/settings`) covers the same ground in sections. The first time you connect, the onboarding
+asks only for your name, the app and your working hours, and the rest arrives later as setup cards:
+`GET /onboarding` gives the step you're on and the one setup card that may show
+(`lookup`, then `folder`, then `theme`, each at most twice), `POST /onboarding/setup/{name} {answer: yes |
+not_now}` answers it, and `PUT /hours {hours: [from, until] | null, weekends}` sets when Fuzz reads.
 Each step can be skipped and done again later.
 
 1. **Who you are**: your other email addresses, names and Slack IDs, so a connector signed in to any
@@ -92,7 +103,7 @@ Whatever a run leaves in a task's subfolder is recorded on the task (a `sources`
 `GET /artifacts/<source id>` gives one to the viewer (`artifact.html`), which previews it in the browser.
 A file a browser would run as a page (HTML, SVG, XML) is served with `Content-Security-Policy: sandbox`,
 so opening it can't reach your token. Files are overwritten in place; once written they stay, and Undo doesn't
-remove them. Approved notes (`Note.md`) and results (`Result.md`) are saved there too. A draft can
+remove them. Approved notes (`<task title> - Note.md`) and results (`<task title> - Result.md`) are saved there too. A draft can
 name files in its subfolder in `attach`; the sender gets their paths, may read that folder, and
 attaches them, or reports that its tool can't.
 
@@ -133,7 +144,11 @@ GET  /undo                     POST /undo {group?}       (each command undoes on
 POST /checkin {answer, follow_up?}
 GET  /events?after=N           GET  /events/stream       (server-sent events; ?token= for EventSource)
 POST /signals/at_desk          POST /tick
-GET  /engine                   PUT  /engine {client, model}
+GET  /onboarding               PUT  /onboarding {step?, task_id?, name?, app?, tips?, done?, skipped?, again?}
+POST /onboarding/setup/{lookup|folder|theme} {answer: yes|not_now}
+POST /onboarding/kickoff       (Fuzz's "Let me find your asks" task; assigning it asks per source, then reads)
+GET  /hours                    PUT  /hours {hours: [from, until] | null, weekends}
+GET  /engine?start=0           PUT  /engine {client, model}
 POST /engine/check             POST /engine/run {role: executor|extractor|sender, task_id?, scripted?}
 POST /engine/clients/{client}/install|update|repair|uninstall
 ```
@@ -302,6 +317,24 @@ folder. In `dontAsk` mode a read anywhere else is refused. It still can't run co
 Copilot gets `--add-dir <folder>` with shell and write still denied; whether its reads stay inside
 added folders is still to confirm. Fuzz's log records that a file was handed over; reads made with
 the client's own tool aren't in it.
+
+## Working sessions (Work in Claude / Copilot)
+
+Work in Claude (Work in Copilot when that's the engine) moves the task to `session` and
+`POST /tasks/{id}/open` opens a Terminal window running the engine's own CLI on it, interactive. Fuzz
+writes `<store>/sessions/u<user>/t<task>.command` (the script), `.md` (the prompt: the task, its
+sources and files) and `.mcp.json`: Fuzz's session server for that one task
+(`fuzz mcp --role session --task <id>`), loaded beside your own servers with its tools allowed. Nothing
+is installed for it, so it works with either engine as is.
+
+The session keeps the task current with `get_task`, `read_source`, `log_progress`, `set_next_step`
+(shown as the task's Now line), `add_source`, and `end_session`: done, pause (back in triage at
+`come_back_at`, or tomorrow 9am), fuzz (Fuzz takes the next step) or waiting (on a person).
+
+Open it again and the same conversation resumes: the task keeps its id (`--resume` for Claude Code,
+`--session-id` for Copilot). A session that ends without saying how still comes back to the front of
+triage: the script calls `fuzz session-closed` when its window closes (only the newest window on a task
+counts), and the tick brings back any session quiet for a day.
 
 ## Not built yet
 

@@ -33,6 +33,26 @@
  ]
 };
 
+  /* Who's on a task and what they added, as the core works it out from the messages behind it */
+  function P(name, email, did) { return { name: name, email: email || '', did: did }; }
+  function D(text, via, when, quote) { return { text: text, via: via || '', when: when || '', quote: quote || '' }; }
+  var PEOPLE = {
+    headcount: [P('Marcus Webb', '', [D('Asked for this', 'Slack', 'Today, 9:38 AM', 'Need a final headcount for the venue by end of day. Is it 14 or 16?')]),
+      P('Ines Ortega', '', [D('In the conversation', 'Slack', 'Today, 9:38 AM')])],
+    launch: [P('Elena Park', 'elena.park@example.com', [D('Followed up', 'Email', 'Today, 11:20 AM', 'Monday is the latest I can give support and docs. Can you pick one?'), D('Asked for this', 'Email', 'Yesterday, 4:05 PM', 'We need a launch date so support, docs and marketing can plan around it.')]),
+      P('Raj Mehta', 'raj.mehta@example.com', [D('Wrote a related message', 'Email', 'Yesterday, 5:30 PM', 'The date depends on the performance fix for very large tables. Two weeks if it lands this sprint.')]),
+      P('Kim Alvarez', 'kim.alvarez@example.com', [D('On the email', 'Email', 'Yesterday, 4:05 PM')])],
+    readout: [P('Priya Raman', 'priya.raman@example.com', [D('Asked for this', 'Email', 'Today, 10:12 AM', 'Can you give me a clear call on whether the winner ships? I brief my team Tuesday.')]),
+      P('Ken Ito', 'ken.ito@example.com', [D('On the email', 'Email', 'Today, 10:12 AM')])],
+    owner: [P('Jules Moreau', '', [D('Asked for this', 'Slack', 'Today, 8:50 AM', 'Saved filters reset after a refresh. Who’s picking this up?')]),
+      P('Ines Ortega', '', [D('Named in the ask', 'Slack', 'Today, 8:50 AM')]),
+      P('Tomas Berg', '', [D('Named in the ask', 'Slack', 'Today, 8:50 AM')])],
+    room: [P('Lena Fischer', '', [D('Asked for this', 'Meeting', 'Yesterday, 10:30 AM', 'Can you grab a room for Thursday’s workshop? We’re eight.')])].concat(
+      ['Sam Okafor', 'Marcus Webb', 'Priya Raman', 'Ines Ortega', 'Tomas Berg', 'Kim Alvarez', 'Raj Mehta'].map(function (n) { return P(n, '', [D('In the meeting', 'Meeting', 'Yesterday, 10:30 AM')]); })),
+    feedback: [P('Marcus Webb', '', [D('Asked for this', 'Slack', 'Yesterday, 2:15 PM', 'Can you pull the three themes that matter most out of this thread?')])],
+    budget: [P('Dana Reyes', 'dana.reyes@example.com', [D('You’re waiting on them', '', 'Tuesday'), D('On the email', 'Email', 'Tuesday, 10:02 AM')])]
+  };
+
   /* A local time some days from today, for the moments the AI found on your calendar */
   function day(n, h, m) { var d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, m || 0, 0, 0); return d.toISOString(); }
   function nextWeekday(wd, h, m) { var d = new Date(), n = (wd - d.getDay() + 7) % 7 || 7; return day(n, h, m); }
@@ -329,6 +349,7 @@
       it.context = it.context || [];
       it.code = CODE[it.id] || [];
       it.conversation = it.conversation || [];
+      it.people = it.people || PEOPLE[it.id] || [];
     });
     /* Files Fuzz "wrote" for a task (js/samples.js) are among its sources, and open in the viewer */
     (window.Samples || []).forEach(function (s) {

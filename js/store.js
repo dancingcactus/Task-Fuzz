@@ -27,6 +27,8 @@
     slots: function () { return MAX_RUNNING; },
     setSlots: function (n) { if (n > 0) MAX_RUNNING = n; },
     clock: clock,
+    /* The engine you work with yourself: Work in Claude, or Work in Copilot when Fuzz runs on Copilot */
+    workIn: 'Claude',
 
     reset: function () {
       state = Demo.build();
@@ -144,8 +146,8 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        var kx = [x.picked ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.picked ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
@@ -161,15 +163,19 @@
       S.sortQueue();
     },
     inQueue: function (id) { return state.queue.indexOf(id) > -1; },
-    leave: function (id) { var it = S.item(id); if (it) it.atEnd = false; state.queue = state.queue.filter(function (q) { return q !== id; }); },
+    /* You picked this one from Lineup: it goes first, ahead of deadlines, until it leaves triage */
+    pick: function (id) { var it = S.item(id); if (!it || !S.inQueue(id)) return; it.picked = true; state.queue = [id].concat(state.queue.filter(function (q) { return q !== id; })); },
+    leave: function (id) { var it = S.item(id); if (it) { it.atEnd = false; it.picked = false; } state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
-    assign: function (id, instructions) {
+    /* read: sources you pointed Fuzz to with this ask */
+    assign: function (id, instructions, read) {
       var it = S.item(id);
       S.leave(id);
       if (instructions && instructions.trim() && instructions.trim() !== (it.hint || '').trim()) {
         S.log(it, 'guidance', 'You said: ' + instructions.trim());
       }
+      if (read && read.length) S.log(it, 'guidance', 'Read these first: ' + read.map(function (s) { return '“' + s.title + '”'; }).join(', ') + '.');
       it.instr = instructions;
       it.handedBack = false; it.askBack = null;
       it.workStep = 0; it.nextAt = Date.now() + 4500;
@@ -188,7 +194,7 @@
       S.log(it, 'status', 'You took this one yourself. Fuzz keeps the sources ready.');
     },
     done: function (id) { var it = S.item(id); S.leave(id); it.state = 'done'; it.doneAgo = 'Just now'; it.now = 'Marked done by you'; S.log(it, 'status', 'You marked this done.'); wrapCheck(it); },
-    session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in Claude'; S.log(it, 'status', 'You opened this in a working session with Claude. Fuzz keeps the sources ready.'); },
+    session: function (id) { var it = S.item(id); S.leave(id); it.state = 'session'; it.now = 'Open in ' + S.workIn; S.log(it, 'status', 'You opened this in a working session with ' + S.workIn + '. Fuzz keeps the sources ready.'); },
     /* opt is one of S.scheduleOptions(it), or an exact time: the core's Schedule options, as the API sends them */
     /* instr: Fuzz looks into it meanwhile, and it still comes back at that time */
     schedule: function (id, opt, instr, text) {
@@ -362,14 +368,22 @@
     /* Files you add to a task in triage: more for Fuzz to read. They join its Sources. */
     attach: function (id, files) {
       var it = S.item(id);
-      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      /* With the core, a file can be removed once the core has it (live.js gives it its id then) */
+      files.forEach(function (f) { it.sources.unshift({ type: 'File', title: f.name, mine: !S.live }); S.log(it, 'status', 'You attached ' + f.name + '.'); });
+      emit({ type: 'attach', id: id });
+    },
+    /* A file you added by mistake comes off the task */
+    removeSource: function (id, src) {
+      var it = S.item(id); if (!it) return;
+      it.sources = it.sources.filter(function (s) { return s !== src; });
+      S.log(it, 'status', 'You removed ' + src.title + '.');
       emit({ type: 'attach', id: id });
     },
     parkThought: function (text) {
       var id = 'thought' + (++captureN);
       var it = {
         id: id, kind: 'task', state: 'parked', title: text.trim(), source: 'Parked thought', who: 'You', age: 'Just now', stage: 'fresh', parkedAgo: 'Just now', now: '', mins: 5, energy: 'normal', order: ++state.maxOrder,
-        incoming: 'A stray thought you parked without leaving what you were doing.', aiNote: 'Parked with no date. Fuzz will only speak up if something new comes in about it.',
+        incoming: 'A stray thought you parked without leaving what you were doing.', aiNote: 'Parked with no date. Once it has sat a week, Fuzz may bring it back on a day you have room to ask if you still want it.',
         log: [], sources: [], context: [], conversation: []
       };
       S.log(it, 'status', 'You parked this thought.');

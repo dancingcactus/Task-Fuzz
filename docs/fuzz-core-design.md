@@ -76,6 +76,8 @@ web app, and supporting several users who each have their own queue.
 - Real-time collaboration, mobile apps, a plugin system.
 - Domains (personal, work and so on). They're a later idea, noted in
   [Later: domains](#later-domains) so nothing now gets in their way.
+- Running code. The executor has no shell. A sandbox it could run code in is a later idea, noted in
+  [Later: a place to run code](#later-a-place-to-run-code).
 
 ## Principles that shape the design
 
@@ -1000,6 +1002,68 @@ Not designed yet. Two choices now keep it cheap:
   doesn't change the skill files or the installer's skill step.
 - **A domain is a scope, like `user_id`.** It would most likely become a column on each row, a
   `--domain` flag on `fuzz mcp` and `fuzz run`, and one MCP registration per domain.
+
+### Later: a place to run code
+
+A container the executor can run code in, with tools already installed. Not designed yet, and not
+committed to.
+
+**The shape that keeps the approval gate.** The model keeps its place: Claude Code or Copilot, still
+with no shell. The executor gets one more Fuzz tool, something like `run_code(language, code)`, and
+the core runs it in a container and returns stdout, stderr and the files made. The container holds
+nothing that matters: no store, no `fuzz` binary, no tokens, no connector sign-ins. It mounts the
+task's `output_dir` read-write and the attachments read-only, and has **no network** by default. Running
+the whole client inside the container instead is worse: connector sign-ins would have to live in
+it, and we'd be guarding a shell again (see [Who uses which interface](#who-uses-which-interface)).
+
+**What it would let Fuzz do**
+
+- Answer questions about an attached spreadsheet or CSV by computing them (pandas), not reading and guessing.
+- Make real Word, Excel and PowerPoint files (python-docx, openpyxl, python-pptx). `doctext.py` only reads them.
+- Charts and images for a status update (matplotlib), PDFs from Markdown (pandoc).
+- OCR a scanned PDF or image (tesseract) when `doctext` finds no text.
+- Check a draft before it reaches you: recompute its numbers, test a regex or SQL snippet, validate
+  JSON or YAML, and log "ran this, got this" as a step.
+- Exact date and time-zone arithmetic for scheduling asks.
+- Clean up exports: merge, de-duplicate, reformat.
+- With network: pull public data. This needs an egress allowlist and is a separate decision.
+
+Coding tasks are mostly covered already by Work in Claude / Copilot.
+
+**For it**
+
+- Fewer handbacks of the "I can read this but can't do anything with it" kind.
+- Outputs already have a home: files land in `output_dir`, become `output` sources, and show on the
+  card and in Artifacts.
+- Results can be checked rather than asserted.
+- A Fuzz MCP tool works the same for every client. Each client's own sandbox behaves differently.
+- Disposable: one container per task lease, removed on release.
+
+**Against it**
+
+- **Prompt injection plus network is exfiltration.** Most of the executor's input is untrusted
+  email and Slack. Code that runs on it with network access can send an attachment anywhere. No
+  network avoids this; an allowlist proxy is real work to build and keep up.
+- **Undo doesn't cover it.** Files are already overwritten in place and Undo doesn't remove them.
+  Code can write many files fast. Keep writes to the task's subfolder; versioning outputs would help more.
+- **Install burden.** Docker Desktop is heavy and needs a paid licence at large companies; Colima,
+  Podman or Apple's `container` are lighter. It must be optional: `fuzz doctor` reports it, and the
+  executor works without it.
+- **Cost of running.** A slow first start, disk for the image, and CPU, memory and time limits so a
+  runaway script can't hold a lease.
+- **Upkeep.** The image needs updating, and stamping on events (like `prompt_version`) so you can tell which
+  one made a result.
+- **A longer security story.** "No shell, no send tool" becomes a paragraph.
+- **Timing.** The real stack isn't decided. A product on the Claude API could use Anthropic's
+  server-side code execution tool instead.
+
+**Worth checking first:** Claude Code's own sandboxed Bash (OS-enforced file and network limits) might
+cover much of this without a container. Not checked: whether it keeps the `fuzz` CLI and connector
+credentials out of reach. Copilot has nothing like it, so the clients would differ.
+
+**If we do it:** a spike with `run_code`, an ephemeral container, no network, the folders above, and
+Python with pandas, openpyxl, python-docx, python-pptx, matplotlib, pandoc and tesseract. Optional, and
+found by `doctor`. Judge it on spreadsheet questions and real Office files; decide network later.
 
 ## Testing
 

@@ -102,9 +102,20 @@ def sync(core, task_id, where="back"):
         return None
     open_ = open_cards(core, task_id)
     tags = t.get("variant_tags") or []
+    if t["state"] == "triage" and not open_ and "unconfirmed" in tags:
+        # Asks from one message that may not be yours share one card, so a broadcast email is one answer
+        c = _asking_card(core, t)
+        if c is None:
+            return create(core, "is_task", task_id, reason=t.get("reason"), payload={"asks": [task_id]}, where=where)
+        have = (c.get("payload") or {}).get("asks") or [c["task_id"]]
+        if task_id not in have:
+            ch = events.Changes()
+            ch.card(c["id"], payload=dict(c.get("payload") or {}, asks=have + [task_id]))
+            events.emit(core, "card.updated", task_id=c["task_id"], changes=ch,
+                        data={"kind": "is_task", "card_id": c["id"], "added": task_id})
+        return c["id"]
     if t["state"] == "triage" and not open_:
-        kind = "is_task" if "unconfirmed" in tags else "task"
-        return create(core, kind, task_id, reason=t.get("reason"),
+        return create(core, "task", task_id, reason=t.get("reason"),
                       suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags else "keep" if "stale" in tags else "done" if "result" in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
@@ -114,6 +125,30 @@ def sync(core, task_id, where="back"):
             kind = "nudge" if d["kind"].startswith("nudge") else "draft"
             return create(core, kind, task_id, payload={"draft_id": d["id"]})
     return None
+
+
+def _asking_card(core, t):
+    """The open is_task card of another task from the same origin, which this one's ask joins."""
+    if not t.get("group_id"):
+        return None
+    return core.one("SELECT c.* FROM cards c JOIN tasks t ON t.id=c.task_id WHERE c.user_id=? AND c.kind='is_task' "
+                    "AND c.status='open' AND t.group_id=? AND c.task_id!=? ORDER BY c.id LIMIT 1",
+                    (core.user_id, t["group_id"], t["id"]))
+
+
+def asks(core, card):
+    """What an is_task card asks about: its own task first, then the ones folded in, each only while it is
+    still in triage waiting for the answer."""
+    from . import tasks
+    ids = dict.fromkeys([card["task_id"]] + ((card.get("payload") or {}).get("asks") or []))
+    out = [tasks.get(core, i) for i in ids]
+    return [t for t in out if t and t["state"] == "triage" and "unconfirmed" in (t.get("variant_tags") or [])]
+
+
+def covered(core, t):
+    """A task with no card of its own because another task's is_task card asks about it too."""
+    c = _asking_card(core, t)
+    return bool(c) and t["id"] in ((c.get("payload") or {}).get("asks") or [])
 
 
 def refresh_schedule_options(core, ch, task_id):
@@ -188,7 +223,7 @@ def task_summary(t):
         return None
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
-            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id")
+            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step")
     return {k: t.get(k) for k in keys}
 
 
@@ -201,6 +236,9 @@ def view(core, card, task=None):
     prompt = card.get("prompt")
     if card["kind"] in ("task", "draft", "nudge", "is_task") and task and task.get("question"):
         prompt = task["question"]
+    many = asks(core, card) if card["kind"] == "is_task" and card["status"] == "open" else []
+    if not prompt and len(many) > 1:
+        prompt = "Are any of these yours?"
     if not prompt:
         prompt = PROMPTS[card["kind"]].format(other=(other or {}).get("title", "another task"),
                                               term=payload.get("term", "this"),
@@ -210,6 +248,8 @@ def view(core, card, task=None):
            "options": options(card, task or {}), "suggested": card.get("suggested"),
            "postponed": card["postponed"], "payload": payload, "task": task_summary(task),
            "created_at": card.get("created_at")}
+    if len(many) > 1:
+        out["asks"] = [task_summary(a) for a in many]
     if card["kind"] == "task":
         out["schedule_options"] = card.get("schedule_options") or []
     elif card["kind"] in SCHEDULED:   # a draft card made before it had Schedule options works them out now

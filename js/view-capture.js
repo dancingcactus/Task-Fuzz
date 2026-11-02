@@ -3,7 +3,7 @@
 (function () {
   var V = {};
   var esc = UI.esc;
-  var root, unsub = null, timer = 0, listenTimer = 0, moodTimer = 0, boredTimer = 0, listening = false, attached = [], confirm = '', draft = '', escKey = null;
+  var root, unsub = null, timer = 0, moodTimer = 0, boredTimer = 0, listening = false, attached = [], confirm = '', draft = '', escKey = null, unhold = null;
   var IDLE_LINE = 'Get it out of your head. I’ll sort it later.';
 
   function statusFor(c) {
@@ -11,7 +11,7 @@
     if (!it) return { text: c.status || 'Waiting in triage', tone: c.tone || 'muted' };
     var map = {
       triage: it.capturedAt && Date.now() - it.capturedAt < 6000 ? ['Fuzz is gathering context', 'accent'] : ['Waiting in triage', 'muted'],
-      ai: ['Fuzz is working on it', 'accent'], 'ai-queued': ['Next up with Fuzz', 'muted'], review: ['Draft ready for your OK', 'warn'], mine: ['With you', 'muted'], session: ['Open in Claude', 'muted'],
+      ai: ['Fuzz is working on it', 'accent'], 'ai-queued': ['Next up with Fuzz', 'muted'], review: ['Draft ready for your OK', 'warn'], mine: ['With you', 'muted'], session: ['Open in ' + Store.workIn, 'muted'],
       scheduled: ['Scheduled', 'muted'], parked: ['Parked', 'muted'], waiting: ['Waiting on others', 'warn'], done: ['Done', 'ok'], letgo: ['Let go', 'muted'], dropped: ['Dropped', 'muted'], resolved: ['Done', 'ok']
     };
     var m = it.gathering ? ['Fuzz is gathering context', 'accent'] : map[it.state] || ['Waiting in triage', 'muted'];
@@ -36,6 +36,8 @@
 
   V.mount = function (container) {
     root = container; listening = false; confirm = '';
+    /* The first New task screen teaches dictation; during the onboarding, Esc leads back to it */
+    var ob = Onboard.onCapture();
     /* Same shape as Triage: the full Fuzz on a perch with his speech bubble, then one card.
        He's for looking at; the capture confirmation reaches screen readers through Say.announce. */
     root.innerHTML = '<section class="capture" aria-labelledby="cap-h"><div class="stage cap-stage" id="stage">' +
@@ -47,10 +49,11 @@
           '<span class="droptxt"><b>Drop a document to add context</b><small>Optional. Fuzz reads it along with your task. With Fuzz running, it keeps a copy on this computer.</small></span><span class="droplink">Choose files</span></button>' +
           '<input type="file" id="file" multiple hidden></div>' +
         '<ul class="files" id="files" aria-label="Attached documents"></ul>' +
-        '<div class="field"><label for="cap-text">New task</label><textarea id="cap-text" rows="4" placeholder="For example: send Sam the slides from Tuesday"></textarea></div>' +
+        '<div class="field"><label for="cap-text">New task</label><textarea id="cap-text" rows="4" placeholder="For example: send Sam the slides from Tuesday"' + (ob && ob.tip ? ' aria-describedby="cap-tip"' : '') + '></textarea></div>' +
+        (ob && ob.tip && Dictate.supported ? '<p class="cap-tip" id="cap-tip">' + Fuzz.mini('good', { cls: 'tip-fz' }) + '<span>' + esc(ob.tip) + '</span></p>' : '') +
         '<div class="actions cap-actions"><button type="button" class="btn primary" id="cap-go" disabled><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Capture</button>' +
-          '<button type="button" class="btn dictate" id="cap-mic" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span id="mic-l">Dictate</span></button>' +
-          '<span class="hint">Ctrl or Cmd + Enter to capture · Esc to go back</span></div>' +
+          '<button type="button" class="btn dictate" id="cap-mic" aria-pressed="false" aria-keyshortcuts="Alt+Space"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span id="mic-l">Dictate</span></button>' +
+          '<span class="hint">Ctrl or Cmd + Enter to capture · Hold ' + Dictate.key + ' to dictate · Esc to go back</span></div>' +
       '</div></div>' +
       '<section class="recent"><h2>Captured recently</h2><ul class="cap-list" id="cap-list"></ul>' +
         '<p class="fine">Tasks from email, Slack and meetings arrive in triage on their own, so you only need to capture the ones that start in your head.</p></section></section>';
@@ -63,7 +66,7 @@
     ta.value = draft;
     ta.addEventListener('input', function () { draft = ta.value; sync(); nudge(); if (confirm) { confirm = ''; paintSay(); } });
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } });
-    function paintSay() { Fuzz.say(confirm || IDLE_LINE, { type: false }); }
+    function paintSay() { Fuzz.say(confirm || (ob && ob.back ? 'One real thing on your plate. I’m listening.' : IDLE_LINE), { type: false }); }
     /* Mood for a moment, then back to idle (unless something else has changed it since). */
     function moodFor(m, ms) {
       clearTimeout(moodTimer); Fuzz.setMood(m);
@@ -89,34 +92,31 @@
     drop.addEventListener('drop', function (e) { if (e.dataTransfer) addFiles(e.dataTransfer.files); });
     $('#files').addEventListener('click', function (e) { var b = e.target.closest('[data-rm]'); if (!b) return; attached.splice(parseInt(b.dataset.rm, 10), 1); paintFiles(); });
 
-    /* Dictation is simulated in this demo. */
+    /* Dictation (dictate.js): the button starts and stops it, and holding Alt (Option) + Space listens
+       only while held. What you say lands after what you'd typed, words appearing as you talk. */
     var mic = $('#cap-mic');
-    mic.addEventListener('click', function () {
-      listening = !listening; clearTimeout(listenTimer); nudge();
-      mic.setAttribute('aria-pressed', String(listening)); $('#mic-l').textContent = listening ? 'Listening…' : 'Dictate';
-      if (listening) { clearTimeout(moodTimer); Fuzz.setMood('eager'); Fuzz.pAnim('lean'); Fuzz.say('I’m all antennas. Go ahead.', { type: false }); }
-      else { Fuzz.setMood('idle'); paintSay(); }
-      if (listening) listenTimer = setTimeout(function () {
-        var said = 'Check in with Dana about the offsite budget';
-        ta.value = (ta.value ? ta.value.replace(/\s+$/, '') + ' ' : '') + said; draft = ta.value; listening = false;
-        mic.setAttribute('aria-pressed', 'false'); $('#mic-l').textContent = 'Dictate'; sync(); ta.focus();
-        Fuzz.setMood('idle'); Fuzz.say('Got all of that. Capture it when you’re ready.', { type: false });
-      }, 2200);
-    });
+    function opts() {
+      nudge(); clearTimeout(moodTimer);
+      return { done: 'Got all of that. Capture it when you’re ready.', onChange: function (on) { listening = on; mic.setAttribute('aria-pressed', String(on)); $('#mic-l').textContent = on ? 'Listening…' : 'Dictate'; } };
+    }
+    mic.addEventListener('click', function () { if (Dictate.active()) Dictate.stop(); else Dictate.start(ta, opts()); });
+    unhold = Dictate.hold(function () { return ta; }, opts);
 
     function submit() {
       var text = ta.value.trim();
       if (!text && !attached.length) return;
       var picked = attached.slice(), docs = picked.map(function (f) { return f.name; });
-      Store.capture(text, docs, picked);
-      ta.value = ''; draft = ''; attached = []; paintFiles(); listening = false; clearTimeout(listenTimer);
-      mic.setAttribute('aria-pressed', 'false'); $('#mic-l').textContent = 'Dictate';
+      var it = Store.capture(text, docs, picked);
+      Dictate.abort();
+      ta.value = ''; draft = ''; attached = []; paintFiles();
       confirm = docs.length ? 'Captured. I’m reading your ' + (docs.length === 1 ? 'document' : 'documents') + ' now.' : 'Captured. It’s waiting in your triage queue.';
       paintSay(); paintList(); ta.focus(); nudge();
       Say.announce(confirm);
       /* Same little celebration as a triage win: a hop, a check on his screen, a bit of confetti. */
       Fuzz.pAnim('hop'); Fuzz.checkGlyph(1300); Fuzz.confetti(go);
       moodFor(docs.length ? 'thinking' : 'happy', docs.length ? 2600 : 1400);
+      /* The onboarding's first task goes on to the wait, where Fuzz says what he's doing with it */
+      Onboard.captured(it);
     }
     go.addEventListener('click', submit);
     Fuzz.mount(root, {});
@@ -124,13 +124,19 @@
     unsub = Store.on(function () { paintList(); });
     timer = setInterval(paintList, 2000);
     /* Esc goes back to Triage (an open popover takes Escape first, in app.js). */
-    escKey = function (e) { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open]')) { e.preventDefault(); App.navigate('#/triage'); } };
+    escKey = function (e) {
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      /* Escape stops listening first, keeping what was heard */
+      if (Dictate.active()) Dictate.stop(); else App.navigate(ob && ob.back && Onboard.active() ? ob.back : '#/triage');
+    };
     document.addEventListener('keydown', escKey);
     ta.focus();
   };
   V.unmount = function () {
     document.removeEventListener('keydown', escKey);
-    if (unsub) unsub(); unsub = null; clearInterval(timer); clearTimeout(listenTimer); clearTimeout(moodTimer); clearTimeout(boredTimer);
+    if (unhold) unhold(); unhold = null; Dictate.abort(); listening = false;
+    if (unsub) unsub(); unsub = null; clearInterval(timer); clearTimeout(moodTimer); clearTimeout(boredTimer);
     Fuzz.unmount(); root = null;
   };
 

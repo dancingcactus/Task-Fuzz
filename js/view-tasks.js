@@ -7,15 +7,15 @@
   var finQ = '', finHits = null, finAsk = 0, finTimer = 0;
 
   var TABS = {
-    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude, or coming back later. Fuzz works on a few at once.' },
-    parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. Fuzz only speaks up when something new comes in about one.' },
+    current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude or Copilot, or coming back later. Fuzz works on a few at once.' },
+    parked: { label: 'Parked', cols: ['Status', 'Parked', 'Note'], states: ['parked'], blurb: 'Out of triage with no date. Parked tasks never nag. A few a week come back, on days you have room, to ask if you still want them, and one wakes up if something new comes in about it.' },
     waiting: { label: 'Waiting on others', cols: ['Waiting on', 'Waiting', 'Next check'], states: ['waiting'], blurb: 'You’re blocked until someone gets back to you. Fuzz checks back on each one, and a reply brings it straight back to triage.' },
     done: { label: 'Done', cols: ['Result', 'Finished', 'Summary'], states: ['done'], blurb: 'Finished work. Open any task to see exactly what was done, sent and decided.' },
     letgo: { label: 'Let go', cols: ['Status', 'Let go', 'Note'], states: ['letgo'], blurb: 'Things you decided not to carry. Bring any of them back, no questions asked.' }
   };
   function cells(it, key) {
     if (key === 'current') {
-      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In Claude', 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
+      var m = { review: ['Needs your OK', 'warn'], ai: ['Fuzz working', 'accent'], 'ai-queued': ['Next up', 'muted'], sending: ['Sending', 'accent'], mine: ['With you', 'muted'], session: ['In ' + Store.workIn, 'muted'], scheduled: ['Scheduled', 'muted'] }[it.state];
       if (it.gathering) m = ['Gathering context', 'accent'];
       return { tone: m[1], c2: m[0], c3: it.age, c4: Store.nowText(it) || '—' };
     }
@@ -38,6 +38,15 @@
     return '<li><button type="button" class="lrow' + (cls ? ' ' + cls : '') + '" data-open="' + it.id + '">' +
       '<span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source) + (it.updated ? ' · Updated' : '') + (Store.partOf(it) ? ' · ' + esc(Store.partOf(it)) : '') + '</span></span>' +
       '<span class="lrow-side">' + UI.pill(status, tone) + (sub ? '<span class="lrow-sub">' + esc(sub) + '</span>' : '') + '</span></button></li>';
+  }
+  /* What's in Triage, closed until you ask. Picking one opens it first in Triage. */
+  function decideHTML(q) {
+    var rows = q.map(function (it) {
+      var kind = it.kind === 'entity' || it.kind === 'dup' ? 'Question' : it.state === 'review' ? 'Draft' : it.handedBack ? 'Came back' : 'Task';
+      return '<li><button type="button" class="lrow" data-pick="' + it.id + '"><span class="lrow-main"><span class="rt">' + esc(it.title) + '</span><span class="rs">' + esc(it.source || '') + '</span></span>' +
+        '<span class="lrow-side">' + UI.pill(kind, it.dueAt ? 'warn' : 'muted') + '</span></button></li>';
+    });
+    return '<details class="decide-more" id="decide-list"' + (openSecs['decide-list'] ? ' open' : '') + '><summary>See what’s in Triage</summary><ul class="lrows" aria-label="Cards in Triage">' + rows.join('') + '</ul></details>';
   }
   function sectionHTML(id, title, rows, empty, extra) {
     if (!rows.length && !empty) return '';
@@ -77,7 +86,7 @@
     var mine = Store.inState('review').filter(function (it) { return !Store.inQueue(it.id); });
     var r = mine.map(function (it) { return rowHTML(it, 'Needs your OK', 'warn', 'You set it aside'); });
     Store.inState('mine').forEach(function (it) { r.push(rowHTML(it, 'With you', 'accent', it.now)); });
-    Store.inState('session').forEach(function (it) { r.push(rowHTML(it, 'In Claude', 'muted', 'Fuzz keeps the sources open')); });
+    Store.inState('session').forEach(function (it) { r.push(rowHTML(it, 'In ' + Store.workIn, 'muted', it.now || 'Fuzz keeps the sources open')); });
     return r;
   }
 
@@ -124,6 +133,8 @@
     root.querySelector('#board').addEventListener('click', function (e) {
       var o = e.target.closest('[data-older]');
       if (o) { Live.loadFinished(o.dataset.older).then(function (it) { open(it.id, o); }, function () { Say.tell('That task wouldn’t open. Try again.'); }); return; }
+      var p = e.target.closest('[data-pick]');
+      if (p) { Store.pick(p.dataset.pick); location.hash = '#/triage'; return; }
       var b = e.target.closest('[data-open]'); if (!b) return;
       open(b.dataset.open, b);
     });
@@ -144,8 +155,8 @@
     var board = root.querySelector('#board');
     /* Live updates keep your place: focus returns to the same row */
     var ae = document.activeElement, keep = ae && board.contains(ae) ? (ae.dataset.open || ae.id || null) : null;
-    var q = Store.queue().length;
-    var h = q ? '<a class="decide" href="#/triage"><span class="decide-n">' + q + '</span><span class="decide-t"><strong>To decide</strong>' + (q === 1 ? '1 card' : q + ' cards') + ' in Triage</span><span class="decide-go" aria-hidden="true">→</span></a>'
+    var queue = Store.queue(), q = queue.length;
+    var h = q ? '<a class="decide" href="#/triage"><span class="decide-n">' + q + '</span><span class="decide-t"><strong>To decide</strong>' + (q === 1 ? '1 card' : q + ' cards') + ' in Triage</span><span class="decide-go" aria-hidden="true">→</span></a>' + decideHTML(queue)
       : '<p class="decide decide--clear">Nothing to decide. Triage is clear.</p>';
     h += sectionHTML('yours', 'Yours', yoursRows(), 'Nothing is waiting on you right now.');
     h += laneHTML();
@@ -182,6 +193,7 @@
       act('Hand to Fuzz', 'secondary', function () { Store.handToFuzz(id); }, 'Handed to Fuzz.');
     } else if (it.state === 'session') {
       act('Mark done', 'primary', function () { Store.markDone(id); }, 'Marked done.');
+      if (Live.on()) act('Open in ' + Store.workIn + ' again', 'secondary', function () { Live.openSession(id); }, 'Opening it in ' + Store.workIn + '.');
       act('Pull back into triage', 'secondary', function () { Store.bringBack(id, 'front'); }, 'Pulled back into triage.');
     } else if (it.state === 'scheduled') {
       act('Bring back now', 'primary', function () { Store.bringBack(id, 'front'); }, 'Moved back into triage.');
@@ -243,6 +255,7 @@
     if (it.aiNote) h += '<section class="ainote"><h3>' + (it.state === 'review' ? 'What Fuzz did' : HEAD[tab]) + '</h3><p>' + UI.text(Store.nowText(it) && tab === 'current' && it.state === 'ai' ? Store.nowText(it).replace(/[.!]+$/, '') + '. ' + it.aiNote : it.aiNote) + '</p></section>';
     if (it.code && it.code.length) h += '<section><h3>Code</h3>' + CodeView.section(it.code, 'dlg:' + it.id) + '</section>';
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
+    if (it.people && it.people.length) h += '<section><h3>People</h3>' + UI.peopleHTML(it.people) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
     if (!draft) h += actionsRow(acts, false);
     return h + UI.idTag(it);
@@ -256,6 +269,7 @@
     d.className = 'dlg'; d.setAttribute('aria-labelledby', 'dlg-title');
     d.innerHTML = '<div class="dlg-in" id="dlg-in"></div>';
     document.body.appendChild(d); dlg = d;
+    UI.wireSources(d, function () { return Store.item(openId); });
     d.addEventListener('close', function () { d.remove(); if (dlg === d) { dlg = null; openId = null; } if (trigger && document.body.contains(trigger)) trigger.focus(); });
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }

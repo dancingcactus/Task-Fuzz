@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, scheduler, tasks
+from . import answers, cards, config, engine, events, groups, people, scheduler, sessions, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -68,6 +68,7 @@ def task_view(core, t, full=False):
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
                                   "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
+        out["people"] = people.for_task(core, t)
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
         out["files"] = files.listing(core, t["id"])
@@ -88,6 +89,7 @@ class App:
         self.send_kicked = {}
         self.gather_kicked = {}
         self.discovering = {}   # (user, client) -> {"state": running | error, "error"}
+        self.boot = f"{os.getpid()}-{int(time.time() * 1000)}"
         self._mu = threading.Lock()
         self.changed = threading.Condition()
 
@@ -115,6 +117,7 @@ class App:
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
+            ("POST", r"/tasks/(\d+)/open", self.open_session),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
             ("DELETE", r"/tasks/(\d+)/files/(\d+)", self.remove_file),
@@ -128,6 +131,12 @@ class App:
             ("PUT", r"/setup/folder", self.setup_folder),
             ("POST", r"/setup/folder/choose", self.setup_choose_folder),
             ("POST", r"/setup/done", self.setup_done),
+            ("GET", r"/onboarding", self.onboarding_get),
+            ("PUT", r"/onboarding", self.onboarding_put),
+            ("POST", r"/onboarding/setup/(lookup|folder|theme)", self.onboarding_setup),
+            ("POST", r"/onboarding/kickoff", self.onboarding_kickoff),
+            ("GET", r"/hours", self.hours_get),
+            ("PUT", r"/hours", self.hours_put),
             ("GET", r"/groups", self.list_groups),
             ("POST", r"/groups/(\d+)/(rename|take_out|wrap)", self.group_action),
             ("GET", r"/cards", self.list_cards),
@@ -154,7 +163,8 @@ class App:
         return {"tasks": [task_view(core, t) for t in tasks.list_tasks(core, q.get("state"), closed_days=days)],
                 "max_working": scheduler.budget(core)["max_working"],
                 "finished_window_days": tasks.FINISHED_WINDOW_DAYS,
-                "finished_older": 0 if days is None else tasks.finished_older(core)}
+                "finished_older": 0 if days is None else tasks.finished_older(core),
+                "work_in": sessions.label(core)}
 
     def search_tasks(self, core, m, body, q):
         return {"tasks": [task_view(core, t) for t in tasks.search_finished(core, q.get("q"), q.get("limit") or 50)]}
@@ -172,8 +182,11 @@ class App:
 
     def task_action(self, core, m, body, q):
         tid, act = int(m.group(1)), m.group(2)
+        from . import onboarding
+        if act == "assign" and onboarding.is_kickoff(core, tid) and tasks.get(core, tid)["state"] == "triage":
+            return self.kickoff_assign(core, tid)
         if act == "assign":
-            tasks.assign(core, tid, body.get("instructions"))
+            tasks.assign(core, tid, body.get("instructions"), refs=body.get("refs"))
         elif act == "done":
             tasks.done(core, tid)
         elif act == "park":
@@ -200,6 +213,10 @@ class App:
             tasks.bring_back(core, tid, where=where, reason="You brought this back.", type="task.reopened",
                              tags=("returning",))
         return {"task_id": tid, "state": tasks.get(core, tid)["state"]}
+
+    def open_session(self, core, m, body, q):
+        """Work in Claude (or Copilot, when that's the engine): a Terminal session started on the task."""
+        return sessions.open_session(core, int(m.group(1)))
 
     def upload(self, core, m, body, q):
         """The raw file is the body: POST /tasks/14/files?name=budget.pdf with its Content-Type."""
@@ -288,6 +305,53 @@ class App:
         from . import setup
         return setup.finish(core, body.get("done", True))
 
+    # ---- the onboarding: where you are in it, your working hours, the setup cards after it
+    def onboarding_get(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.view(core)
+
+    def onboarding_put(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.update(core, body)
+
+    def onboarding_setup(self, core, m, body, q):
+        """{answer: yes | not_now} on the setup card named in the path."""
+        from . import onboarding
+        return onboarding.answer_setup(core, m.group(1), body.get("answer"))
+
+    def onboarding_kickoff(self, core, m, body, q):
+        """The end of the onboarding: Fuzz's own task, "Let me find your asks", in Triage. Made once."""
+        from . import onboarding
+        return onboarding.kickoff(core), 201
+
+    def kickoff_assign(self, core, task_id, card=None):
+        """You handed Fuzz the kickoff task: ask the app what it can reach (one run, in the background, like
+        setup's discovery), then one permission card per source."""
+        from . import onboarding
+        client = onboarding.start_kickoff(core, task_id, card)
+        if client:
+            def work():
+                from . import connectors
+                err = None
+                try:
+                    connectors.discover(core, client)
+                except Exception as e:   # said on the task, which comes back to you
+                    err = str(e)
+                with core.lock:
+                    onboarding.after_discovery(core, task_id, err)
+                self._notify()
+            threading.Thread(target=work, daemon=True).start()
+        return {"task_id": task_id, "state": tasks.get(core, task_id)["state"], "kickoff": True}
+
+    def hours_get(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.hours(core)
+
+    def hours_put(self, core, m, body, q):
+        """{hours: [from, until] | null, weekends}: when Fuzz reads for new asks. null is no fixed hours."""
+        from . import onboarding
+        return onboarding.set_hours(core, body)
+
     def add_moment(self, core, m, body, q):
         """A described date you know yourself: {label, at, key?, cancelled?}."""
         from . import timeres
@@ -320,7 +384,17 @@ class App:
     def answer(self, core, m, body, q):
         if "option" not in body:
             raise FuzzError("option is required", "option")
-        out = answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
+        from . import onboarding
+        card = cards.get(core, int(m.group(1)))
+        kick = card["status"] == "open" and onboarding.is_kickoff(core, card["task_id"])
+        if kick and card["kind"] == "task" and body["option"] in ("assign", "quick"):
+            return self.kickoff_assign(core, card["task_id"], card)
+        option = body["option"]
+        if kick and card["kind"] == "permission" and option == "allow_once":
+            option = "always_allow"   # reading is the point of these cards: allowing turns its tools on
+        out = answers.answer(core, int(m.group(1)), option, body.get("value"))
+        if kick and card["kind"] == "permission":
+            onboarding.after_answer(core, card["task_id"])
         if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
         return out
@@ -361,7 +435,8 @@ class App:
         return self.me_get(core, m, body, q)
 
     def engine_get(self, core, m, body, q):
-        return engine.get(core)
+        """?start=0 skips starting each client's MCP servers: quick, for the onboarding's app choice."""
+        return engine.get(core, check_start=q.get("start") != "0")
 
     def engine_check(self, core, m, body, q):
         return engine.get(core, refresh=True)
@@ -425,7 +500,8 @@ def make_handler(app):
             q = {k: v[-1] for k, v in parse_qs(url.query).items()}
             path = url.path.rstrip("/") or "/"
             if method == "GET" and path == "/health":
-                return self._send(200, {"ok": True})
+                # boot changes when the server restarts, so a page can tell an install restarted it
+                return self._send(200, {"ok": True, "boot": app.boot})
             if method == "GET" and path == "/events/stream":
                 return self._stream(q)
             for m, rx, h in routes:

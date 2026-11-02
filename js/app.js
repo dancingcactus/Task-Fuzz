@@ -5,29 +5,42 @@
     triage: { view: window.TriageView, title: 'Triage' },
     tasks: { view: window.TasksView, title: 'Lineup' },
     artifacts: { view: window.ArtifactsView, title: 'Artifacts' },
-    capture: { view: window.CaptureView, title: 'New task' }
+    capture: { view: window.CaptureView, title: 'New task' },
+    welcome: { view: window.Onboard.view, title: 'Welcome' },
+    settings: { view: window.SettingsView, title: 'Settings' }
   };
   var PREF_KEY = 'fuzz.prefs.v1';
   var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
-  var current = null, currentName = null;
+  var current = null, currentName = null, tempCalm = false, reduce = false;
+  /* The theme on screen: your pick, or with Random, the one picked when this page loaded */
+  var shown = 'terracotta', backFrom = null;
 
   function load() {
     try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) prefs = Object.assign(prefs, p); } catch (e) { /* storage can be blocked */ }
-    if (!Themes.list.some(function (t) { return t.id === prefs.theme; })) prefs.theme = 'terracotta';
+    if (prefs.theme !== 'random' && !Themes.list.some(function (t) { return t.id === prefs.theme; })) prefs.theme = 'terracotta';
+    shown = prefs.theme === 'random' ? Themes.pickRandom() : prefs.theme;
   }
   function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
-  function paint() { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); save(); paintPopover(); }
+  function paint() { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); save(); }
 
   var App = {
-    setTheme: function (id) { prefs.theme = id; paint(); },
+    /* Random picks one now, so choosing it shows a change; after that, one per page load */
+    setTheme: function (id) { prefs.theme = id; shown = id === 'random' ? Themes.pickRandom() : id; paint(); },
+    shownTheme: function () { return shown; },
+    themePicks: themePicks,
     setMode: function (m) { prefs.mode = m; paint(); },
     setContrast: function (c) { prefs.contrast = c; paint(); },
     setCodeFont: function (id) { prefs.codeFont = id; paint(); },
     setCalm: function (v) {
-      prefs.calm = !!v; Fuzz.setCalm(prefs.calm); save(); paintPopover();
+      prefs.calm = !!v; Fuzz.setCalm(prefs.calm || tempCalm); save();
     },
+    /* The onboarding's intro is always calm, whatever the setting; the setting comes back after it */
+    tempCalm: function (on) { tempCalm = !!on; Fuzz.setCalm(prefs.calm || tempCalm || reduce); },
+    prefs: function () { return prefs; },
     navigate: function (hash) { location.hash = hash; },
+    /* Leave Settings for whatever you were doing before it */
+    leaveSettings: function () { App.navigate(backFrom && backFrom !== '#/settings' ? backFrom : '#/triage'); },
     refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
     resetDemo: function () {
       if (Live.on()) { Live.sync().then(function () { Say.tell('Up to date with Fuzz.'); }); return; }
@@ -52,10 +65,8 @@
         '<div class="undowrap"><button type="button" class="themebtn undobtn" id="undobtn" aria-expanded="false" aria-controls="undopop" aria-haspopup="dialog" disabled>' +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span class="lbl">Undo</span><span class="navcount" id="undocount"></span></button>' +
         '<div class="themepop undopop" id="undopop" role="dialog" aria-label="Recent actions" hidden></div></div>' +
-        '<button type="button" class="themebtn iconbtn" id="setbtn" aria-label="Settings" title="Settings" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>' +
-        '<div class="themepop" id="themepop" role="dialog" aria-label="Settings" hidden></div></div>';
-    document.getElementById('setbtn').addEventListener('click', function () { toggleUndo(false); togglePopover(); });
-    document.getElementById('undobtn').addEventListener('click', function () { togglePopover(false); toggleUndo(); });
+        '<a href="#/settings" data-nav="settings" class="themebtn iconbtn" id="setbtn" aria-label="Settings" title="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>';
+    document.getElementById('undobtn').addEventListener('click', function () { toggleUndo(); });
     document.getElementById('undopop').addEventListener('click', function (e) {
       e.stopPropagation();
       var b = e.target.closest('[data-undo]'); if (!b) return;
@@ -68,36 +79,17 @@
     var downAt = null;
     document.addEventListener('pointerdown', function (e) { downAt = e.target; }, true);
     document.addEventListener('click', function (e) {
-      var t = downAt && downAt.isConnected ? downAt : e.target, pop = document.getElementById('themepop');
-      if (!pop.hidden && !t.closest('#themepop') && !t.closest('#setbtn')) togglePopover(false);
+      var t = downAt && downAt.isConnected ? downAt : e.target;
       if (!document.getElementById('undopop').hidden && !t.closest('#undopop') && !t.closest('#undobtn')) toggleUndo(false);
     });
     /* Escape closes an open popover wherever focus is, before any view sees the key. */
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
-      var open = !document.getElementById('themepop').hidden ? ['setbtn', togglePopover] : !document.getElementById('undopop').hidden ? ['undobtn', toggleUndo] : null;
+      var open = !document.getElementById('undopop').hidden ? ['undobtn', toggleUndo] : null;
       if (!open) return;
       e.preventDefault(); e.stopPropagation(); open[1](false); document.getElementById(open[0]).focus();
     }, true);
-    document.getElementById('themepop').addEventListener('click', function (e) {
-      e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup]'); if (!t) return;
-      if (t.dataset.disconnect) { Live.switchAccount(); return; }
-      if (t.dataset.setup) { togglePopover(false); Setup.open(); return; }
-      if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
-      else if (t.dataset.mode) App.setMode(t.dataset.mode);
-      else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
-      else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
-    });
-    document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); if (e.target.id === 'codefont') App.setCodeFont(e.target.value); });
     Progress.mount(document.getElementById('prog'));
-    paintPopover();
-  }
-  function togglePopover(force) {
-    var pop = document.getElementById('themepop'), btn = document.getElementById('setbtn');
-    var show = force === undefined ? pop.hidden : force;
-    pop.hidden = !show; btn.setAttribute('aria-expanded', String(show));
-    if (show) { var first = pop.querySelector('[aria-pressed="true"]'); if (first) first.focus(); }
   }
   function toggleUndo(force) {
     var pop = document.getElementById('undopop'), btn = document.getElementById('undobtn');
@@ -122,32 +114,32 @@
       return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
-  function paintPopover() {
-    var pop = document.getElementById('themepop'); if (!pop) return;
+  /* The theme choices on the Settings page: the eight, Random, then the specials */
+  function themePicks(attr) {
     var mode = Themes.resolveMode(prefs.mode);
-    var ae = document.activeElement, focused = ae && pop.contains(ae) ? ae.getAttribute('data-theme-id') || ae.getAttribute('data-mode') || ae.getAttribute('data-contrast') : null;
-    pop.innerHTML =
-      '<h2 class="pop-title">Settings</h2><h2>Theme</h2><div class="palettes" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
-        var p = Themes.palette(t.id, mode, prefs.contrast), on = t.id === prefs.theme;
-        return '<button type="button" class="pal" data-theme-id="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
-      }).join('') + '</div>' +
-      '<h2>Appearance</h2><div class="segrow" role="group" aria-label="Appearance">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']].map(function (m) { return '<button type="button" class="seg" data-mode="' + m[0] + '" aria-pressed="' + (prefs.mode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
-      '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
-      '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
-      '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
-      (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
-        : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
-    if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
+    function sw(p) { return '<span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span>'; }
+    function pick(t) {
+      var on = t.id === prefs.theme;
+      return '<button type="button" class="pal" ' + attr + '="' + t.id + '" aria-pressed="' + on + '">' + sw(Themes.palette(t.id, mode, prefs.contrast)) + '<span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
+    }
+    var picks = Themes.list.filter(function (t) { return !t.special; }).map(pick);
+    var rnd = prefs.theme === 'random', today = rnd && Themes.byId(shown);
+    var mix = ['honey', 'lagoon', 'plum'].map(function (id) { return Themes.palette(id, mode, prefs.contrast).accent; });
+    picks.push('<button type="button" class="pal" ' + attr + '="random" aria-pressed="' + rnd + '"><span class="pal-sw pal-rnd" style="background:' + Themes.palette('terracotta', mode, prefs.contrast).bg + ';border-color:' + Themes.palette('terracotta', mode, prefs.contrast).line + '">' +
+      mix.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('') + '</span><span class="pal-n">Random</span><span class="pal-f">' +
+      (today ? 'Today: ' + esc(today.name) : 'A new one each time you open Fuzz') + '</span></button>');
+    /* The special ones on a line of their own, after a divider: Random never picks them */
+    var special = Themes.list.filter(function (t) { return t.special; });
+    if (special.length) picks.push('<div class="pal-divider" role="separator"><span>Specials</span><small>Random skips these</small></div>' + special.map(pick).join(''));
+    return picks.join('');
   }
-
   /* ---------- Router ---------- */
   function route(force) {
     var name = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'triage';
     if (!ROUTES[name]) name = 'triage';
     if (!force && name === currentName) return;
     if (current) current.unmount();
-    togglePopover(false); toggleUndo(false);
+    toggleUndo(false);
     var main = document.getElementById('view');
     main.innerHTML = '';
     main.className = 'view view--' + name;
@@ -165,7 +157,7 @@
   }
 
   function updateCount() {
-    var has = Store.get().queue.length > 0, el = document.getElementById('navcount');
+    var has = Store.get().queue.length > 0 || Onboard.hasQuestion(), el = document.getElementById('navcount');
     if (!el) return;
     var glyph = has ? '' : '✓';
     if (el.textContent !== glyph) el.textContent = glyph;
@@ -184,24 +176,35 @@
     if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
     var t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.tagName === 'SELECT')) return;
     if (document.querySelector('dialog[open]')) return;
+    if (Onboard.blocksCapture()) return;   /* on the onboarding's form, N would skip past what Fuzz needs */
     e.preventDefault(); App.navigate('#/capture');
   });
 
   /* ---------- Boot ---------- */
   load();
-  Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont);
-  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
-  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont);
+  Themes.onSystemChange(function () { if (prefs.mode === 'auto') Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); });
+  reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;
   /* Me shows your real queue from `fuzz serve` (js/live.js), Demo the invented data; js/account.js asks which */
   Live.boot(function () {
     if (!Live.on()) { Store.reset(); Store.startWork(); }
     buildHeader();
-    window.addEventListener('hashchange', function () { route(false); });
     setInterval(updateCount, 1000);
     updateCount();
-    route(true);
-    Setup.maybeOpen();
+    /* The onboarding resumes where you left off; the old guided setup stays in Settings. The header
+       waits out of sight until it knows, so the intro never flashes it. */
+    document.body.classList.add('onb-wait');
+    Onboard.start().then(function (hash) {
+      if (hash && location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
+      window.addEventListener('hashchange', function (e) {
+        /* Remember where Settings was opened from, so leaving it goes back there */
+        var from = (e.oldURL || '').split('#')[1];
+        if (from && from.indexOf('/settings') !== 0) backFrom = '#' + from;
+        route(false);
+      });
+      route(true);
+    });
   });
 })();

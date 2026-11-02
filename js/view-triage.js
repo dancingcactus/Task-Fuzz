@@ -12,14 +12,14 @@
   var esc = UI.esc;
 
   var root, card, stack, stage, alive = false, busy = false, epoch = 0, unsub = null;
-  var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false;
+  var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false, scOpen = false;
   /* Your answer and follow-up, kept by the core (Store.checkin; POST /checkin) once the check-in closes */
   var ciAnswer = null, ciFollow = null;
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
-  var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
-  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, attachOpen = {};
-  var docClick = null, docKey = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
+  var shownCard = null, lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
+  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, refs = {}, refPick = {};
+  var docClick = null, docKey = null, unhold = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -69,7 +69,7 @@
   function release() { if (busy) lock(false); }
 
   V.mount = function (container) {
-    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; tab = null; streak = 0;
+    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; scOpen = false; scState = null; scheduling = false; askingWho = false; tab = null; streak = 0;
     root = container;
     root.innerHTML = layout();
     card = $('#card'); stack = $('#stack'); stage = $('#stage');
@@ -92,16 +92,19 @@
     if (unsub) unsub(); unsub = null;
     Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
+    if (unhold) unhold(); unhold = null; Dictate.abort();
     if (docKey) document.removeEventListener('keydown', docKey); docKey = null;
+    if (docDrag) Object.keys(docDrag).forEach(function (n) { window.removeEventListener(n, docDrag[n]); }); docDrag = null;
     if (offSay) offSay(); offSay = null; clearTimeout(echoTimer);
     if (onScroll) window.removeEventListener('scroll', onScroll); onScroll = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
+  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
-    lock(false); stats(); showNext();
+    lock(false); stats();
+    if (!scOpen) showNext();   /* a setup card stays until you answer it */
   };
 
   function greet() {
@@ -123,22 +126,28 @@
 
   function onStore(e) {
     if (!alive) return;
+    /* The task in front now asks something else (Fuzz's task moving on to a permission card, say): the card
+       on screen is out of date, so the new one comes in. Same card, new details: left alone, as ever. */
+    var f = cur();
+    if (f && shownCard && f.id === shownCard.id && (f.cardId !== shownCard.cardId || f.kind !== shownCard.kind) &&
+        card.style.display !== 'none' && !busy && !ciOpen && !scOpen) { showNext(); return; }
     if (e.type === 'handback') {
       stats(); updateStack(true);
       /* No announcement: the handback waits as its own card at the back of the queue. */
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'review') {
       /* A finished draft arrives as its own card at the back of the queue, with no announcement. */
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'attach') {
       var it = cur(); if (it && it.id === e.id && $('#rich')) { tab = 'sources'; $('#rich').innerHTML = richHTML(it); }
+      if (it && it.id === e.id) paintRefs();
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'work') {
       stats();
-      if (card.style.display === 'none' && !ciOpen) renderEmpty();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) renderEmpty();
     } else if (e.type === 'wrapped') {
       /* The last task in a group finished, so the group is finished too. Worth a small party. */
       Fuzz.setMood('proud'); Fuzz.pAnim('hop'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
@@ -152,10 +161,10 @@
   /* The key guide (press ? on Triage). Letters act on a task card; numbers pick from whatever choice is showing. */
   function keysHTML() {
     var g = [
-      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
+      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in ' + Store.workIn], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
       ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
-      ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
+      ['Anywhere', [['N', 'New task (Esc goes back)'], [Dictate.key, 'Hold to dictate into the box for Fuzz'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
       '<p class="meta">A card without a draft starts with the cursor in its text box. Press Esc first to use the letter and number keys.</p>' +
@@ -186,11 +195,12 @@
             '<div class="ci-break" id="ci-break" hidden><div class="breath" aria-hidden="true"></div><p class="ci-time" id="ci-time">5:00</p><p class="meta">Fuzz has the queue. Step away for a bit.</p><button class="btn primary" data-ci="back">I’m back</button></div>' +
             '<div class="ci-foot"><button type="button" class="linkbtn" data-ci="skip" id="ci-skip" aria-keyshortcuts="Escape">Skip' + kbd('Esc') + '</button></div>' +
           '</article>' +
+          '<article class="card setupcard" id="setupcard" hidden aria-labelledby="sc-h"></article>' +
         '</div>' +
       '</section>' +
       '<div class="triage-foot"><button type="button" class="linkbtn" id="dropbtn"></button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="parkbtn" aria-expanded="false" aria-controls="parkform" aria-keyshortcuts="T">Park a stray thought' + kbd('T') + '</button><span class="keys-sep" aria-hidden="true">·</span><button type="button" class="linkbtn keys-link" id="keysbtn" aria-keyshortcuts="?">Keys</button></div>' +
       '<dialog class="dlg keys-dlg" id="keysdlg" aria-labelledby="keys-h"><div class="dlg-in"><div class="dlg-top"><h2 id="keys-h">Keys</h2><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' + keysHTML() + '</div></dialog>' +
-      '<form class="parkform" id="parkform" hidden><label for="parktext">Park it without leaving this card</label><div class="parkrow"><input id="parktext" type="text" autocomplete="off" placeholder="A stray thought, in a few words"><button class="btn" type="submit">Park</button></div></form>' +
+      '<form class="parkform" id="parkform" hidden><label for="parktext">Park it without leaving this card</label><div class="parkrow"><input id="parktext" type="text" aria-describedby="parkhint" autocomplete="off" placeholder="A stray thought, in a few words"><button class="btn" type="submit">Park</button></div><p class="parkhint" id="parkhint">It goes to Parked and this card stays put. Fuzz brings a few parked things back each week, on days you have room, to ask if you still want them.</p></form>' +
       (LAB ? '<details class="playground"><summary>Fuzz mood lab <span>for refining the character</span></summary><div class="lab">' +
         '<div class="lab-row" role="group" aria-label="Moods">' + [['Idle', 'idle'], ['Eager', 'eager'], ['Thinking', 'thinking'], ['Working', 'working'], ['Happy', 'happy'], ['Proud', 'proud'], ['Grateful', 'grateful'], ['Sheepish', 'sheepish'], ['Puzzled', 'puzzled'], ['Worried', 'worried'], ['Bored', 'bored'], ['Sleepy', 'sleepy'], ['Caring', 'caring'], ['Stare', 'stare'], ['Screen off', 'chill']].map(function (m) { return '<button type="button" class="btn small" data-demo="mood" data-v="' + m[1] + '">' + m[0] + '</button>'; }).join('') + '</div>' +
         '<div class="lab-row" role="group" aria-label="Deadline levels">' + [['Due today', 1], ['Under 2 hours', 2], ['Under 30 min', 3]].map(function (m) { return '<button type="button" class="btn small" data-demo="rush" data-v="' + m[1] + '">' + m[0] + '</button>'; }).join('') + '</div>' +
@@ -209,25 +219,16 @@
     /* count what's cleared, never what's left */
     document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
   }
+  /* The cards underneath are only a stack: what's on them, or how many, stays out of view until each is the one in front */
   function updateStack(arriveLast) {
-    stack.querySelectorAll('.ghost, .stacktags').forEach(function (g) { g.remove(); });
+    stack.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
     var q = Store.queue(), n = Math.min(Math.max(q.length - 1, 0), 3);
-    /* labels for the cards underneath sit above the whole stack, so the front card never covers them */
-    var tags = document.createElement('div'); tags.className = 'stacktags'; tags.setAttribute('aria-hidden', 'true');
     for (var i = n; i >= 1; i--) {
       var g = document.createElement('div'); g.className = 'ghost';
       g.style.transform = 'translateY(-' + (i * 9) + 'px) scale(' + (1 - i * 0.035) + ')';
-      var item = q[i];
-      if (item && item.handedBack) { var t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Handed back'; tags.appendChild(t); }
-      else if (item && item.dueAt) { var t2 = document.createElement('span'); t2.className = 'tag due t2'; t2.textContent = 'Due soon'; tags.appendChild(t2); }
       if (arriveLast && i === n && q.length - 1 <= 3) g.classList.add('arrive');
       stack.insertBefore(g, card);
     }
-    if (tags.children.length) stack.insertBefore(tags, card);
-    /* The tags are visual; screen readers get one sentence about what is behind this card */
-    var behind = q.slice(1), back = behind.filter(function (i) { return i.handedBack; }).length, due = behind.filter(function (i) { return i.dueAt; }).length;
-    var sr = stack.querySelector('#stack-sr') || stack.insertBefore(Object.assign(document.createElement('p'), { id: 'stack-sr', className: 'sr' }), stack.firstChild);
-    sr.textContent = behind.length ? behind.length + ' more after this' + (due ? ', ' + due + ' with a deadline' : '') + (back ? ', ' + back + ' handed back' : '') + '.' : '';
   }
 
   /* ---------- The card ---------- */
@@ -254,6 +255,7 @@
       tiles.push('<button type="button" class="when" data-sched="back" aria-keyshortcuts="E"><span>End of the list' + kbd('E') + '</span><small>After everything else waiting here</small></button>');
       if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
       var meta = it.state === 'review' ? 'Pick a rough time. The draft waits, unsent, and comes back then for your OK.'
+        : it.result ? 'Pick a rough time. What Fuzz found waits, and comes back then to ask if it’s done.'
         : 'Pick a rough time. Fuzz finds the right moment around your day. Anything you wrote in the instructions, Fuzz looks into before it comes back.';
       return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">' + meta + '</p>' +
         '<div class="when-grid">' + tiles.join('') + '</div>' +
@@ -270,11 +272,12 @@
         '<div class="sched-links"><button type="button" class="linkbtn" data-act="wait-cancel" aria-keyshortcuts="Escape">Back to the card</button></div></form>';
     }
     if (it.state === 'review') return reviewActionsHTML(it);
-    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further */
+    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further.
+       Not sure yet? Ask me later opens the Schedule picker, and the result comes back to ask again. */
     var res = !!it.result;
     var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
     return '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
-      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in Claude' + kbd('C') + '</button>') +
+      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>') +
       (res ? '' : '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Schedule' + kbd('S') + '</button>') +
       '<div class="split"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
         '<button type="button" class="btn more-btn" data-act="more" aria-haspopup="menu" aria-expanded="false" aria-label="Clear it another way" title="Clear it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
@@ -282,29 +285,69 @@
           '<button type="button" role="menuitem" data-act="park" aria-keyshortcuts="P"><b>Park it' + kbd('P') + '</b><span>Out of triage with no date. It waits in Parked until someone follows up, or you bring it back.</span></button>' +
           '<button type="button" role="menuitem" data-act="waiting" aria-keyshortcuts="W"><b>Waiting on someone' + kbd('W') + '</b><span>You’re blocked until they get back to you. Fuzz checks back.</span></button>' +
           '<button type="button" role="menuitem" data-act="theirs" aria-keyshortcuts="X"><b>Not mine' + kbd('X') + '</b><span>It’s someone else’s to do. Fuzz lets it go, and brings it back if a new ask needs you.</span></button>' +
-        '</div></div>' + (res ? assignBtn : '') + '</div>';
+        '</div></div>' + (res ? '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S">Ask me later' + kbd('S') + '</button>' + assignBtn : '') + '</div>';
   }
 
-  /* Extra context for Fuzz: folded away until you want it, so the card stays one decision */
-  function attachHTML(it) {
-    return '<details class="attach" id="attach"' + (attachOpen[it.id] ? ' open' : '') + '><summary><b>Add files</b> <span>Optional. More for Fuzz to read.</span></summary>' +
-      '<div class="drop" id="adrop"><button type="button" class="dropbtn" id="adropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
-        '<span class="droptxt"><b>Drop files here</b><small>Fuzz reads them with this task. They show up under Sources.</small></span><span class="droplink">Choose files</span></button>' +
-        '<input type="file" id="afile" multiple hidden></div></details>';
+  /* The drop zone shows only while a file is dragged onto the screen; + is the way in otherwise */
+  function dropHTML() {
+    return '<div class="drop" id="adrop" hidden><button type="button" class="dropbtn" id="adropbtn" tabindex="-1"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
+      '<span class="droptxt"><b>Drop files anywhere</b><small>Fuzz reads them with your instructions. They show up under Sources.</small></span></button>' +
+      '<input type="file" id="afile" multiple hidden></div>';
   }
   function addFiles(list) {
     var it = cur(), picked = Array.prototype.slice.call(list || []);
     if (!it || !picked.length) return;
+    /* A file you just added is part of what you're asking: it's picked to read with the instructions */
+    picked.forEach(function (f) { setRef(it, { title: f.name }, true); });
     Store.attach(it.id, picked);
     var line = picked.length === 1 ? 'Got ' + picked[0].name + '. I’ll read it with the task.' : 'Got ' + picked.length + ' files. I’ll read them with the task.';
     Fuzz.say(line, { type: false }); Say.announce(line);
   }
+
+  /* Sources you point Fuzz to with this ask. A source is known by its core id, or by its name until it has one
+     (a file still uploading), so a pick made by name still holds once the core's copy arrives. */
+  function srcKey(s) { return s.id != null ? 'id:' + s.id : 'name:' + s.title; }
+  function isPicked(it, s) { var r = refs[it.id] || []; return r.indexOf(srcKey(s)) > -1 || r.indexOf('name:' + s.title) > -1; }
+  function pickedRefs(it) { return it.sources.filter(function (s) { return isPicked(it, s); }); }
+  function setRef(it, s, on) {
+    var r = (refs[it.id] || []).filter(function (k) { return k !== srcKey(s) && k !== 'name:' + s.title; });
+    if (on) r.push(srcKey(s));
+    refs[it.id] = r;
+  }
+  function refChipsHTML(it) {
+    var on = pickedRefs(it);
+    if (!on.length) return '';
+    return '<ul class="refchips" aria-label="Fuzz reads these first">' + on.map(function (s) {
+      return '<li class="refchip"><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refchip-t">' + esc(s.title) + '</span>' +
+        '<button type="button" class="refx" data-unref="' + esc(srcKey(s)) + '" aria-label="Don’t point Fuzz to ' + esc(s.title) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
+    }).join('') + '</ul>';
+  }
+  /* + adds a source to this ask, as in a chat box: upload a file, or pick one the task already has */
+  function refsHTML(it) {
+    var n = it.sources.length, open = !!refPick[it.id] && n > 0;
+    return '<div class="composer-bar"><div class="plus"><button type="button" class="plusbtn" data-act="plus" aria-haspopup="menu" aria-expanded="false" aria-controls="plusmenu" aria-label="Add a source for Fuzz" title="Add a source"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>' +
+      '<div class="menu plusmenu" role="menu" id="plusmenu" hidden aria-label="Add a source">' +
+        '<button type="button" role="menuitem" data-act="upload"><b>Upload files</b><span>Or drag them anywhere onto the screen.</span></button>' +
+        (n ? '<button type="button" role="menuitem" data-act="refpick"><b>Pick from Sources</b><span>' + n + (n === 1 ? ' source' : ' sources') + ' on this task to point Fuzz to.</span></button>' : '') +
+      '</div></div>' + Dictate.button('instr', 'Dictate instructions', 'plusbtn') + '<div class="refchips-wrap" id="refchips">' + refChipsHTML(it) + '</div></div>' +
+      '<fieldset class="refpick" id="refpick"' + (open ? '' : ' hidden') + '><legend>Point Fuzz to these sources</legend>' + it.sources.map(function (s) {
+        return '<label class="refopt"><input type="checkbox" data-ref="' + esc(srcKey(s)) + '"' + (isPicked(it, s) ? ' checked' : '') + '><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refopt-t">' + esc(s.title) + '</span></label>';
+      }).join('') + '<button type="button" class="linkbtn refpick-done" data-act="refpick">Done</button></fieldset>';
+  }
+  function plusMenu(open, keepFocus) {
+    var m = $('#plusmenu'), b = card.querySelector('[data-act="plus"]'); if (!m || !b) return;
+    m.hidden = !open; b.setAttribute('aria-expanded', String(open));
+    if (open) m.querySelector('button').focus(); else if (!keepFocus) b.focus();
+  }
+  function paintRefs() { var it = cur(), el = $('#refs'); if (it && el) el.innerHTML = refsHTML(it); }
+  function paintRefChips() { var it = cur(), el = $('#refchips'); if (it && el) el.innerHTML = refChipsHTML(it); }
 
   function richAvail(it) {
     var a = [];
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
     if (it.contextMd) a.push(['context', 'Context', null]);
     else if (it.context.length) a.push(['context', 'Context', it.context.length]);
+    if (it.people && it.people.length) a.push(['people', 'People', it.people.length]);
     if (it.code && it.code.length) a.push(['code', 'Code', it.code.length]);
     if (it.log.length) a.push(['done', 'Done so far', it.log.length]);
     if (it.sources.length) a.push(['sources', 'Sources', it.sources.length]);
@@ -319,6 +362,7 @@
     if (t === 'conversation') body = '<ol class="convo">' + it.conversation.map(function (m) { var you = m.who === 'You'; return '<li class="' + (you ? 'you' : 'fuzz') + '"><span class="who">' + (you ? '' : Fuzz.mini('good', { cls: 'who-av' })) + esc(m.who) + ' · <span>' + esc(m.time) + '</span></span><span class="bub">' + esc(m.text) + '</span></li>'; }).join('') + '</ol>';
     else if (t === 'context' && it.contextMd) body = '<div class="md">' + UI.md(it.contextMd) + '</div>';
     else if (t === 'context') body = '<ul class="ctx">' + it.context.map(function (c) { return '<li><i aria-hidden="true"></i><span>' + esc(c) + '</span></li>'; }).join('') + '</ul>';
+    else if (t === 'people') body = UI.peopleHTML(it.people);
     else if (t === 'code') body = CodeView.section(it.code, 'card:' + it.id);
     else if (t === 'done') body = UI.logHTML(it.log);
     else body = UI.sourcesHTML(it.sources);
@@ -376,6 +420,11 @@
       h += '<ul class="mentions">' + it.mentions.map(function (m) { return '<li><span class="pill pill--muted">' + esc(m.where) + '</span><span>' + esc(m.text) + '</span></li>'; }).join('') + '</ul>';
     }
     /* Is it yours? shows what was actually said, and by whom, before you answer */
+    if (it.kind === 'entity' && it.entity === 'is_task' && it.asks) {
+      h += '<fieldset class="asks"><legend>Tick the ones that are yours</legend><ul class="mentions">' + it.asks.map(function (a) {
+        return '<li><label class="check"><input type="checkbox" data-ask="' + a.id + '"' + (edits[it.id + ':ask' + a.id] ? ' checked' : '') + '> <span>' + esc(a.title) + '</span></label></li>';
+      }).join('') + '</ul></fieldset>';
+    }
     if (it.kind === 'entity' && it.entity === 'is_task') {
       var said = it.sources.filter(function (s) { return s.quote; });
       if (said.length) h += '<ul class="mentions">' + said.map(function (s) { return '<li><span class="pill pill--muted">' + esc(s.title || s.type) + '</span><span>' + esc(s.quote) + '</span></li>'; }).join('') + '</ul>';
@@ -393,9 +442,11 @@
   function cardHTML(it) {
     if (it.state === 'review') return reviewHTML(it);
     var isTask = it.kind === 'task';
+    /* The onboarding's first card carries its one lesson (js/onboarding.js) */
+    var g = isTask && Onboard.guide(it);
     var parkrev = isTask && it.review, checkback = isTask && it.checkBack;
     var stale = isTask && !parkrev && !checkback && it.stage === 'stale' && !keptStale[it.id] && !scheduling;
-    var h = tagrow(it) + askHTML(it.ask) + titleHTML(it) + duePanel(it);
+    var h = (g ? g.html : '') + tagrow(it) + askHTML(it.ask) + titleHTML(it) + duePanel(it);
     /* What Fuzz found comes before what you tell him to do, so you edit with the answer in view */
     if (isTask && !stale && it.aiNote) h += findingHTML(it);
     if (it.handedBack && it.quick && it.quick.length) {
@@ -427,16 +478,17 @@
         '<div class="stale-btns"><button type="button" class="btn" data-act="keep" aria-keyshortcuts="K">Yes, keep it' + kbd('K') + '</button><button type="button" class="btn dark" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>';
     } else if (isTask) {
       var val = edits[it.id + ':instr'] !== undefined ? edits[it.id + ':instr'] : (it.instr || it.hint || '');
-      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><textarea id="instr" rows="3">' + esc(val) + '</textarea></div>';
-      h += attachHTML(it);
+      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><div class="composer"><textarea id="instr" rows="3">' + esc(val) + '</textarea><div class="refs" id="refs">' + refsHTML(it) + '</div></div>' + dropHTML() + '</div>';
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
-      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span>Optional. Edit anything.</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
+      /* Fuzz asking what he may read (the onboarding's last task) is a plain yes or no: no notes, no Not sure */
+      if (!it.kickoffAsk) h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span class="instr-side"><span>Optional. Edit anything.</span>' + Dictate.button('note', 'Dictate a note') + '</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>';
+      h +=
         '<div class="actions ent"><button type="button" class="btn primary" data-act="ent-primary" aria-keyshortcuts="1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' + esc(it.primary) + kbd(1) + '</button>' +
         '<button type="button" class="btn" data-act="ent-secondary" aria-keyshortcuts="2">' + esc(it.secondary) + kbd(2) + '</button>' +
         (it.third ? '<button type="button" class="btn" data-act="ent-third" aria-keyshortcuts="3">' + esc(it.third) + kbd(3) + '</button>' : '') +
-        '<button type="button" class="btn" data-act="ent-later" aria-keyshortcuts="' + (it.third ? 4 : 3) + '">Not sure yet' + kbd(it.third ? 4 : 3) + '</button></div>';
+        (it.kickoffAsk ? '' : '<button type="button" class="btn" data-act="ent-later" aria-keyshortcuts="' + (it.third ? 4 : 3) + '">Not sure yet' + kbd(it.third ? 4 : 3) + '</button>') + '</div>';
     }
 
     if (isTask && !parkrev && !checkback) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
@@ -475,17 +527,18 @@
       '<button type="button" class="btn" data-act="revise" aria-expanded="false" aria-controls="revise" aria-keyshortcuts="R">Ask Fuzz to change it' + kbd('R') + '</button>' +
       '<button type="button" class="btn" data-act="notnow" aria-keyshortcuts="L">Not now' + kbd('L') + '</button></div>' +
       (r ? '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>' : it.afterApprove ? '<p class="sendnote">' + esc(it.afterApprove) + '</p>' : '') +
-      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form>';
+      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes">' + Dictate.button('revise-text', 'Dictate what to change') + '<button class="btn" type="submit">Send back to Fuzz</button></div></form>';
   }
 
   /* Text boxes grow to show all their text, so nothing is cut off on a narrow screen */
   function fit(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + ta.offsetHeight - ta.clientHeight + 'px'; }
   function renderCard(it) {
-    lastTask = it; $('#checkin').hidden = true;
+    lastTask = it; shownCard = { id: it.id, cardId: it.cardId, kind: it.kind }; $('#checkin').hidden = true;
     clearTimeout(rushTimer); card.getAnimations().forEach(function (a) { a.cancel(); });
     scheduling = false; askingWho = false; if (tab && !richAvail(it).some(function (a) { return a[0] === tab; })) tab = null;
     card.className = 'card'; card.style.display = ''; card.style.visibility = '';
     card.innerHTML = cardHTML(it);
+    if (Dictate.active() && !document.contains(Dictate.field())) Dictate.abort();
     var ex = stack.querySelector('.empty'); if (ex) ex.remove();
     var dt = $('#drop-label');
     $('#dropbtn').textContent = it.state === 'review' ? 'Discard this draft' : it.kind === 'task' ? 'Drop this task' : 'Dismiss this question';
@@ -539,7 +592,8 @@
   /* Never mid-rush: wait until the time-sensitive cards are handled. */
   function shouldCheckin(next) {
     var waited = !ciCount || Date.now() - ciLastAt >= CI_GAP_MIN * Math.pow(2, ciCount - 1) * 60000;
-    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack;
+    /* nor while Fuzz is asking what he may read (the onboarding's last task): it waits until he's done */
+    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack && !next.kickoff;
   }
   function ciDone() {
     if (ciAnswer && !ciDemo && ciFollow !== 'hold_rest') Store.checkin(ciAnswer, ciFollow);
@@ -555,7 +609,7 @@
     var box = !$('#draft') && window.matchMedia && matchMedia('(pointer: fine)').matches && ($('#instr') || $('#note'));
     return box || $('#ask');
   }
-  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); }
+  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); delete refs[id]; delete refPick[id]; }
   function refocus(el) {
     var a = document.activeElement;
     if (booting || !el || (a && a !== document.body && document.contains(a) && !stack.contains(a))) return;
@@ -595,7 +649,7 @@
      reaction to it until he has finished with the last one (showNext(shown)). */
   function bringNext() {
     var t = Store.queue()[0];
-    if (!t || shouldCheckin(t)) return null;
+    if (!t || shouldCheckin(t) || (!scOpen && Onboard.setupCard(cleared(), true))) return null;
     enterCard(t);
     release();
     return t.id;
@@ -608,14 +662,23 @@
       var t = q[0];
       if (t.id !== shown) {
         if (shouldCheckin(t)) return showCheckin();
+        if (showSetup()) return;
         enterCard(t);
       }
-      if (t.handedBack) {
+      var g = t.kind === 'task' && Onboard.guide(t);
+      if (g) {
+        Fuzz.setMood('happy'); Fuzz.say(g.line, { type: false }); Say.announce(g.line);
+      } else laterTip(t);
+      if (g) {
+        /* the lesson is what he says on this card */
+      } else if (t.handedBack) {
         Fuzz.glitch(600); Fuzz.setMood('sheepish'); Fuzz.setArm('scratch'); Fuzz.pAnim('shrug');
         /* don't hold the busy lock while the line types out */
         Fuzz.say(t.askBack || 'I lost the signal on this one. Can you help me with it?').then(function () { if (alive) { Fuzz.setArm('none'); settleSheepish(); } });
       } else if (t.dueAt) {
         rushBurst(t);
+      } else if (t.kickoffAsk) {
+        Fuzz.setMood('caring'); Fuzz.say('Your call. I only read, and you can change it later.', { type: false });
       } else if (t.kind === 'entity' || t.kind === 'dup') {
         puzzledFor(t);
       } else if (t.isNew) {
@@ -625,6 +688,147 @@
         Fuzz.setMood('idle');
       }
     } catch (err) { if (err !== ABORT) console.error(err); }
+  }
+  /* ---------- Setup cards (js/onboarding.js): one at a time, after real work, Not now always there ---------- */
+  var scState = null;
+  function showSetup() {
+    if (ciOpen || scOpen || !alive) return false;
+    var c = Onboard.setupCard(cleared()); if (!c) return false;
+    scOpen = true; scState = { card: c, step: 'ask', theme: App.prefs().theme };
+    card.style.display = 'none'; $('#checkin').hidden = true; $('#dropbtn').hidden = true;
+    var oldE = stack.querySelector('.empty'); if (oldE) oldE.remove();
+    updateStack(false); stats();
+    var sc = $('#setupcard'); sc.hidden = false; sc.className = 'card setupcard enter';
+    paintSetup();
+    $('#sc-h').focus({ preventScroll: true });
+    Fuzz.setMood('eager'); Fuzz.say({ hours: 'First, a quick question.', lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
+    return true;
+  }
+  function appName() { var e = scState.card.engine; return e === 'copilot' ? 'Copilot' : 'Claude Code'; }
+  function paintSetup() {
+    var c = scState.card, sc = $('#setupcard'), h = '<div class="tagrow"><span class="src">From Fuzz</span></div>', not = '<button type="button" class="btn" data-sc="later" aria-keyshortcuts="Escape">Not now' + kbd('Esc') + '</button>';
+    if (c.name === 'hours') h = hoursHTML(c);
+    else if (c.name === 'folder') {
+      h += '<h2 id="sc-h" tabindex="-1">Can I save files for you?</h2><p>Some tasks end in a document, a spreadsheet or a checklist. I’d keep them in <b>Documents › Fuzz</b>, one folder per task. Nothing in it is sent anywhere.</p>' +
+        '<div class="sc-actions"><button type="button" class="btn primary" data-sc="yes">Yes, use Documents › Fuzz' + kbd('↵') + '</button>' + not + '</div>';
+    } else if (c.name === 'theme') {
+      h += '<h2 id="sc-h" tabindex="-1">Want a different colour?</h2><p>Pick one and it changes straight away. This is the only time I’ll ask; Settings has the rest.</p>' +
+        '<div class="palettes sc-pals" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
+          var p = Themes.palette(t.id, Themes.resolveMode(App.prefs().mode), App.prefs().contrast), on = t.id === App.prefs().theme;
+          return '<button type="button" class="pal" data-sc-theme="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span></button>';
+        }).join('') + '</div><div class="sc-actions"><button type="button" class="btn primary" data-sc="yes">Keep this one' + kbd('↵') + '</button>' + not + '</div>';
+    } else {
+      var app = appName(), s = scState.step;
+      h += '<h2 id="sc-h" tabindex="-1">Want me to find your asks myself?</h2>' +
+        '<p>Right now I only know what you type. Connect your email, Slack or calendar in ' + esc(app) + ', and I can read for new asks and look things up while I work. I only read with them. Nothing goes out without your yes.</p>';
+      if (s === 'ask' || s === 'none') {
+        h += '<ol class="sc-steps"><li><b>In ' + esc(app) + ', connect what you use.</b> ' + (c.engine === 'copilot' ? 'In Copilot, type <code>/mcp</code> and add one.' : 'On claude.ai, open Settings, then Connectors. Or type <code>/mcp</code> in Claude Code.') + '</li>' +
+          '<li><b>Come back here</b> and press “I’ve connected one”. This card waits for you.</li></ol>' +
+          (s === 'none' ? '<p class="setup-hint" role="status">' + (scState.error ? 'I couldn’t ask ' + esc(app) + ': ' + esc(scState.error) + ' Try again in a moment.' : 'I didn’t find anything I can read with yet. Once one is connected, try again.') + '</p>' : '') +
+          '<div class="sc-actions"><button type="button" class="btn primary" data-sc="look">I’ve connected one' + kbd('↵') + '</button>' + not + '</div>';
+      } else if (s === 'looking') {
+        h += '<div class="setup-wait"><span class="spin" aria-hidden="true"></span><p><span role="status">Asking ' + esc(app) + ' what it can reach…</span><small>Usually about a minute. Nothing is read or changed while I ask.</small></p></div><div class="sc-actions">' + not + '</div>';
+      } else if (s === 'found') {
+        h += '<p><b>With these, I’d be able to:</b></p><ul class="sc-can">' + scState.tools.slice(0, 6).map(function (t) { return '<li>' + esc(t.does || t.allow) + '</li>'; }).join('') + (scState.tools.length > 6 ? '<li>…and ' + (scState.tools.length - 6) + ' more ways to look things up</li>' : '') + '</ul>' +
+          '<p class="meta">Only ways to read and look things up. Settings lists each one.</p>' +
+          '<div class="sc-actions"><button type="button" class="btn primary" data-sc="allow">Allow these' + kbd('↵') + '</button>' + not + '</div>';
+      }
+    }
+    sc.innerHTML = h;
+  }
+  /* Fuzz's first question during the onboarding: when you work. The usual hours are the first answer, so
+     one key does it; Different hours opens a picker. Esc keeps the usual hours for now. */
+  function span(h) { return Onboard.clock(h[0]) + ' to ' + Onboard.clock(h[1]); }
+  function hoursHTML(c) {
+    var cur = (c.hours && c.hours.hours) || [8, 18.5], usual = span(cur);
+    var h = '<aside class="onb-guide" aria-label="How Triage works">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3>This is Triage</h3><p>I bring you one card at a time, each with one decision. Here’s an easy one to start.</p></div></aside>' +
+      '<div class="tagrow"><span class="src">A question from Fuzz</span></div>' +
+      '<h2 id="sc-h" tabindex="-1">When do you work?</h2><p>I read for new asks during these hours, and stay quiet outside them. Pick the closest; you can change it any time.</p>';
+    if (scState.step === 'other') {
+      var opts = function (v, from) { return Onboard.hourSteps.filter(function (x) { return from ? x < 24 : x > 0; }).map(function (x) { return '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + esc(Onboard.clock(x)) + '</option>'; }).join(''); };
+      h += '<div class="onb-times"><label for="sc-from">From</label><select id="sc-from">' + opts(cur[0], true) + '</select><label for="sc-until">until</label><select id="sc-until">' + opts(cur[1], false) + '</select></div>' +
+        '<label class="check"><input type="checkbox" id="sc-wkd"' + (c.hours && c.hours.weekends ? ' checked' : '') + '> <span>Weekends too</span></label>' +
+        '<div class="sc-actions"><button type="button" class="btn primary" data-sc="save">Save' + kbd('↵') + '</button><button type="button" class="btn" data-sc="back">Back</button></div>';
+      return h;
+    }
+    var choices = [['weekdays', 'Weekdays, ' + usual], ['everyday', 'Every day, ' + usual], ['none', 'No fixed hours'], ['other', 'Different hours…']];
+    return h + '<div class="sc-choices" role="group" aria-label="When do you work?">' + choices.map(function (o, i) {
+      return '<button type="button" class="btn' + (i === 0 ? ' primary' : '') + '" data-sc="' + o[0] + '" data-hq aria-keyshortcuts="' + (i + 1) + '">' + esc(o[1]) + kbd(i + 1) + '</button>';
+    }).join('') + '</div><div class="sc-actions"><button type="button" class="btn linkbtn" data-sc="later" aria-keyshortcuts="Escape">Skip for now' + kbd('Esc') + '</button></div>';
+  }
+  function hoursAnswer(what) {
+    var cur = (scState.card.hours && scState.card.hours.hours) || [8, 18.5], body;
+    if (what === 'later') { Onboard.skipHours(); closeSetup(null); return Onboard.questionDone(); }
+    if (what === 'other' || what === 'back') { scState.step = what === 'other' ? 'other' : 'ask'; paintSetup(); var f = $(what === 'other' ? '#sc-from' : '#sc-h'); if (f) f.focus({ preventScroll: true }); return; }
+    if (what === 'save') {
+      var a = parseFloat($('#sc-from').value), b = parseFloat($('#sc-until').value);
+      if (b <= a) { Fuzz.say('That ends before it starts. Pick an end time after the start.', { type: false }); return; }
+      body = { hours: [a, b], weekends: $('#sc-wkd').checked };
+    } else body = what === 'none' ? { hours: null, weekends: true } : { hours: cur, weekends: what === 'everyday' };
+    Onboard.answerHours(body).then(function () {
+      closeSetup(null); Onboard.questionDone();   /* next, Fuzz asks for one real task */
+    }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+  }
+
+  /* Ask the app what it can reach (one run of it), then offer the ways to read, in plain words */
+  function lookUp() {
+    var cl = scState.card.engine;
+    scState.step = 'looking'; paintSetup();
+    Live.discover(cl).then(function wait() {
+      return Live.setup(true).then(function (r) {
+        var v = r.tools.filter(function (x) { return x.client === cl; })[0];
+        if (v && v.discovery && v.discovery.state === 'running') return new Promise(function (res) { setTimeout(res, 3000); }).then(wait);
+        if (v && v.discovery && v.discovery.state === 'error') throw new Error(v.discovery.error);
+        return v;
+      });
+    }).then(function (v) {
+      if (!scOpen || !scState || scState.card.name !== 'lookup') return;
+      var look = (v ? v.tools : []).filter(function (x) { return x.kind === 'lookup' && x.suggested; });
+      scState.view = v; scState.tools = look; scState.step = look.length ? 'found' : 'none';
+      paintSetup(); $('#sc-h').focus({ preventScroll: true });
+    }, function (e) {
+      if (!scOpen) return;
+      scState.step = 'none'; scState.error = e.message.replace(/\.?$/, '.'); paintSetup(); $('#sc-h').focus({ preventScroll: true });
+    });
+  }
+  function closeSetup(line) {
+    var sc = $('#setupcard'); sc.hidden = true; sc.innerHTML = '';
+    scOpen = false; scState = null;
+    Fuzz.setMood('idle');
+    showNext();
+    /* after the next card's arrival, so the answer is what he's saying */
+    if (line) { Fuzz.say(line, { type: false }); Say.announce(line); }
+  }
+  function setupAnswer(what) {
+    var c = scState.card;
+    if (c.name === 'hours') return hoursAnswer(what);
+    if (what === 'later') {
+      if (c.name === 'theme' && App.prefs().theme !== scState.theme) App.setTheme(scState.theme);
+      Onboard.answerSetup(c.name, 'not_now');
+      return closeSetup('Okay.');
+    }
+    if (what === 'look') { scState.error = null; return lookUp(); }
+    if (what === 'allow') {
+      var v = scState.view, picks = scState.tools.map(function (t) { return t.allow; });
+      Live.saveTools(v.client, v.read.concat(picks.filter(function (x) { return v.read.indexOf(x) < 0; })), v.send).then(function () {
+        return Onboard.answerSetup('lookup', 'yes');
+      }).then(function () { closeSetup('Done. I’ll use them from my next run.'); }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+      return;
+    }
+    Onboard.answerSetup(c.name, 'yes').then(function () {
+      closeSetup(c.name === 'folder' ? 'Done. Your files go in Documents › Fuzz.' : 'Lovely. It’s yours.');
+    }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+  }
+
+  /* The later tips (docs/onboarding.md), each said once, when it first fits, after Fuzz's own line */
+  function laterTip(t) {
+    var key = t.state === 'review' ? 'draft' : t.kind !== 'task' ? null : t.handedBack ? 'handover' :
+      t.stage === 'stale' && !t.review && !t.checkBack && !keptStale[t.id] ? 'stale' : cleared() >= 5 ? 'keys' : 'park';
+    if (!key || !Onboard.tip(key, true)) return;
+    setTimeout(function () {
+      if (!alive || cur() !== t || busy || ciOpen || scOpen) return;
+      var line = Onboard.tip(key); if (line) { Fuzz.say(line, { type: false }); Say.announce(line); }
+    }, t.handedBack ? 4200 : 2600);
   }
   function puzzledFor(t) {
     Fuzz.setMood('puzzled'); Fuzz.setArm('none');
@@ -660,6 +864,7 @@
     e.querySelector('h2').tabIndex = -1;
   }
   function zeroState(quiet) {
+    if (!quiet && showSetup()) return;
     stats(); updateStack(false);
     card.style.display = 'none'; $('#checkin').hidden = true; $('#dropbtn').hidden = true;
     renderEmpty();
@@ -719,7 +924,9 @@
     var ask = handled ? ['The urgent stuff is handled. How are you doing?', 'Urgent stuff, handled. Nice.'] : CI_ASK[longSession() ? 2 : Math.min(ciCount, 1)];
     $('#ci-h').textContent = ask[0];
     refocus($('#ci-h'));
-    Fuzz.say(ask[1], { type: false });
+    var ct = !demo && Onboard.tip('checkin');
+    Fuzz.say(ct || ask[1], { type: false });
+    if (ct) Say.announce(ct);
   }
   async function ciPick(kind) {
     if (ciBusy) return;
@@ -827,7 +1034,8 @@
     /* The card heads for Fuzz while his reaction is still playing. */
     await sleep(rush ? 150 : 250);
     var waited, title = it.title;
-    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr); });
+    var read = pickedRefs(it);
+    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr, read); });
     forgetEdits(it.id);
     /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting.
        Once Fuzz starts on it, it can't be undone any more; you'd pull it back from Lineup instead. */
@@ -883,8 +1091,9 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     var b = card.querySelector('[data-act="claude"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
-    Fuzz.setMood('stare'); Fuzz.say('Oh. Claude.', { type: false });
-    offer('Opened “' + it.title + '” in Claude.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in Claude. In this demo it just moves to Current.');
+    var who = Store.workIn;
+    Fuzz.setMood('stare'); Fuzz.say('Oh. ' + who + '.', { type: false });
+    offer('Opened “' + it.title + '” in ' + who + '.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in ' + who + '.' + (Live.on() ? ' It’s in a Terminal window.' : ' In this demo it just moves to Current.'));
     var shown = null, exit = sleep(350).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
       return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 460, easing: 'cubic-bezier(.5,0,.8,.4)' });
@@ -902,11 +1111,12 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     if ($('#instr')) edits[it.id + ':instr'] = $('#instr').value;
-    var review = it.state === 'review';
+    var review = it.state === 'review', res = !!it.result;
     if (review && $('#draft')) edits[it.id + ':draft'] = $('#draft').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
-    Fuzz.setMood('eager'); Fuzz.say(review ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
+    var st_ = Onboard.tip('schedule');
+    Fuzz.setMood('eager'); Fuzz.say(st_ || (review || res ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?')); Fuzz.pAnim('hop');
     var pickedIdx = await new Promise(function (resolve) { schedResolve = resolve; });
     schedResolve = null;
     if (pickedIdx === -1) {
@@ -927,7 +1137,7 @@
     var typed = (edits[it.id + ':instr'] || '').trim(), look = typed && typed !== (it.instr || it.hint || '').trim() ? typed : '';
     Fuzz.setMood('happy'); Fuzz.setArm('none'); Fuzz.pAnim('hop');
     var text = review ? edits[it.id + ':draft'] : undefined;
-    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
+    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : res && !look ? 'Okay. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
     Fuzz.schedGlyph(Sched.glyph(w), Sched.osd(w));
     offer((review ? 'Not now: “' + it.title + '” asks for your OK again ' : 'Scheduled “' + it.title + '”: ') + when + (look ? '. Fuzz looks into it first.' : '.'), Store.track([it.id], function () { Store.schedule(it.id, w, look, text); }));
     forgetEdits(it.id);
@@ -1037,6 +1247,7 @@
   }
   async function answerEntity(which) {
     var it = cur(); if (!it || it.kind === 'task') return;
+    if (it.asks && which === 'primary' && !card.querySelector('[data-ask]:checked')) { Fuzz.say('Tick the ones that are yours first.', { type: false }); return; }
     var ch = Store.track([it.id, it.dupOf], function () { Store.resolve(it.id, which); });
     var msg = it.answers[which];
     offer('Answered “' + it[which] + '”: ' + it.title + '.', ch, msg);
@@ -1084,6 +1295,7 @@
   /* ---------- Wiring ---------- */
   function wire() {
     offSay = Fuzz.onSay(echo);
+    UI.wireSources(card, cur);
     $('#keysbtn').addEventListener('click', openKeys);
     $('#keysdlg').addEventListener('click', function (e) { if (e.target === e.currentTarget || e.target.closest('[data-close]')) e.currentTarget.close(); });
     $('#keysdlg').addEventListener('close', function () { var b = $('#keysbtn'); if (b && b.offsetParent) b.focus(); });
@@ -1097,12 +1309,59 @@
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
     /* Add files: the button opens the picker, a drop lands on the task */
-    card.addEventListener('toggle', function (e) { var it = cur(); if (e.target.id === 'attach' && it) attachOpen[it.id] = e.target.open; }, true);
-    card.addEventListener('change', function (e) { if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; } });
-    ['dragenter', 'dragover'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (d) { e.preventDefault(); d.classList.add('over'); } }); });
-    ['dragleave', 'drop'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (!d) return; e.preventDefault(); d.classList.remove('over'); if (n === 'drop' && e.dataTransfer) addFiles(e.dataTransfer.files); }); });
+    card.addEventListener('change', function (e) {
+      if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; return; }
+      var it = cur();
+      if (it && e.target.dataset.ask !== undefined) edits[it.id + ':ask' + e.target.dataset.ask] = e.target.checked;
+      if (it && e.target.dataset.ref !== undefined) { var rs = it.sources.filter(function (x) { return srcKey(x) === e.target.dataset.ref; })[0]; if (rs) { setRef(it, rs, e.target.checked); paintRefChips(); } }
+    });
+    /* A file dragged anywhere onto the screen opens the drop zone; letting go anywhere adds it to the task.
+       The zone goes back to how it was once the drag is over. */
+    var depth = 0;
+    function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') > -1; }
+    function zone() { var it = cur(); return it && it.kind === 'task' && !busy && !ciOpen && card.style.display !== 'none' && $('#adrop'); }
+    function endDrag() {
+      depth = 0; document.documentElement.classList.remove('dragging-file');
+      var d = $('#adrop'); if (d) { d.classList.remove('over'); d.hidden = true; }
+    }
+    docDrag = {
+      dragenter: function (e) {
+        if (!hasFiles(e)) return;
+        var d = zone(); if (!d) return;
+        e.preventDefault();
+        if (depth++ > 0) return;
+        d.hidden = false; d.classList.add('over');
+        document.documentElement.classList.add('dragging-file');
+        d.scrollIntoView({ block: 'nearest', behavior: Fuzz.isCalm() ? 'auto' : 'smooth' });
+        Fuzz.setMood('eager'); Fuzz.say('Drop it anywhere. I’ll read it with this one.', { type: false });
+      },
+      dragover: function (e) { if (hasFiles(e) && zone()) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
+      dragleave: function (e) { if (hasFiles(e) && depth > 0 && --depth === 0) { endDrag(); Fuzz.setMood('idle'); } },
+      drop: function (e) {
+        if (!hasFiles(e) || !zone()) return;
+        e.preventDefault(); endDrag();
+        addFiles(e.dataTransfer.files);
+      }
+    };
+    Object.keys(docDrag).forEach(function (n) { window.addEventListener(n, docDrag[n]); });
     card.addEventListener('click', function (e) {
       if (e.target.closest('#adropbtn')) { $('#afile').click(); return; }
+      if (e.target.closest('[data-guide="skip"]')) { var gd = card.querySelector('.onb-guide'); if (gd) gd.remove(); Onboard.skipGuide(); refocus($('#ask')); return; }
+      var ux = e.target.closest('[data-unref]'), ci = cur();
+      if (ux && ci) {
+        refs[ci.id] = (refs[ci.id] || []).filter(function (k) { return k !== ux.dataset.unref; });
+        var gone = ci.sources.filter(function (s) { return srcKey(s) === ux.dataset.unref; })[0];
+        if (gone) setRef(ci, gone, false);
+        paintRefs(); card.querySelector('[data-act="plus"]').focus();
+        return;
+      }
+      if (e.target.closest('[data-act="plus"]')) { plusMenu(!$('#plusmenu').hidden ? false : true); return; }
+      if (e.target.closest('[data-act="upload"]')) { plusMenu(false, true); $('#afile').click(); return; }
+      if (e.target.closest('[data-act="refpick"]') && ci) {
+        refPick[ci.id] = !refPick[ci.id]; paintRefs();
+        var first = refPick[ci.id] && card.querySelector('#refpick input'); (first || card.querySelector('[data-act="plus"]')).focus();
+        return;
+      }
       var t = e.target.closest('[data-act],[data-when],[data-tab],[data-quick],[data-sched],[data-who]');
       if (!t || !card.contains(t)) return;
       if (t.dataset.who) { waitOn(t.dataset.who); return; }
@@ -1161,6 +1420,8 @@
     docClick = function (e) {
       var mm = root && root.querySelector('#moremenu');
       if (mm && !mm.hidden && !e.target.closest('.split')) { mm.hidden = true; var mb = root.querySelector('.more-btn'); if (mb) mb.setAttribute('aria-expanded', 'false'); }
+      var pm = root && root.querySelector('#plusmenu');
+      if (pm && !pm.hidden && !e.target.closest('.plus')) { pm.hidden = true; root.querySelector('[data-act="plus"]').setAttribute('aria-expanded', 'false'); }
     };
     document.addEventListener('click', docClick);
     card.addEventListener('keydown', function (e) {
@@ -1181,19 +1442,32 @@
     docKey = function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
+      /* Escape stops dictating first, keeping what was heard */
+      if (e.key === 'Escape' && Dictate.active()) { e.preventDefault(); Dictate.stop(); return; }
       /* Escape leaves the card's box, so the number keys work again */
       if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
       /* Escape folds the stray-thought box away, keeping what you typed */
       if (e.key === 'Escape' && t && t.id === 'parktext') { e.preventDefault(); $('#parkbtn').click(); return; }
+      /* Escape on a setup or question card, even from its time pickers: back out, or Not now */
+      if (e.key === 'Escape' && scOpen && t && $('#setupcard').contains(t)) { e.preventDefault(); setupAnswer(scState && scState.step === 'other' ? 'back' : 'later'); return; }
       if (e.key === 'Escape' && t && t.id === 'wait-who') { e.preventDefault(); card.querySelector('[data-act="wait-cancel"]').click(); return; }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }
       /* T parks a stray thought from any card without leaving it */
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
+      var pm = $('#plusmenu');
+      if (e.key === 'Escape' && pm && !pm.hidden) { e.preventDefault(); plusMenu(false); return; }
       var mm = $('#moremenu');
       if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
+      /* A setup card: its buttons take Enter, and Escape is Not now */
+      if (scOpen) {
+        if (k === 'escape') { e.preventDefault(); setupAnswer(scState && scState.step === 'other' ? 'back' : 'later'); }
+        else if (n > -1 && !(t && t.tagName === 'SELECT')) { var hq = $('#setupcard').querySelectorAll('[data-hq]')[n]; if (hq) { e.preventDefault(); hq.click(); } }
+        else if (k === 'enter' && !(t && t.closest && t.closest('button, a, summary'))) { var pb = $('#setupcard .primary'); if (pb) { e.preventDefault(); pb.click(); } }
+        return;
+      }
       if (ciOpen) {
         var follow = $('#ci-follow').querySelectorAll('.btn');
         if (!$('#ci-break').hidden) return; /* "I'm back" has focus; Enter presses it */
@@ -1227,6 +1501,29 @@
     };
     document.addEventListener('keydown', docKey);
 
+    /* Dictation into the box for Fuzz (dictate.js): the mic by each box, or hold Alt (Option) + Space for
+       the box you're in, else the one on the card (what to change, once you've asked for a change). */
+    var DICT = ['instr', 'note', 'revise-text'];
+    function dictOpts() {
+      return { done: 'Got it. Change anything, then pick what to do.', onChange: function (on) {
+        var f = Dictate.field(), b = f && root && root.querySelector('[data-dictate="' + f.id + '"]');
+        root && root.querySelectorAll('[data-dictate]').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        if (on && b) b.setAttribute('aria-pressed', 'true');
+      } };
+    }
+    function dictTarget() {
+      if (!alive || ciOpen || card.style.display === 'none' || scheduling) return null;
+      var a = document.activeElement;
+      if (a && DICT.indexOf(a.id) > -1 && root.contains(a)) return a;
+      var rv = $('#revise'); if (rv && !rv.hidden) return $('#revise-text');
+      return $('#instr') || $('#note');
+    }
+    card.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-dictate]'); if (!b) return;
+      if (Dictate.active()) Dictate.stop(); else Dictate.start($('#' + b.dataset.dictate), dictOpts());
+    });
+    unhold = Dictate.hold(dictTarget, dictOpts);
+
     card.addEventListener('submit', function (e) {
       if (e.target.id === 'wait-form') { e.preventDefault(); waitOn($('#wait-who').value); return; }
       if (e.target.id !== 'revise') return;
@@ -1247,6 +1544,11 @@
       Store.parkThought(v); inp.value = ''; $('#parkform').hidden = true; $('#parkbtn').setAttribute('aria-expanded', 'false');
       if (!busy) { Fuzz.pAnim('hop'); Fuzz.say('Parked. Back to what you were doing.', { type: false }); }
       $('#parkbtn').focus();
+    });
+    $('#setupcard').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b || !scOpen) return;
+      if (b.dataset.scTheme) { App.setTheme(b.dataset.scTheme); $('#setupcard').querySelectorAll('[data-sc-theme]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); return; }
+      if (b.dataset.sc) setupAnswer(b.dataset.sc);
     });
     $('#checkin').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;

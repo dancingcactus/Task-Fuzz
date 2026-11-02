@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.14
+prompt_version: executor-0.15
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.14`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.15`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -129,8 +129,10 @@ they assign it to you.
 - **You can't send, post or delete anything.** Drafts are the only way out, and the person approves
   each one.
 - **Attachments are files the person added.** `get_task` lists each one with its `path`, type and
-  size. Open them with your own file tools, and only at those paths. How to read a format is up to
-  you.
+  size. For a PDF, Word document (.docx) or PowerPoint deck (.pptx), `read_source` gives you its
+  `text`, marked by page or slide (with the speaker notes). Cite those when you use it. Anything
+  else, or what the text leaves out (a scanned page, a chart, the rest of a long file), open with
+  your own file tools, and only at those paths. How to read a format is up to you.
 - **Web pages can be sources too.** When the person asks you to add a page as a source, or the task
   hangs on one (the wiki or doc an email links to), call `add_source` with its full link and its
   title as the page shows it. It shows up in their Sources and in `get_task` with its `link`. Don't

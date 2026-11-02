@@ -97,6 +97,11 @@ def record(core, task_id, actor="fuzz:executor"):
     return new
 
 
+def markdown_name(core, task_id, kind):
+    """What a result or note is called, so it reads in Finder and in Artifacts: "Plan the offsite - Result.md"."""
+    return f"{_safe(tasks.require(core, task_id)['title'])} - {kind}.md"
+
+
 def save_markdown(core, task_id, name, body, actor="system"):
     """An approved note or a result, as a Markdown file in the task's folder. Overwritten in place."""
     if not folder(core) or not (body or "").strip():
