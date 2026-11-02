@@ -64,7 +64,7 @@ fuzz setup --step tools --client copilot --discover   # list the client's tools 
 fuzz setup --step folder --folder ~/Documents/Fuzz    # or - for none
 ```
 
-The UI offers the same steps from Settings > Set up Fuzz. The first time you connect, the onboarding
+The UI's Settings page (`#/settings`) covers the same ground in sections. The first time you connect, the onboarding
 asks only for your name, the app and your working hours, and the rest arrives later as setup cards:
 `GET /onboarding` gives the step you're on and the one setup card that may show
 (`lookup`, then `folder`, then `theme`, each at most twice), `POST /onboarding/setup/{name} {answer: yes |

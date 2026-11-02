@@ -66,7 +66,7 @@
     if (failed) { root.innerHTML = head + '<p class="lempty">Fuzz couldn’t list your files: ' + esc(failed) + '</p>'; return; }
     if (!items) { root.innerHTML = head + '<p class="lempty">Looking in your Fuzz folder…</p>'; return; }
     if (folder === null) {
-      root.innerHTML = head + '<div class="empty aempty"><p>Fuzz has nowhere to write files yet. Pick a folder and he’ll keep each task’s documents there.</p><button type="button" class="btn small" data-setup="1">Set up Fuzz</button></div>';
+      root.innerHTML = head + '<div class="empty aempty"><p>Fuzz has nowhere to write files yet. Pick a folder and he’ll keep each task’s documents there.</p><a class="btn small linklike" href="#/settings">Pick a folder in Settings</a></div>';
       return;
     }
     if (!items.length) {
@@ -111,7 +111,6 @@
   function onClick(e) {
     var b = e.target.closest('[data-filter]');
     if (b) { filter = b.dataset.filter; paintList(); var again = root.querySelector('[data-filter="' + filter + '"]'); if (again) again.focus(); return; }
-    if (e.target.closest('[data-setup]')) Setup.open(2);   /* the Folder step */
   }
 
   function onInput(e) { if (e.target.id === 'aq') { query = e.target.value; paintList(); } }

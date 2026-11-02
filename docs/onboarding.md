@@ -10,8 +10,8 @@ against `claude/ask-me-later` at `895ecd3`.
 A new user goes from nothing to working a real card, in the browser, in one short sitting. On the way
 Fuzz introduces himself, sets up what he needs, and teaches how to be effective with ADHD.
 
-This replaces the guided setup in `js/setup.js` as the first-run experience. That four-step form stays
-in Settings for anyone who wants to change everything in one place.
+This replaces the old four-step guided setup (`js/setup.js`, now removed) as the first-run experience.
+Changing anything later happens on the Settings page (`#/settings`, see "As built").
 
 ## The flow
 
@@ -247,10 +247,17 @@ that would be handling the request. The page has to survive that and reconnect.
 - **Later tips** are said by Fuzz, once each, a moment after the card they belong to arrives, and only if
   you're still on it.
 
+- **Settings** (`#/settings`, `js/view-settings.js`, from All settings in the header's quick settings)
+  replaces the four-step wizard with one page of sections, each saved on its own: About you (names,
+  emails, Slack IDs); App (status, set up, repair, switch, check again); Working hours (the same choices
+  as Fuzz's question); What Fuzz can read and send (one row per source in plain words, with Reading and
+  Sending switches, List again, and each tool by name under Details, with its token cost); Where Fuzz
+  saves files; and Show me around again. Theme, contrast and Calm mode stay in the quick settings.
+
 Not built yet:
 
 - **Send tools when the first draft is approved.** Approving still works as before; the sender hands a
   draft back when no send tools are allowed. The guided setup in Settings picks them.
 - **Identity from a connector.** Other emails and Slack IDs are no longer asked up front, but nothing reads
-  them from a connector yet, so they still come from Settings > Set up Fuzz or `fuzz me add`.
+  them from a connector yet, so they still come from Settings › About you or `fuzz me add`.
 - **Step 7.** No one with ADHD has tried the flow, and the tips haven't had the qualified review.

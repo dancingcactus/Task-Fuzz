@@ -599,13 +599,12 @@
     openSession: function (id) { var it = Store.item(id); return openSession(it).catch(function (e) { Say.tell('It didn’t open: ' + e.message); }); },
     /* Who you are: every email, name and Slack ID that is yours, so Fuzz uses either account without asking */
     saveMe: function (body) { return api('PUT', '/me', body); },
-    /* Guided setup (js/setup.js): who you are, the tools Fuzz may use, the folder it may write to */
+    /* Settings (js/view-settings.js): who you are, the tools Fuzz may use, the folder it may write to */
     setup: function (quick) { return api('GET', '/setup' + (quick ? '?check=0' : '')); },
     discover: function (client) { return api('POST', '/setup/discover', { client: client }); },
     saveTools: function (client, read, send) { return api('PUT', '/setup/tools', { client: client, read: read, send: send }); },
     chooseFolder: function (start) { return api('POST', '/setup/folder/choose', { start: start || null }); },
     saveFolder: function (folder) { return api('PUT', '/setup/folder', { folder: folder || null }); },
-    setupDone: function () { return api('POST', '/setup/done', {}); },
     /* The onboarding (js/onboarding.js): where you are in it, your hours, the app Fuzz works through,
        the setup cards after it, and the first read */
     onboarding: function () { return api('GET', '/onboarding'); },

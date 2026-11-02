@@ -141,7 +141,7 @@ js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, Lineup, New task
 js/onboarding.js    the first run, the later tips and the setup cards
-js/setup.js         the four-step guided setup, from Settings
+js/view-settings.js Settings: about you, the app, working hours, what Fuzz can read and send, files
 js/notify.js        Fuzz speaks: notices and Undo (no toasts)
 js/progress.js      the segmented triage progress bar
 js/app.js           router, header, theme popover

@@ -324,7 +324,7 @@ def _complete(core, task_id):
     if read:
         line = "Done. I’m reading for new asks now, and then during your working hours."
     else:
-        line = "Done. You didn’t allow any yet, so I’ll keep to what you type. Settings › Set up Fuzz has them."
+        line = "Done. You didn’t allow any yet, so I’ll keep to what you type. Settings has them."
     tasks._one(core, "fuzz:onboarding", "task.done", t, "done", ("action", line), question=None)
     if read:
         engine.run_now(core, "extractor")   # Run now: scheduled reading stops outside working hours

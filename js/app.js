@@ -6,7 +6,8 @@
     tasks: { view: window.TasksView, title: 'Lineup' },
     artifacts: { view: window.ArtifactsView, title: 'Artifacts' },
     capture: { view: window.CaptureView, title: 'New task' },
-    welcome: { view: window.Onboard.view, title: 'Welcome' }
+    welcome: { view: window.Onboard.view, title: 'Welcome' },
+    settings: { view: window.SettingsView, title: 'Settings' }
   };
   var PREF_KEY = 'fuzz.prefs.v1';
   var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
@@ -88,7 +89,7 @@
       var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup],[data-again]'); if (!t) return;
       if (t.dataset.disconnect) { Live.switchAccount(); return; }
       if (t.dataset.again) { togglePopover(false); Onboard.again(); return; }
-      if (t.dataset.setup) { togglePopover(false); Setup.open(); return; }
+      if (t.dataset.setup) { togglePopover(false); App.navigate('#/settings'); return; }
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
       else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
@@ -141,7 +142,7 @@
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
       (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-again="1">Show me around again</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
+        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">All settings</button><button type="button" class="btn small" data-again="1">Show me around again</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
         : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button><button type="button" class="btn small" data-again="1">Show me around again</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
     if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }

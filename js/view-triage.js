@@ -730,7 +730,7 @@
         h += '<div class="setup-wait"><span class="spin" aria-hidden="true"></span><p><span role="status">Asking ' + esc(app) + ' what it can reach…</span><small>Usually about a minute. Nothing is read or changed while I ask.</small></p></div><div class="sc-actions">' + not + '</div>';
       } else if (s === 'found') {
         h += '<p><b>With these, I’d be able to:</b></p><ul class="sc-can">' + scState.tools.slice(0, 6).map(function (t) { return '<li>' + esc(t.does || t.allow) + '</li>'; }).join('') + (scState.tools.length > 6 ? '<li>…and ' + (scState.tools.length - 6) + ' more ways to look things up</li>' : '') + '</ul>' +
-          '<p class="meta">Only ways to read and look things up. Settings › Set up Fuzz lists each one.</p>' +
+          '<p class="meta">Only ways to read and look things up. Settings lists each one.</p>' +
           '<div class="sc-actions"><button type="button" class="btn primary" data-sc="allow">Allow these' + kbd('↵') + '</button>' + not + '</div>';
       }
     }

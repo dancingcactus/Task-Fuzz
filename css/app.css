@@ -898,3 +898,28 @@ body.onb-bare .onb { padding-top: 10vh; }
 .sc-choices .btn { justify-content: space-between; text-align: left; }
 .setupcard .onb-times select { font: inherit; font-size: 16px; padding: 8px 12px; min-height: 44px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); }
 .setupcard .sc-actions .linkbtn { padding-left: 0; }
+
+/* ---------- Settings (js/view-settings.js) ---------- */
+.view--settings { max-width: 720px; }
+.settings { display: flex; flex-direction: column; gap: 18px; padding-top: 2vh; }
+.settings h1 { font-family: var(--font-display); font-size: 27px; font-weight: 800; margin: 0; }
+.settings > .meta { margin: 0; line-height: 1.5; }
+.set-sec { display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 20px; background: var(--surface); border: var(--bw) solid var(--line); box-shadow: var(--shadow); }
+.set-sec h2 { font-family: var(--font-display); font-size: 20px; font-weight: 800; margin: 0; }
+.set-sec h3 { font-size: 14px; margin: 8px 0 0; color: var(--muted); }
+.set-sec .meta { margin: 0; line-height: 1.5; }
+.set-sec form { display: flex; flex-direction: column; gap: 12px; }
+.set-sec input[type="text"], .set-sec select { font: inherit; font-size: 16px; padding: 10px 14px; min-height: 44px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); max-width: 100%; }
+.set-sec .field label { font-size: 14px; font-weight: 600; letter-spacing: 0; color: var(--ink); }
+.set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.set-said:empty { display: none; }
+.set-apps, .set-sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.set-apps li, .set-sources li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 14px; border-radius: 14px; background: var(--field); }
+.set-app.on { box-shadow: inset 0 0 0 2px var(--accent); }
+.set-app > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.set-app small { flex-basis: 100%; color: var(--muted); }
+.set-src { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
+.set-src small { color: var(--muted); }
+.set-switches { display: flex; gap: 18px; }
+.set-details summary { cursor: pointer; color: var(--link); font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; }
+.set-details code { font-size: 13px; overflow-wrap: anywhere; }
