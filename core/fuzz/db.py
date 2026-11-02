@@ -90,6 +90,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   group_id INTEGER,                -- the tasks that came from the same place (groups.py)
   reviewed_at TEXT,                -- the last time a parked review asked about it (review.py)
   reviews INTEGER,                 -- how many times you kept it parked when asked
+  next_step TEXT,                  -- where a working session left off: the next thing to do (sessions.py)
+  session_id TEXT,                 -- the Claude or Copilot conversation it's open in, to resume
+  session_launch TEXT,             -- the latest window opened on it; only that one closing brings it back
+  session_at TEXT,                 -- the last word from a working session, for the quiet check
   title_history TEXT,              -- json list
   created_at TEXT,
   state_changed_at TEXT,
@@ -340,7 +344,8 @@ def connect(home):
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
-              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER")]}
+              "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
+                        ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 
 def _migrate(conn):

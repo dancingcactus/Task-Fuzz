@@ -144,7 +144,7 @@ def approve(core, card):
     if d["kind"] == "note":   # an approved note is kept in the task's output folder too
         from . import outputs
         body = core.one("SELECT body FROM drafts WHERE id=?", (d["id"],))["body"]
-        outputs.save_markdown(core, t["id"], "Note.md", body, actor="human")
+        outputs.save_markdown(core, t["id"], outputs.markdown_name(core, t["id"], "Note"), body, actor="human")
 
 
 def _file_prep(core, ch, card, d, t):

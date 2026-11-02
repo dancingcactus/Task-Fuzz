@@ -118,6 +118,20 @@ class Result(Claimed):
         self.assertEqual(self.task(tid)["state"], "done")
         self.assertNotIn("result", self.task(tid)["variant_tags"])
 
+    def test_ask_me_later_brings_the_result_back(self):
+        tid = self.claimed("Summarize the launch thread")
+        tools.update_brief(self.core, tid, context_md="**Launch**: moved to the 14th.")
+        tools.hand_back(self.core, tid, result=True)
+        card = self.card_for(tid, "task")
+        answers.answer(self.core, card["id"], "schedule", {"anchor": card["schedule_options"][0]["anchor"]})
+        t = self.task(tid)
+        self.assertEqual(t["state"], "scheduled")
+        self.assertIn("result", t["variant_tags"])
+        self.clock.advance(days=8)
+        scheduler.tick(self.core)
+        self.assertEqual(self.task(tid)["state"], "triage")
+        self.assertEqual(self.card_for(tid, "task")["suggested"], "done", "it asks if it's done again")
+
 
 class PrepNote(Claimed):
     def test_a_prep_note_needs_to_know_when(self):

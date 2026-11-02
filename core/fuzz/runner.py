@@ -28,6 +28,12 @@ def run_role(core, role, client=None, model=None, task_id=None, scripted_=False,
     if role == "sender" and not scheduler.sends_waiting(core):
         # launchd checks every couple of minutes; don't start a client (or record a run) for nothing
         return {"run_id": None, "outcome": "nothing_to_do", "client": None, "model": None}
+    if role == "executor" and not scheduler.work_waiting(core, task_id):
+        # the same for the executor every 15 minutes: an empty queue costs a client run otherwise
+        return {"run_id": None, "outcome": "nothing_to_do", "client": None, "model": None}
+    if role == "extractor" and trigger == "launchd" and not scheduler.extract_hours(core):
+        # each extraction is the costliest run; overnight and at weekends it waits for the morning's
+        return {"run_id": None, "outcome": "nothing_to_do", "client": None, "model": None}
     adapter = None
     if scripted_:
         client_name, model, pv = "scripted", None, scripted.PROMPT_VERSION

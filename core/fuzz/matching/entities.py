@@ -125,6 +125,16 @@ def resolve_person(core, person, me):
     return _new_entity(core, "person", name, True), "provisional"
 
 
+def lookup_person(core, person):
+    """The entity a person already resolved to, in the same order as resolve_person, without writing
+    anything. None when nothing matches, or a name is shared."""
+    email = (person.get("email") or "").lower()
+    slack = person.get("slack_id")
+    name = (person.get("name") or "").strip()
+    return ((email and _by_identifier(core, "email", email)) or (slack and _by_identifier(core, "slack", slack))
+            or _unique_alias(core, "person", name) or None)
+
+
 def _unique_alias(core, typ, name, provisional_only=False):
     if not name:
         return None

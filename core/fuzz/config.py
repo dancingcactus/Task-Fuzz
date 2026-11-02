@@ -38,6 +38,9 @@ DEFAULTS = {
     # that client names them (e.g. "Glean" for every tool of that Copilot server). List only tools that
     # read: whatever is listed runs without asking. Empty: the executor has only Fuzz's own tools.
     "read": {"tools": {"claude-code": [], "copilot": []}},
+    # When launchd may start the extractor, local time: [from, until) hours (18.5 is 6:30 p.m.), and
+    # whether at weekends. hours null: around the clock. Run now from the UI or the CLI always runs.
+    "extract": {"hours": [8, 18.5], "weekends": False},
     "embedder": "ollama",
     "ollama_model": "nomic-embed-text",
     "ollama_url": "http://localhost:11434",

@@ -83,7 +83,12 @@ def cmd_serve(a):
 
 def cmd_mcp(a):
     from .mcp_server import serve
-    serve(a.role, a.run, a.home, a.user)
+    serve(a.role, a.run, a.home, a.user, a.task)
+
+
+def cmd_session_closed(a):
+    from . import sessions
+    _print(sessions.closed(_core(a), a.task, a.launch))
 
 
 def cmd_run(a):
@@ -386,9 +391,15 @@ def parser():
     s.set_defaults(fn=cmd_serve)
 
     s = sub.add_parser("mcp", help="run the MCP server over stdio (started by an AI client)")
-    s.add_argument("--role", required=True, choices=["executor", "extractor", "sender"])
+    s.add_argument("--role", required=True, choices=["executor", "extractor", "sender", "session"])
     s.add_argument("--run", type=int)
+    s.add_argument("--task", type=int, help="the session role's one task")
     s.set_defaults(fn=cmd_mcp)
+
+    s = sub.add_parser("session-closed", help="a working session's window closed (its launch script calls this)")
+    s.add_argument("--task", type=int, required=True)
+    s.add_argument("--launch", required=True)
+    s.set_defaults(fn=cmd_session_closed)
 
     s = sub.add_parser("run", help="run a role headless, the same way launchd does")
     s.add_argument("role", choices=["executor", "extractor", "sender"])

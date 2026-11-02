@@ -153,12 +153,12 @@ class Folder(CoreCase):
         tid = self.claimed("Summarize the launch thread")
         tools.update_brief(self.core, tid, context_md="## Launch\n\nMoved to the 14th.")
         tools.hand_back(self.core, tid, result=True)
-        with open(os.path.join(outputs.task_dir(self.core, tid), "Result.md")) as f:
+        with open(os.path.join(outputs.task_dir(self.core, tid), "Summarize the launch thread - Result.md")) as f:
             self.assertIn("Moved to the 14th.", f.read())
         nid = self.claimed("Write up the retro")
         drafts.save_draft(self.core, nid, "note", "", "## Retro\n\nShip smaller.")
         answers.answer(self.core, self.card_for(nid, "draft")["id"], "approve")
-        with open(os.path.join(outputs.task_dir(self.core, nid), "Note.md")) as f:
+        with open(os.path.join(outputs.task_dir(self.core, nid), "Write up the retro - Note.md")) as f:
             self.assertEqual(f.read(), "## Retro\n\nShip smaller.\n")
 
     def test_the_sender_gets_the_files_a_draft_attaches(self):

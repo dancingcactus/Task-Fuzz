@@ -92,7 +92,7 @@ Whatever a run leaves in a task's subfolder is recorded on the task (a `sources`
 `GET /artifacts/<source id>` gives one to the viewer (`artifact.html`), which previews it in the browser.
 A file a browser would run as a page (HTML, SVG, XML) is served with `Content-Security-Policy: sandbox`,
 so opening it can't reach your token. Files are overwritten in place; once written they stay, and Undo doesn't
-remove them. Approved notes (`Note.md`) and results (`Result.md`) are saved there too. A draft can
+remove them. Approved notes (`<task title> - Note.md`) and results (`<task title> - Result.md`) are saved there too. A draft can
 name files in its subfolder in `attach`; the sender gets their paths, may read that folder, and
 attaches them, or reports that its tool can't.
 
@@ -302,6 +302,24 @@ folder. In `dontAsk` mode a read anywhere else is refused. It still can't run co
 Copilot gets `--add-dir <folder>` with shell and write still denied; whether its reads stay inside
 added folders is still to confirm. Fuzz's log records that a file was handed over; reads made with
 the client's own tool aren't in it.
+
+## Working sessions (Work in Claude / Copilot)
+
+Work in Claude (Work in Copilot when that's the engine) moves the task to `session` and
+`POST /tasks/{id}/open` opens a Terminal window running the engine's own CLI on it, interactive. Fuzz
+writes `<store>/sessions/u<user>/t<task>.command` (the script), `.md` (the prompt: the task, its
+sources and files) and `.mcp.json`: Fuzz's session server for that one task
+(`fuzz mcp --role session --task <id>`), loaded beside your own servers with its tools allowed. Nothing
+is installed for it, so it works with either engine as is.
+
+The session keeps the task current with `get_task`, `read_source`, `log_progress`, `set_next_step`
+(shown as the task's Now line), `add_source`, and `end_session`: done, pause (back in triage at
+`come_back_at`, or tomorrow 9am), fuzz (Fuzz takes the next step) or waiting (on a person).
+
+Open it again and the same conversation resumes: the task keeps its id (`--resume` for Claude Code,
+`--session-id` for Copilot). A session that ends without saying how still comes back to the front of
+triage: the script calls `fuzz session-closed` when its window closes (only the newest window on a task
+counts), and the tick brings back any session quiet for a day.
 
 ## Not built yet
 

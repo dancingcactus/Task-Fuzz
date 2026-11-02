@@ -84,7 +84,7 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
         cards.sync(core, t["id"])
     if result:   # the result is kept in the task's output folder too
         from . import outputs
-        outputs.save_markdown(core, t["id"], "Result.md", t["context_md"], actor=actor)
+        outputs.save_markdown(core, t["id"], outputs.markdown_name(core, t["id"], "Result"), t["context_md"], actor=actor)
     return t["id"]
 
 
@@ -227,6 +227,24 @@ def claim_next(core, task_id=None):
             events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core)},
                         log=("status", "Fuzz is gathering context." if gathering(t) else "Fuzz started on this."))
             return tasks.get(core, t["id"]), None
+
+
+def work_waiting(core, task_id=None):
+    """Whether claim_next would find anything, checked before a run starts a client to ask it."""
+    expire_leases(core)
+    return bool(_eligible(core, task_id))
+
+
+def extract_hours(core, now=None):
+    """Whether it's within the hours launchd may start the extractor. Outside them it skips; the next run
+    reads from the cursor, so nothing is missed, only seen later."""
+    h = core.config["extract"]["hours"]
+    if not h:
+        return True
+    loc = (now or core.now()).astimezone(timeres.local_tz(core))
+    if loc.weekday() >= 5 and not core.config["extract"]["weekends"]:
+        return False
+    return h[0] <= loc.hour + loc.minute / 60 < h[1]
 
 
 def sends_waiting(core):
@@ -376,7 +394,7 @@ def put_off(core, task_id, anchor, you_said, actor="fuzz:executor"):
 
 def tick(core):
     """Run every minute by `fuzz serve` (and by `fuzz tick`). Returns what moved."""
-    from . import review
+    from . import review, sessions
     out = {"released": expire_leases(core), "came_back": 0, "deadline": 0, "stale": 0, "gather_timeout": 0}
     now = core.now_iso()
     # Gathering never keeps a task from you for long: no run picked it up in time, so it goes to triage as is
@@ -435,7 +453,15 @@ def tick(core):
                     ch.card(c["id"], suggested="keep")
             events.emit(core, "task.stale", task_id=t["id"], changes=ch)
         out["stale"] += 1
+    # An ask folded into another task's "Is this yours?" card loses it when that task leaves triage some
+    # other way (merged, a reply brought it back); it gets a card of its own, or joins the next one
+    for t in core.all("SELECT * FROM tasks t WHERE user_id=? AND state='triage' AND NOT EXISTS "
+                      "(SELECT 1 FROM cards c WHERE c.task_id=t.id AND c.status='open')", (core.user_id,)):
+        if not cards.covered(core, t):
+            with core.tx("system"):
+                cards.sync(core, t["id"])
     out["review"] = review.release(core)
+    out["quiet_sessions"] = sessions.quiet(core)
     return out
 
 

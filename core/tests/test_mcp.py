@@ -100,9 +100,37 @@ class ScriptedRuns(CoreCase):
 
     def test_a_real_run_needs_an_engine(self):
         from fuzz.db import FuzzError
+        tasks.assign(self.core, tasks.capture(self.core, "Something to do"))
         with self.assertRaises(FuzzError) as e:
             runner.run_role(self.core, "executor")
         self.assertEqual(e.exception.field, "client")
+
+    def test_an_empty_queue_starts_no_client(self):
+        # no engine is set, so reaching the client would raise; and no run is recorded
+        res = runner.run_role(self.core, "executor", trigger="launchd")
+        self.assertEqual((res["run_id"], res["outcome"]), (None, "nothing_to_do"))
+        self.assertEqual(self.core.all("SELECT id FROM runs"), [])
+
+    def test_the_extractor_waits_for_working_hours(self):
+        from fuzz.db import FuzzError
+        self.clock.advance(hours=-6)   # Tuesday 3 a.m.
+        self.assertEqual(runner.run_role(self.core, "extractor", trigger="launchd")["outcome"], "nothing_to_do")
+        self.clock.advance(days=4, hours=6)   # Saturday 9 a.m.
+        self.assertEqual(runner.run_role(self.core, "extractor", trigger="launchd")["outcome"], "nothing_to_do")
+        with self.assertRaises(FuzzError):   # Run now doesn't wait: it gets as far as needing an engine
+            runner.run_role(self.core, "extractor", trigger="ui")
+        self.clock.advance(days=-4)   # Tuesday 9 a.m.
+        with self.assertRaises(FuzzError):
+            runner.run_role(self.core, "extractor", trigger="launchd")
+        self.assertEqual(self.core.all("SELECT id FROM runs"), [])
+
+    def test_the_extractor_stops_at_half_past_six(self):
+        from fuzz.db import FuzzError
+        self.clock.advance(hours=9, minutes=45)   # Tuesday 6:45 p.m.
+        self.assertEqual(runner.run_role(self.core, "extractor", trigger="launchd")["outcome"], "nothing_to_do")
+        self.clock.advance(minutes=-30)   # 6:15 p.m.
+        with self.assertRaises(FuzzError):   # still in hours: it gets as far as needing an engine
+            runner.run_role(self.core, "extractor", trigger="launchd")
 
 
 class OverStdio(CoreCase):

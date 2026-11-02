@@ -11,6 +11,7 @@ class ClaudeCode(Adapter):
     name = "claude-code"
     exe = "claude"
     label = "Claude Code"
+    short = "Claude"
 
     def skills_dir(self):
         return home() / ".claude" / "skills"
@@ -35,8 +36,8 @@ class ClaudeCode(Adapter):
         except (OSError, subprocess.TimeoutExpired):
             return False
 
-    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None):
-        spec = dict(self.mcp_server(role, fuzz_home, run_id, user_id), type="stdio")
+    def write_run_config(self, role, run_id, path, fuzz_home=None, user_id=None, task_id=None):
+        spec = dict(self.mcp_server(role, fuzz_home, run_id, user_id, task_id), type="stdio")
         write_json(path, {"mcpServers": {self.mcp_name(role): spec}})
         return path
 
@@ -75,6 +76,19 @@ class ClaudeCode(Adapter):
             argv += ["--model", model]
         if verbose:
             argv += ["--output-format", "stream-json", "--verbose"]
+        return argv
+
+    def session_command(self, exe, prompt, dirs=(), mcp_config=None, session_id=None, resume=False):
+        """`claude <prompt>` opens the usual interactive session with the prompt already sent. A new one
+        gets its id with --session-id; --resume picks it up again (in the same folder: Claude Code keeps
+        conversations per folder)."""
+        argv = [exe, prompt]
+        if session_id:
+            argv += ["--resume" if resume else "--session-id", session_id]
+        if mcp_config:
+            argv += ["--mcp-config", str(mcp_config), "--allowedTools", f"mcp__{self.mcp_name('session')}__*"]
+        if dirs:
+            argv += ["--add-dir", *map(str, dirs)]
         return argv
 
     def list_servers(self):

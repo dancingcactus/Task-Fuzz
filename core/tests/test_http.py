@@ -88,9 +88,11 @@ class Api(Server):
             for i, ts, q in ((1, "2026-10-20T08:00:00Z", "Can you send the Q4 numbers?"),
                              (2, "2026-10-20T08:45:00Z", "Any update on the numbers?"))])
         tid = tasks.list_tasks(core)[0]["id"]
-        src = self.req("GET", f"/tasks/{tid}")[1]["sources"]
-        self.assertEqual([(s["role"], s["ts"]) for s in src],
+        full = self.req("GET", f"/tasks/{tid}")[1]
+        self.assertEqual([(s["role"], s["ts"]) for s in full["sources"]],
                          [("update", "2026-10-20T08:45:00Z"), ("origin", "2026-10-20T08:00:00Z")])
+        self.assertEqual([(p["name"], [c["text"] for c in p["contributions"]]) for p in full["people"]],
+                         [("Dana", ["Followed up", "Asked for this"])])
 
     def test_a_message_read_twice_is_one_source(self):
         core = self.srv.app.core(1)
@@ -317,6 +319,36 @@ class Api(Server):
         self.assertEqual(self.req("POST", f"/tasks/{tid}/back", {})[1]["state"], "triage")
         tasks.park(self.core, tid)
         self.assertEqual(self.req("POST", f"/tasks/{tid}/back", {})[0], 409)
+
+    def test_work_in_opens_a_session_on_the_engine(self):
+        from unittest import mock
+        from fuzz import sessions
+        core = self.srv.app.core(1)
+        tid = self.req("POST", "/tasks", {"text": "Decide the pricing page copy"})[1]["task_id"]
+        self.assertEqual(self.req("GET", "/tasks")[1]["work_in"], "Claude", "Claude Code until an engine is picked")
+        with mock.patch("fuzz.sessions.launch") as launch, mock.patch("fuzz.sessions.sys.platform", "darwin"):
+            self.req("POST", f"/tasks/{tid}/session", {})
+            status, body = self.req("POST", f"/tasks/{tid}/open", {})
+        self.assertEqual((status, body["client"], body["label"], body["opened"]), (200, "claude-code", "Claude", True))
+        launch.assert_called_once_with(body["script"])
+        script = open(body["script"]).read()
+        self.assertIn("claude", script)
+        self.assertIn("Decide the pricing page copy", open(body["script"][:-len(".command")] + ".md").read())
+        log = [x["text"] for x in self.req("GET", f"/tasks/{tid}")[1]["log"][:2]]
+        self.assertEqual(log[0], "You started working on it in Claude.")
+        self.assertIn("working session with Claude.", log[1])
+
+        cfg = core.config
+        cfg["engine"]["client"] = "copilot"
+        core.save_config(cfg)
+        self.assertEqual(self.req("GET", "/tasks")[1]["work_in"], "Copilot")
+        with mock.patch("fuzz.sessions.launch"), mock.patch("fuzz.sessions.sys.platform", "linux"):
+            body = self.req("POST", f"/tasks/{tid}/open", {})[1]
+        self.assertEqual((body["label"], body["opened"]), ("Copilot", False), "off a Mac the script waits for you")
+        self.assertIn("copilot", open(body["script"]).read())
+        self.assertIn(" -i ", open(body["script"]).read())
+        self.assertEqual(self.req("POST", "/tasks/999/open", {})[0], 404)
+        self.assertTrue(sessions.prompt(core, tid).startswith("I'm working on this task"))
 
     def test_engine_status(self):
         st = self.req("GET", "/engine")[1]

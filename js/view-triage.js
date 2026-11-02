@@ -18,8 +18,8 @@
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
   var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
-  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, attachOpen = {};
-  var docClick = null, docKey = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
+  var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, refs = {}, refPick = {};
+  var docClick = null, docKey = null, unhold = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
   function $(s) { return root.querySelector(s); }
   function cur() { return Store.front(); }
@@ -92,12 +92,14 @@
     if (unsub) unsub(); unsub = null;
     Say.setBusyCheck(null);
     if (docClick) document.removeEventListener('click', docClick); docClick = null;
+    if (unhold) unhold(); unhold = null; Dictate.abort();
     if (docKey) document.removeEventListener('keydown', docKey); docKey = null;
+    if (docDrag) Object.keys(docDrag).forEach(function (n) { window.removeEventListener(n, docDrag[n]); }); docDrag = null;
     if (offSay) offSay(); offSay = null; clearTimeout(echoTimer);
     if (onScroll) window.removeEventListener('scroll', onScroll); onScroll = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
+  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
@@ -133,6 +135,7 @@
       if (card.style.display === 'none' && !ciOpen) showNext();
     } else if (e.type === 'attach') {
       var it = cur(); if (it && it.id === e.id && $('#rich')) { tab = 'sources'; $('#rich').innerHTML = richHTML(it); }
+      if (it && it.id === e.id) paintRefs();
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
       if (card.style.display === 'none' && !ciOpen) showNext();
@@ -152,10 +155,10 @@
   /* The key guide (press ? on Triage). Letters act on a task card; numbers pick from whatever choice is showing. */
   function keysHTML() {
     var g = [
-      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in Claude'], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
+      ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in ' + Store.workIn], ['S', 'Schedule (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
       ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['B', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
-      ['Anywhere', [['N', 'New task (Esc goes back)'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
+      ['Anywhere', [['N', 'New task (Esc goes back)'], [Dictate.key, 'Hold to dictate into the box for Fuzz'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
       '<p class="meta">A card without a draft starts with the cursor in its text box. Press Esc first to use the letter and number keys.</p>' +
@@ -190,7 +193,7 @@
       '</section>' +
       '<div class="triage-foot"><button type="button" class="linkbtn" id="dropbtn"></button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="parkbtn" aria-expanded="false" aria-controls="parkform" aria-keyshortcuts="T">Park a stray thought' + kbd('T') + '</button><span class="keys-sep" aria-hidden="true">·</span><button type="button" class="linkbtn keys-link" id="keysbtn" aria-keyshortcuts="?">Keys</button></div>' +
       '<dialog class="dlg keys-dlg" id="keysdlg" aria-labelledby="keys-h"><div class="dlg-in"><div class="dlg-top"><h2 id="keys-h">Keys</h2><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' + keysHTML() + '</div></dialog>' +
-      '<form class="parkform" id="parkform" hidden><label for="parktext">Park it without leaving this card</label><div class="parkrow"><input id="parktext" type="text" autocomplete="off" placeholder="A stray thought, in a few words"><button class="btn" type="submit">Park</button></div></form>' +
+      '<form class="parkform" id="parkform" hidden><label for="parktext">Park it without leaving this card</label><div class="parkrow"><input id="parktext" type="text" aria-describedby="parkhint" autocomplete="off" placeholder="A stray thought, in a few words"><button class="btn" type="submit">Park</button></div><p class="parkhint" id="parkhint">It goes to Parked and this card stays put. Fuzz brings a few parked things back each week, on days you have room, to ask if you still want them.</p></form>' +
       (LAB ? '<details class="playground"><summary>Fuzz mood lab <span>for refining the character</span></summary><div class="lab">' +
         '<div class="lab-row" role="group" aria-label="Moods">' + [['Idle', 'idle'], ['Eager', 'eager'], ['Thinking', 'thinking'], ['Working', 'working'], ['Happy', 'happy'], ['Proud', 'proud'], ['Grateful', 'grateful'], ['Sheepish', 'sheepish'], ['Puzzled', 'puzzled'], ['Worried', 'worried'], ['Bored', 'bored'], ['Sleepy', 'sleepy'], ['Caring', 'caring'], ['Stare', 'stare'], ['Screen off', 'chill']].map(function (m) { return '<button type="button" class="btn small" data-demo="mood" data-v="' + m[1] + '">' + m[0] + '</button>'; }).join('') + '</div>' +
         '<div class="lab-row" role="group" aria-label="Deadline levels">' + [['Due today', 1], ['Under 2 hours', 2], ['Under 30 min', 3]].map(function (m) { return '<button type="button" class="btn small" data-demo="rush" data-v="' + m[1] + '">' + m[0] + '</button>'; }).join('') + '</div>' +
@@ -209,25 +212,16 @@
     /* count what's cleared, never what's left */
     document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
   }
+  /* The cards underneath are only a stack: what's on them, or how many, stays out of view until each is the one in front */
   function updateStack(arriveLast) {
-    stack.querySelectorAll('.ghost, .stacktags').forEach(function (g) { g.remove(); });
+    stack.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
     var q = Store.queue(), n = Math.min(Math.max(q.length - 1, 0), 3);
-    /* labels for the cards underneath sit above the whole stack, so the front card never covers them */
-    var tags = document.createElement('div'); tags.className = 'stacktags'; tags.setAttribute('aria-hidden', 'true');
     for (var i = n; i >= 1; i--) {
       var g = document.createElement('div'); g.className = 'ghost';
       g.style.transform = 'translateY(-' + (i * 9) + 'px) scale(' + (1 - i * 0.035) + ')';
-      var item = q[i];
-      if (item && item.handedBack) { var t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Handed back'; tags.appendChild(t); }
-      else if (item && item.dueAt) { var t2 = document.createElement('span'); t2.className = 'tag due t2'; t2.textContent = 'Due soon'; tags.appendChild(t2); }
       if (arriveLast && i === n && q.length - 1 <= 3) g.classList.add('arrive');
       stack.insertBefore(g, card);
     }
-    if (tags.children.length) stack.insertBefore(tags, card);
-    /* The tags are visual; screen readers get one sentence about what is behind this card */
-    var behind = q.slice(1), back = behind.filter(function (i) { return i.handedBack; }).length, due = behind.filter(function (i) { return i.dueAt; }).length;
-    var sr = stack.querySelector('#stack-sr') || stack.insertBefore(Object.assign(document.createElement('p'), { id: 'stack-sr', className: 'sr' }), stack.firstChild);
-    sr.textContent = behind.length ? behind.length + ' more after this' + (due ? ', ' + due + ' with a deadline' : '') + (back ? ', ' + back + ' handed back' : '') + '.' : '';
   }
 
   /* ---------- The card ---------- */
@@ -254,6 +248,7 @@
       tiles.push('<button type="button" class="when" data-sched="back" aria-keyshortcuts="E"><span>End of the list' + kbd('E') + '</span><small>After everything else waiting here</small></button>');
       if (!schedMore) tiles.push('<button type="button" class="when when-more" data-sched="more" aria-keyshortcuts="M"><span>More times' + kbd('M') + '</span><small>' + (all.length > 3 ? 'Later options, or an exact time' : 'Or an exact time') + '</small></button>');
       var meta = it.state === 'review' ? 'Pick a rough time. The draft waits, unsent, and comes back then for your OK.'
+        : it.result ? 'Pick a rough time. What Fuzz found waits, and comes back then to ask if it’s done.'
         : 'Pick a rough time. Fuzz finds the right moment around your day. Anything you wrote in the instructions, Fuzz looks into before it comes back.';
       return '<div class="sched-panel"><h3 id="sched-h" tabindex="-1">When should this come back?</h3><p class="meta">' + meta + '</p>' +
         '<div class="when-grid">' + tiles.join('') + '</div>' +
@@ -270,11 +265,12 @@
         '<div class="sched-links"><button type="button" class="linkbtn" data-act="wait-cancel" aria-keyshortcuts="Escape">Back to the card</button></div></form>';
     }
     if (it.state === 'review') return reviewActionsHTML(it);
-    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further */
+    /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further.
+       Not sure yet? Ask me later opens the Schedule picker, and the result comes back to ask again. */
     var res = !!it.result;
     var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
     return '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
-      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in Claude' + kbd('C') + '</button>') +
+      (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>') +
       (res ? '' : '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Schedule' + kbd('S') + '</button>') +
       '<div class="split"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
         '<button type="button" class="btn more-btn" data-act="more" aria-haspopup="menu" aria-expanded="false" aria-label="Clear it another way" title="Clear it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
@@ -282,29 +278,69 @@
           '<button type="button" role="menuitem" data-act="park" aria-keyshortcuts="P"><b>Park it' + kbd('P') + '</b><span>Out of triage with no date. It waits in Parked until someone follows up, or you bring it back.</span></button>' +
           '<button type="button" role="menuitem" data-act="waiting" aria-keyshortcuts="W"><b>Waiting on someone' + kbd('W') + '</b><span>You’re blocked until they get back to you. Fuzz checks back.</span></button>' +
           '<button type="button" role="menuitem" data-act="theirs" aria-keyshortcuts="X"><b>Not mine' + kbd('X') + '</b><span>It’s someone else’s to do. Fuzz lets it go, and brings it back if a new ask needs you.</span></button>' +
-        '</div></div>' + (res ? assignBtn : '') + '</div>';
+        '</div></div>' + (res ? '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S">Ask me later' + kbd('S') + '</button>' + assignBtn : '') + '</div>';
   }
 
-  /* Extra context for Fuzz: folded away until you want it, so the card stays one decision */
-  function attachHTML(it) {
-    return '<details class="attach" id="attach"' + (attachOpen[it.id] ? ' open' : '') + '><summary><b>Add files</b> <span>Optional. More for Fuzz to read.</span></summary>' +
-      '<div class="drop" id="adrop"><button type="button" class="dropbtn" id="adropbtn"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
-        '<span class="droptxt"><b>Drop files here</b><small>Fuzz reads them with this task. They show up under Sources.</small></span><span class="droplink">Choose files</span></button>' +
-        '<input type="file" id="afile" multiple hidden></div></details>';
+  /* The drop zone shows only while a file is dragged onto the screen; + is the way in otherwise */
+  function dropHTML() {
+    return '<div class="drop" id="adrop" hidden><button type="button" class="dropbtn" id="adropbtn" tabindex="-1"><span class="dropicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>' +
+      '<span class="droptxt"><b>Drop files anywhere</b><small>Fuzz reads them with your instructions. They show up under Sources.</small></span></button>' +
+      '<input type="file" id="afile" multiple hidden></div>';
   }
   function addFiles(list) {
     var it = cur(), picked = Array.prototype.slice.call(list || []);
     if (!it || !picked.length) return;
+    /* A file you just added is part of what you're asking: it's picked to read with the instructions */
+    picked.forEach(function (f) { setRef(it, { title: f.name }, true); });
     Store.attach(it.id, picked);
     var line = picked.length === 1 ? 'Got ' + picked[0].name + '. I’ll read it with the task.' : 'Got ' + picked.length + ' files. I’ll read them with the task.';
     Fuzz.say(line, { type: false }); Say.announce(line);
   }
+
+  /* Sources you point Fuzz to with this ask. A source is known by its core id, or by its name until it has one
+     (a file still uploading), so a pick made by name still holds once the core's copy arrives. */
+  function srcKey(s) { return s.id != null ? 'id:' + s.id : 'name:' + s.title; }
+  function isPicked(it, s) { var r = refs[it.id] || []; return r.indexOf(srcKey(s)) > -1 || r.indexOf('name:' + s.title) > -1; }
+  function pickedRefs(it) { return it.sources.filter(function (s) { return isPicked(it, s); }); }
+  function setRef(it, s, on) {
+    var r = (refs[it.id] || []).filter(function (k) { return k !== srcKey(s) && k !== 'name:' + s.title; });
+    if (on) r.push(srcKey(s));
+    refs[it.id] = r;
+  }
+  function refChipsHTML(it) {
+    var on = pickedRefs(it);
+    if (!on.length) return '';
+    return '<ul class="refchips" aria-label="Fuzz reads these first">' + on.map(function (s) {
+      return '<li class="refchip"><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refchip-t">' + esc(s.title) + '</span>' +
+        '<button type="button" class="refx" data-unref="' + esc(srcKey(s)) + '" aria-label="Don’t point Fuzz to ' + esc(s.title) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
+    }).join('') + '</ul>';
+  }
+  /* + adds a source to this ask, as in a chat box: upload a file, or pick one the task already has */
+  function refsHTML(it) {
+    var n = it.sources.length, open = !!refPick[it.id] && n > 0;
+    return '<div class="composer-bar"><div class="plus"><button type="button" class="plusbtn" data-act="plus" aria-haspopup="menu" aria-expanded="false" aria-controls="plusmenu" aria-label="Add a source for Fuzz" title="Add a source"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>' +
+      '<div class="menu plusmenu" role="menu" id="plusmenu" hidden aria-label="Add a source">' +
+        '<button type="button" role="menuitem" data-act="upload"><b>Upload files</b><span>Or drag them anywhere onto the screen.</span></button>' +
+        (n ? '<button type="button" role="menuitem" data-act="refpick"><b>Pick from Sources</b><span>' + n + (n === 1 ? ' source' : ' sources') + ' on this task to point Fuzz to.</span></button>' : '') +
+      '</div></div>' + Dictate.button('instr', 'Dictate instructions', 'plusbtn') + '<div class="refchips-wrap" id="refchips">' + refChipsHTML(it) + '</div></div>' +
+      '<fieldset class="refpick" id="refpick"' + (open ? '' : ' hidden') + '><legend>Point Fuzz to these sources</legend>' + it.sources.map(function (s) {
+        return '<label class="refopt"><input type="checkbox" data-ref="' + esc(srcKey(s)) + '"' + (isPicked(it, s) ? ' checked' : '') + '><span class="pill pill--muted">' + esc(s.type) + '</span><span class="refopt-t">' + esc(s.title) + '</span></label>';
+      }).join('') + '<button type="button" class="linkbtn refpick-done" data-act="refpick">Done</button></fieldset>';
+  }
+  function plusMenu(open, keepFocus) {
+    var m = $('#plusmenu'), b = card.querySelector('[data-act="plus"]'); if (!m || !b) return;
+    m.hidden = !open; b.setAttribute('aria-expanded', String(open));
+    if (open) m.querySelector('button').focus(); else if (!keepFocus) b.focus();
+  }
+  function paintRefs() { var it = cur(), el = $('#refs'); if (it && el) el.innerHTML = refsHTML(it); }
+  function paintRefChips() { var it = cur(), el = $('#refchips'); if (it && el) el.innerHTML = refChipsHTML(it); }
 
   function richAvail(it) {
     var a = [];
     if (it.conversation.length) a.push(['conversation', 'Conversation', it.conversation.length]);
     if (it.contextMd) a.push(['context', 'Context', null]);
     else if (it.context.length) a.push(['context', 'Context', it.context.length]);
+    if (it.people && it.people.length) a.push(['people', 'People', it.people.length]);
     if (it.code && it.code.length) a.push(['code', 'Code', it.code.length]);
     if (it.log.length) a.push(['done', 'Done so far', it.log.length]);
     if (it.sources.length) a.push(['sources', 'Sources', it.sources.length]);
@@ -319,6 +355,7 @@
     if (t === 'conversation') body = '<ol class="convo">' + it.conversation.map(function (m) { var you = m.who === 'You'; return '<li class="' + (you ? 'you' : 'fuzz') + '"><span class="who">' + (you ? '' : Fuzz.mini('good', { cls: 'who-av' })) + esc(m.who) + ' · <span>' + esc(m.time) + '</span></span><span class="bub">' + esc(m.text) + '</span></li>'; }).join('') + '</ol>';
     else if (t === 'context' && it.contextMd) body = '<div class="md">' + UI.md(it.contextMd) + '</div>';
     else if (t === 'context') body = '<ul class="ctx">' + it.context.map(function (c) { return '<li><i aria-hidden="true"></i><span>' + esc(c) + '</span></li>'; }).join('') + '</ul>';
+    else if (t === 'people') body = UI.peopleHTML(it.people);
     else if (t === 'code') body = CodeView.section(it.code, 'card:' + it.id);
     else if (t === 'done') body = UI.logHTML(it.log);
     else body = UI.sourcesHTML(it.sources);
@@ -376,6 +413,11 @@
       h += '<ul class="mentions">' + it.mentions.map(function (m) { return '<li><span class="pill pill--muted">' + esc(m.where) + '</span><span>' + esc(m.text) + '</span></li>'; }).join('') + '</ul>';
     }
     /* Is it yours? shows what was actually said, and by whom, before you answer */
+    if (it.kind === 'entity' && it.entity === 'is_task' && it.asks) {
+      h += '<fieldset class="asks"><legend>Tick the ones that are yours</legend><ul class="mentions">' + it.asks.map(function (a) {
+        return '<li><label class="check"><input type="checkbox" data-ask="' + a.id + '"' + (edits[it.id + ':ask' + a.id] ? ' checked' : '') + '> <span>' + esc(a.title) + '</span></label></li>';
+      }).join('') + '</ul></fieldset>';
+    }
     if (it.kind === 'entity' && it.entity === 'is_task') {
       var said = it.sources.filter(function (s) { return s.quote; });
       if (said.length) h += '<ul class="mentions">' + said.map(function (s) { return '<li><span class="pill pill--muted">' + esc(s.title || s.type) + '</span><span>' + esc(s.quote) + '</span></li>'; }).join('') + '</ul>';
@@ -427,12 +469,11 @@
         '<div class="stale-btns"><button type="button" class="btn" data-act="keep" aria-keyshortcuts="K">Yes, keep it' + kbd('K') + '</button><button type="button" class="btn dark" data-act="letgo" aria-keyshortcuts="L">Let it go' + kbd('L') + '</button></div></section>';
     } else if (isTask) {
       var val = edits[it.id + ':instr'] !== undefined ? edits[it.id + ':instr'] : (it.instr || it.hint || '');
-      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><textarea id="instr" rows="3">' + esc(val) + '</textarea></div>';
-      h += attachHTML(it);
+      h += '<div class="instr"><div class="instr-top"><label for="instr">Instructions for Fuzz</label><span>Suggested by Fuzz. Edit anything.</span></div><div class="composer"><textarea id="instr" rows="3">' + esc(val) + '</textarea><div class="refs" id="refs">' + refsHTML(it) + '</div></div>' + dropHTML() + '</div>';
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
-      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span>Optional. Edit anything.</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
+      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span class="instr-side"><span>Optional. Edit anything.</span>' + Dictate.button('note', 'Dictate a note') + '</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
         '<div class="actions ent"><button type="button" class="btn primary" data-act="ent-primary" aria-keyshortcuts="1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' + esc(it.primary) + kbd(1) + '</button>' +
         '<button type="button" class="btn" data-act="ent-secondary" aria-keyshortcuts="2">' + esc(it.secondary) + kbd(2) + '</button>' +
         (it.third ? '<button type="button" class="btn" data-act="ent-third" aria-keyshortcuts="3">' + esc(it.third) + kbd(3) + '</button>' : '') +
@@ -475,7 +516,7 @@
       '<button type="button" class="btn" data-act="revise" aria-expanded="false" aria-controls="revise" aria-keyshortcuts="R">Ask Fuzz to change it' + kbd('R') + '</button>' +
       '<button type="button" class="btn" data-act="notnow" aria-keyshortcuts="L">Not now' + kbd('L') + '</button></div>' +
       (r ? '<p class="sendnote">Fuzz sends exactly this once you approve. You can undo until it has gone out.</p>' : it.afterApprove ? '<p class="sendnote">' + esc(it.afterApprove) + '</p>' : '') +
-      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes"><button class="btn" type="submit">Send back to Fuzz</button></div></form>';
+      '<form class="revise" id="revise" hidden><label for="revise-text">Tell Fuzz what to change</label><div class="parkrow"><input id="revise-text" type="text" autocomplete="off" placeholder="For example: shorter, and mention the two maybes">' + Dictate.button('revise-text', 'Dictate what to change') + '<button class="btn" type="submit">Send back to Fuzz</button></div></form>';
   }
 
   /* Text boxes grow to show all their text, so nothing is cut off on a narrow screen */
@@ -486,6 +527,7 @@
     scheduling = false; askingWho = false; if (tab && !richAvail(it).some(function (a) { return a[0] === tab; })) tab = null;
     card.className = 'card'; card.style.display = ''; card.style.visibility = '';
     card.innerHTML = cardHTML(it);
+    if (Dictate.active() && !document.contains(Dictate.field())) Dictate.abort();
     var ex = stack.querySelector('.empty'); if (ex) ex.remove();
     var dt = $('#drop-label');
     $('#dropbtn').textContent = it.state === 'review' ? 'Discard this draft' : it.kind === 'task' ? 'Drop this task' : 'Dismiss this question';
@@ -555,7 +597,7 @@
     var box = !$('#draft') && window.matchMedia && matchMedia('(pointer: fine)').matches && ($('#instr') || $('#note'));
     return box || $('#ask');
   }
-  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); }
+  function forgetEdits(id) { ['instr', 'note', 'draft'].forEach(function (b) { delete edits[id + ':' + b]; }); delete refs[id]; delete refPick[id]; }
   function refocus(el) {
     var a = document.activeElement;
     if (booting || !el || (a && a !== document.body && document.contains(a) && !stack.contains(a))) return;
@@ -827,7 +869,8 @@
     /* The card heads for Fuzz while his reaction is still playing. */
     await sleep(rush ? 150 : 250);
     var waited, title = it.title;
-    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr); });
+    var read = pickedRefs(it);
+    var ch = Store.track([it.id], function () { if (set) Object.assign(it, set); waited = Store.assign(it.id, instr, read); });
     forgetEdits(it.id);
     /* Undo is offered as soon as the change is made, since you may move on before Fuzz finishes reacting.
        Once Fuzz starts on it, it can't be undone any more; you'd pull it back from Lineup instead. */
@@ -883,8 +926,9 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     var b = card.querySelector('[data-act="claude"]'); if (b) { b.classList.add('squish'); setTimeout(function () { b.classList.remove('squish'); }, 180); }
-    Fuzz.setMood('stare'); Fuzz.say('Oh. Claude.', { type: false });
-    offer('Opened “' + it.title + '” in Claude.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in Claude. In this demo it just moves to Current.');
+    var who = Store.workIn;
+    Fuzz.setMood('stare'); Fuzz.say('Oh. ' + who + '.', { type: false });
+    offer('Opened “' + it.title + '” in ' + who + '.', Store.track([it.id], function () { Store.session(it.id); }), 'Opened “' + it.title + '” in ' + who + '.' + (Live.on() ? ' It’s in a Terminal window.' : ' In this demo it just moves to Current.'));
     var shown = null, exit = sleep(350).then(function () {
       if (Fuzz.isCalm()) return fadeOut();
       return exitCard([{ transform: 'none', opacity: 1 }, { transform: 'translate(40%,-30px) scale(.9) rotate(3deg)', opacity: 0.9, offset: 0.3 }, { transform: 'translate(130%,-60px) scale(.7) rotate(8deg)', opacity: 0 }], { duration: 460, easing: 'cubic-bezier(.5,0,.8,.4)' });
@@ -902,11 +946,11 @@
     var it = cur(); if (!it || it.kind !== 'task') return;
     streak = 0;
     if ($('#instr')) edits[it.id + ':instr'] = $('#instr').value;
-    var review = it.state === 'review';
+    var review = it.state === 'review', res = !!it.result;
     if (review && $('#draft')) edits[it.id + ':draft'] = $('#draft').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
-    Fuzz.setMood('eager'); Fuzz.say(review ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
+    Fuzz.setMood('eager'); Fuzz.say(review || res ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
     var pickedIdx = await new Promise(function (resolve) { schedResolve = resolve; });
     schedResolve = null;
     if (pickedIdx === -1) {
@@ -927,7 +971,7 @@
     var typed = (edits[it.id + ':instr'] || '').trim(), look = typed && typed !== (it.instr || it.hint || '').trim() ? typed : '';
     Fuzz.setMood('happy'); Fuzz.setArm('none'); Fuzz.pAnim('hop');
     var text = review ? edits[it.id + ':draft'] : undefined;
-    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
+    Fuzz.say(review ? 'Okay. Nothing goes out. I’ll ask you again ' + when + '.' : res && !look ? 'Okay. I’ll ask you again ' + when + '.' : look ? 'On it. I’ll dig in and bring it back ' + when + '.' : 'Done! I’ll bring it back ' + when + '.');
     Fuzz.schedGlyph(Sched.glyph(w), Sched.osd(w));
     offer((review ? 'Not now: “' + it.title + '” asks for your OK again ' : 'Scheduled “' + it.title + '”: ') + when + (look ? '. Fuzz looks into it first.' : '.'), Store.track([it.id], function () { Store.schedule(it.id, w, look, text); }));
     forgetEdits(it.id);
@@ -1037,6 +1081,7 @@
   }
   async function answerEntity(which) {
     var it = cur(); if (!it || it.kind === 'task') return;
+    if (it.asks && which === 'primary' && !card.querySelector('[data-ask]:checked')) { Fuzz.say('Tick the ones that are yours first.', { type: false }); return; }
     var ch = Store.track([it.id, it.dupOf], function () { Store.resolve(it.id, which); });
     var msg = it.answers[which];
     offer('Answered “' + it[which] + '”: ' + it.title + '.', ch, msg);
@@ -1084,6 +1129,7 @@
   /* ---------- Wiring ---------- */
   function wire() {
     offSay = Fuzz.onSay(echo);
+    UI.wireSources(card, cur);
     $('#keysbtn').addEventListener('click', openKeys);
     $('#keysdlg').addEventListener('click', function (e) { if (e.target === e.currentTarget || e.target.closest('[data-close]')) e.currentTarget.close(); });
     $('#keysdlg').addEventListener('close', function () { var b = $('#keysbtn'); if (b && b.offsetParent) b.focus(); });
@@ -1097,12 +1143,58 @@
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
     /* Add files: the button opens the picker, a drop lands on the task */
-    card.addEventListener('toggle', function (e) { var it = cur(); if (e.target.id === 'attach' && it) attachOpen[it.id] = e.target.open; }, true);
-    card.addEventListener('change', function (e) { if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; } });
-    ['dragenter', 'dragover'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (d) { e.preventDefault(); d.classList.add('over'); } }); });
-    ['dragleave', 'drop'].forEach(function (n) { card.addEventListener(n, function (e) { var d = e.target.closest && e.target.closest('#adrop'); if (!d) return; e.preventDefault(); d.classList.remove('over'); if (n === 'drop' && e.dataTransfer) addFiles(e.dataTransfer.files); }); });
+    card.addEventListener('change', function (e) {
+      if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; return; }
+      var it = cur();
+      if (it && e.target.dataset.ask !== undefined) edits[it.id + ':ask' + e.target.dataset.ask] = e.target.checked;
+      if (it && e.target.dataset.ref !== undefined) { var rs = it.sources.filter(function (x) { return srcKey(x) === e.target.dataset.ref; })[0]; if (rs) { setRef(it, rs, e.target.checked); paintRefChips(); } }
+    });
+    /* A file dragged anywhere onto the screen opens the drop zone; letting go anywhere adds it to the task.
+       The zone goes back to how it was once the drag is over. */
+    var depth = 0;
+    function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') > -1; }
+    function zone() { var it = cur(); return it && it.kind === 'task' && !busy && !ciOpen && card.style.display !== 'none' && $('#adrop'); }
+    function endDrag() {
+      depth = 0; document.documentElement.classList.remove('dragging-file');
+      var d = $('#adrop'); if (d) { d.classList.remove('over'); d.hidden = true; }
+    }
+    docDrag = {
+      dragenter: function (e) {
+        if (!hasFiles(e)) return;
+        var d = zone(); if (!d) return;
+        e.preventDefault();
+        if (depth++ > 0) return;
+        d.hidden = false; d.classList.add('over');
+        document.documentElement.classList.add('dragging-file');
+        d.scrollIntoView({ block: 'nearest', behavior: Fuzz.isCalm() ? 'auto' : 'smooth' });
+        Fuzz.setMood('eager'); Fuzz.say('Drop it anywhere. I’ll read it with this one.', { type: false });
+      },
+      dragover: function (e) { if (hasFiles(e) && zone()) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
+      dragleave: function (e) { if (hasFiles(e) && depth > 0 && --depth === 0) { endDrag(); Fuzz.setMood('idle'); } },
+      drop: function (e) {
+        if (!hasFiles(e) || !zone()) return;
+        e.preventDefault(); endDrag();
+        addFiles(e.dataTransfer.files);
+      }
+    };
+    Object.keys(docDrag).forEach(function (n) { window.addEventListener(n, docDrag[n]); });
     card.addEventListener('click', function (e) {
       if (e.target.closest('#adropbtn')) { $('#afile').click(); return; }
+      var ux = e.target.closest('[data-unref]'), ci = cur();
+      if (ux && ci) {
+        refs[ci.id] = (refs[ci.id] || []).filter(function (k) { return k !== ux.dataset.unref; });
+        var gone = ci.sources.filter(function (s) { return srcKey(s) === ux.dataset.unref; })[0];
+        if (gone) setRef(ci, gone, false);
+        paintRefs(); card.querySelector('[data-act="plus"]').focus();
+        return;
+      }
+      if (e.target.closest('[data-act="plus"]')) { plusMenu(!$('#plusmenu').hidden ? false : true); return; }
+      if (e.target.closest('[data-act="upload"]')) { plusMenu(false, true); $('#afile').click(); return; }
+      if (e.target.closest('[data-act="refpick"]') && ci) {
+        refPick[ci.id] = !refPick[ci.id]; paintRefs();
+        var first = refPick[ci.id] && card.querySelector('#refpick input'); (first || card.querySelector('[data-act="plus"]')).focus();
+        return;
+      }
       var t = e.target.closest('[data-act],[data-when],[data-tab],[data-quick],[data-sched],[data-who]');
       if (!t || !card.contains(t)) return;
       if (t.dataset.who) { waitOn(t.dataset.who); return; }
@@ -1161,6 +1253,8 @@
     docClick = function (e) {
       var mm = root && root.querySelector('#moremenu');
       if (mm && !mm.hidden && !e.target.closest('.split')) { mm.hidden = true; var mb = root.querySelector('.more-btn'); if (mb) mb.setAttribute('aria-expanded', 'false'); }
+      var pm = root && root.querySelector('#plusmenu');
+      if (pm && !pm.hidden && !e.target.closest('.plus')) { pm.hidden = true; root.querySelector('[data-act="plus"]').setAttribute('aria-expanded', 'false'); }
     };
     document.addEventListener('click', docClick);
     card.addEventListener('keydown', function (e) {
@@ -1181,6 +1275,8 @@
     docKey = function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
+      /* Escape stops dictating first, keeping what was heard */
+      if (e.key === 'Escape' && Dictate.active()) { e.preventDefault(); Dictate.stop(); return; }
       /* Escape leaves the card's box, so the number keys work again */
       if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
       /* Escape folds the stray-thought box away, keeping what you typed */
@@ -1191,6 +1287,8 @@
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }
       /* T parks a stray thought from any card without leaving it */
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
+      var pm = $('#plusmenu');
+      if (e.key === 'Escape' && pm && !pm.hidden) { e.preventDefault(); plusMenu(false); return; }
       var mm = $('#moremenu');
       if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
@@ -1226,6 +1324,29 @@
       e.preventDefault(); b.click();
     };
     document.addEventListener('keydown', docKey);
+
+    /* Dictation into the box for Fuzz (dictate.js): the mic by each box, or hold Alt (Option) + Space for
+       the box you're in, else the one on the card (what to change, once you've asked for a change). */
+    var DICT = ['instr', 'note', 'revise-text'];
+    function dictOpts() {
+      return { done: 'Got it. Change anything, then pick what to do.', onChange: function (on) {
+        var f = Dictate.field(), b = f && root && root.querySelector('[data-dictate="' + f.id + '"]');
+        root && root.querySelectorAll('[data-dictate]').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        if (on && b) b.setAttribute('aria-pressed', 'true');
+      } };
+    }
+    function dictTarget() {
+      if (!alive || ciOpen || card.style.display === 'none' || scheduling) return null;
+      var a = document.activeElement;
+      if (a && DICT.indexOf(a.id) > -1 && root.contains(a)) return a;
+      var rv = $('#revise'); if (rv && !rv.hidden) return $('#revise-text');
+      return $('#instr') || $('#note');
+    }
+    card.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-dictate]'); if (!b) return;
+      if (Dictate.active()) Dictate.stop(); else Dictate.start($('#' + b.dataset.dictate), dictOpts());
+    });
+    unhold = Dictate.hold(dictTarget, dictOpts);
 
     card.addEventListener('submit', function (e) {
       if (e.target.id === 'wait-form') { e.preventDefault(); waitOn($('#wait-who').value); return; }

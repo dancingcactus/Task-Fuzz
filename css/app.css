@@ -212,6 +212,7 @@ html.calm .pg-seg { transition: none; }
 .parkform { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .parkform[hidden] { display: none; }
 .parkform label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.parkhint { font-size: 13px; color: var(--muted); margin: 0; }
 .parkrow { display: flex; gap: 8px; }
 .playground { background: var(--surface); border: 1px dashed var(--line); border-radius: 16px; padding: 4px 14px; }
 .playground summary { cursor: pointer; padding: 10px 0; font-weight: 600; min-height: 44px; display: flex; align-items: center; gap: 8px; }
@@ -242,12 +243,47 @@ html.calm .echo { animation: none; }
 .instr-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
 .instr-top label { margin: 0; }
 .instr-top span { font-size: 12.5px; color: var(--muted); }
-.attach { margin: -10px 0 -6px; } /* sits close under the instructions it adds to */
-.attach summary { cursor: pointer; list-style: none; min-height: 32px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; padding: 4px 0; font-size: 14px; }
-.attach summary::-webkit-details-marker { display: none; }
-.attach summary b { font-weight: 600; color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
-.attach summary span { font-size: 12.5px; color: var(--muted); }
-.attach[open] summary { padding-bottom: 6px; }
+.instr-side { display: inline-flex; align-items: center; gap: 4px; }
+.iconbtn.mic { color: var(--muted); }
+.instr-side .iconbtn.mic { border-color: transparent; background: transparent; }
+.iconbtn.mic:hover { color: var(--ink); }
+.mic[aria-pressed="true"], .mic[aria-pressed="true"]:hover { color: var(--on-accent); background: var(--accent); border-color: var(--accent); animation: micpulse 1.4s ease-in-out infinite; }
+@keyframes micpulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .mic[aria-pressed="true"] { animation: none; } }
+/* The instructions are a chat-style box: + adds a source, and the ones Fuzz reads first sit as chips beside it */
+.composer { background: var(--surface-2); border: var(--bw) solid var(--line); border-radius: 12px; }
+/* the box wears the textarea's focus ring, so the ring takes in the chips too */
+.composer:has(textarea:focus-visible) { outline: 3px solid var(--link); outline-offset: 2px; }
+.composer textarea { border: 0; background: transparent; border-radius: 12px 12px 0 0; }
+.composer textarea:focus-visible { outline: none; }
+.refs { padding: 0 8px 8px; }
+.composer-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.plus { position: relative; flex: none; }
+.plusbtn { display: grid; place-items: center; width: 34px; height: 34px; border: var(--bw) solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); }
+.plusbtn:hover, .plusbtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.menu.plusmenu { left: 0; right: auto; top: calc(100% + 6px); bottom: auto; width: 260px; }
+.refchips-wrap { display: contents; }
+.refchips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.refchip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 2px 2px 2px 4px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13.5px; }
+.refchip-t, .refopt-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.refx { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+.refx:hover { background: var(--field); color: var(--ink); }
+.refpick { margin: 8px 0 0; padding: 6px 10px; border: var(--bw) solid var(--line); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; }
+.refpick[hidden] { display: none; }
+.refpick legend { padding: 0 4px; font-size: 12.5px; color: var(--muted); }
+.refopt { display: flex; align-items: center; gap: 8px; min-height: 40px; min-width: 0; cursor: pointer; font-size: 14px; }
+.refopt input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
+.refpick-done { align-self: flex-end; min-height: 36px; padding: 6px 4px; }
+.instr .drop { margin-top: 8px; }
+.drop[hidden] { display: none; }
+/* A file you added can come off its task; removing asks once, in place of the row */
+.sources li:has(.src-rm) { display: flex; gap: 6px; align-items: stretch; }
+.sources li:has(.src-rm) .source { flex: 1; min-width: 0; }
+.src-rm { flex: none; width: 44px; display: grid; place-items: center; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--muted); }
+.src-rm:hover { border-color: var(--danger); color: var(--danger); }
+.src-asking { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border: var(--bw) solid var(--danger); border-radius: 14px; background: var(--field); }
+.src-ask { flex: 1 1 200px; font-size: 14px; }
+html.dragging-file .drop.over .dropbtn { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--field)); }
 .actions .btn { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; }
 .actions .btn.primary { min-height: 50px; box-shadow: 0 4px 10px -4px color-mix(in srgb, #000 30%, transparent); }
 .actions.ent { grid-template-columns: repeat(2, 1fr); }
@@ -264,8 +300,12 @@ html.calm .echo { animation: none; }
 .actions.review { grid-template-columns: 1fr 1fr; }
 .actions.review .split { grid-column: 1 / -1; } /* Approve and send, with Mark done behind its arrow, gets the whole row */
 .actions.review .split .menu { left: 0; width: auto; max-width: none; }
-/* A result: Done leads, and sending Fuzz further sits beside it */
-.actions.result { grid-template-columns: 3fr 2fr; }
+/* A result: Done leads on its own row, with Ask me later and sending Fuzz further under it */
+.actions.result { grid-template-columns: 1fr 1fr; grid-template-areas: "done done" "sched assign"; }
+.actions.result .split { grid-area: done; }
+.actions.result .split .menu { left: 0; width: auto; max-width: none; }
+.actions.result [data-act="schedule"] { grid-area: sched; }
+.actions.result [data-act="assign"] { grid-area: assign; }
 .split .done-btn.primary svg { color: currentColor; }
 .split .more-btn.primary { border-left-color: color-mix(in srgb, currentColor 35%, transparent); }
 .sendnote { margin: 8px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
@@ -329,6 +369,8 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .pseen { font-size: 13px; color: var(--muted); }
 .mentions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mentions li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); }
+.asks { border: 0; margin: 0 0 12px; padding: 0; min-width: 0; }
+.asks legend { padding: 0 0 8px; font-size: 12.5px; color: var(--muted); }
 /* The session recap on the empty queue */
 .recap { margin: 2px 0 4px; font-weight: 600; }
 /* Key guide */
@@ -412,6 +454,24 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .log-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); }
 .log-kind { font-weight: 600; color: var(--ink); }
 .log-text { line-height: 1.5; }
+.people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.person { display: flex; gap: 12px; align-items: flex-start; }
+/* Monograms: six colours, ordered so the closest pair (ochre, olive) are never neighbours. Tinted into the
+   surface, so ink on them stays above 5.4:1 in light, dark and high contrast. Past six they repeat, dotted. */
+.person-av { --pc: var(--accent); --pc-mix: 45%; flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--pc) var(--pc-mix), var(--surface)); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1; }
+:root[data-mode="dark"] .person-av { --pc-mix: 50%; }
+/* Trimmed to the capitals, so the letters sit in the middle of the circle, not the line box with room for descenders */
+.person-av > span { text-box: trim-both cap alphabetic; }
+.pc-1 { --pc: #C8552E; } .pc-2 { --pc: #1E93A6; } .pc-3 { --pc: #C9921A; } .pc-4 { --pc: #5A62D0; } .pc-5 { --pc: #6F9A2E; } .pc-6 { --pc: #B0509A; }
+.person-av.again { border: 2px dotted color-mix(in srgb, var(--pc) 60%, var(--ink)); }
+.person-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.person-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-height: 34px; padding-top: 6px; font-weight: 600; line-height: 1.4; }
+.person-sub { font-size: 13px; font-weight: 500; color: var(--muted); overflow-wrap: anywhere; }
+.person-did { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.person-did li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; line-height: 1.5; }
+.person-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.person-quote { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
+.person-quote::before { content: "“"; } .person-quote::after { content: "”"; }
 .sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .source { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); text-decoration: none; }
 .source:hover { border-color: var(--accent); }
@@ -432,6 +492,7 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .view--artifacts { max-width: 760px; }
 .artifacts .tasks-head .meta { margin: 4px 0 0; }
 .afilters .lcount { margin-left: 2px; }
+.alist { display: flex; flex-direction: column; gap: 18px; }
 .arow { text-decoration: none; }
 .arow .rt { font-weight: 600; overflow-wrap: anywhere; }
 .arow .rs { font-size: 13px; color: var(--muted); }
@@ -460,6 +521,10 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .decide-t { flex: 1; display: flex; flex-direction: column; line-height: 1.35; color: var(--muted); }
 .decide-t strong { color: var(--ink); font-size: 16px; }
 .decide-go { flex: none; font-size: 20px; color: var(--muted); }
+.decide-more { margin-top: -8px; }
+.decide-more summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; padding: 0 8px; color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.decide-more summary:hover { color: var(--ink); }
+.decide-more[open] summary { margin-bottom: 6px; }
 .decide--clear { margin: 0; color: var(--muted); box-shadow: none; background: transparent; border-style: dashed; justify-content: center; }
 .lsec { display: flex; flex-direction: column; gap: 10px; }
 .lsec h2 { font-family: var(--font-display); font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
