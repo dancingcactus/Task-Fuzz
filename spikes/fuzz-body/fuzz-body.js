@@ -34,9 +34,10 @@
       lb: 1, rb: 1, llb: 1, rlb: 1,    // bend direction: +1 bows outward, -1 inward
       lhand: 'open', rhand: 'open', lrot: null, rrot: null, // hand angle in degrees, null = follow the arm
       lfr: 0, rfr: 0,                  // foot tilt
-      y: 0, rot: 0, head: 0,           // body bob, body lean, head tilt
+      x: 0, y: 0, rot: 0, head: 0,     // hip shift, body bob, body lean, head tilt
       lL: ARM, rL: ARM,                // arm hose length (stretch it to reach around the head)
       lback: false, rback: false,      // draw that arm behind the head
+      lunder: false, runder: false,    // draw that arm behind the torso
       lclack: 0, rclack: 0,            // claw snapping open and shut (0 = still)
       mood: 'idle', urgency: 0, cool: false
     };
@@ -60,6 +61,15 @@
     var a = S(t, 5), b = S(t, 10);
     return P({ mood: 'happy', lh: [56 - a * 6, 140 + a * 26], rh: [144 - a * 6, 140 - a * 26], lb: a > 0 ? -1 : 1, rb: a > 0 ? 1 : -1,
       rot: a * 5, y: -Math.abs(b) * 4, lf: [86 + a * 3, 204 - pos(b) * 5], rf: [114 + a * 3, 204 - pos(-b) * 5], head: -a * 6 });
+  } };
+  /* Both arms swing together like a pendulum while the hips go the other way. Each arm only changes sides of the
+     torso at the far end of its own side, where it is clear of the body, so it never seems to pass through it.
+     That makes four beats: both in front, one each way, both behind, one each way the other way round. */
+  R.floss = { label: 'Floss', say: 'List’s clean. Time to floss.', pose: function (t) {
+    var a = S(t, 6), c = Math.cos(t * 6), s = (a < 0 ? -1 : 1) * Math.pow(Math.abs(a), .7);
+    var ax = Math.sin(s * 1.1) * ARM, ay = Math.cos(s * 1.1) * ARM, turn = t * 6 / (2 * Math.PI);
+    return P({ mood: 'happy', lh: [SH_L[0] + ax, SH_L[1] + ay], rh: [SH_R[0] + ax, SH_R[1] + ay], lhand: 'fist', rhand: 'fist', lL: ARM - 2, rL: ARM - 2,
+      lunder: !!(Math.floor(turn + .25) & 1), runder: !(Math.floor(turn - .25) & 1), x: -s * 9, rot: s * 7, y: -Math.abs(c) * 2, head: -s * 5, lf: [84, 204], rf: [116, 204] });
   } };
   R.proud = { label: 'Hands on hips', say: 'Three tasks before lunch. Not bad.', pose: function (t) {
     return P({ mood: 'proud', lh: [80, 160], rh: [120, 160], lhand: 'fist', rhand: 'fist', y: -1.5 + S(t, 1.5) * .6, head: -4, lf: [84, 204], rf: [116, 204] });
@@ -188,6 +198,7 @@
           '<g class="foot lfoot">' + FOOT + '</g><g class="foot rfoot">' + FOOT + '</g></g>' +
         '<g class="bodyg">' +
           '<g class="neck"><rect x="91" y="108" width="18" height="14" rx="3"/><path d="M91 116H109M91 119.5H109"/></g>' +
+          '<g class="arms aunder"></g>' +
           '<g class="torso">' +
             '<rect x="76" y="118" width="48" height="52" rx="14" fill="var(--cab)"/>' +
             '<path d="M76 157H124Q124 170 111 170H89Q76 170 76 157Z" fill="var(--cab-d)" opacity=".5"/>' +
@@ -195,6 +206,7 @@
             '<rect x="84" y="129" width="32" height="7" rx="3.5" fill="var(--bezel)"/><rect x="87" y="131.8" width="26" height="1.6" rx=".8" fill="#000" opacity=".55"/>' +
             '<circle cx="88" cy="147" r="3" fill="var(--trim)"/><circle cx="97" cy="147" r="3" fill="var(--trim)"/><circle class="tled" cx="112" cy="147" r="2.1"/>' +
             '<circle cx="' + SH_L[0] + '" cy="' + SH_L[1] + '" r="4" fill="var(--cab-d)"/><circle cx="' + SH_R[0] + '" cy="' + SH_R[1] + '" r="4" fill="var(--cab-d)"/>' +
+            '<circle class="shcap lshcap" cx="' + SH_L[0] + '" cy="' + SH_L[1] + '" r="3.6"/><circle class="shcap rshcap" cx="' + SH_R[0] + '" cy="' + SH_R[1] + '" r="3.6"/>' +
           '</g>' +
           '<g class="arms aback"></g>' +
           '<g class="headg">' + window.FUZZ_SVG + '</g>' +
@@ -206,8 +218,8 @@
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
     this.el = { ll: qa('.ll'), rl: qa('.rl'), llb: q('.llb'), rlb: q('.rlb'), lll: q('.lll'), rll: q('.rll'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
       lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
-      larm: q('.larm'), rarm: q('.rarm'), aback: q('.aback'), afront: q('.afront') };
-    this.back = { l: false, r: false };
+      larm: q('.larm'), rarm: q('.rarm'), lshcap: q('.lshcap'), rshcap: q('.rshcap'), aunder: q('.aunder'), aback: q('.aback'), afront: q('.afront') };
+    this.layerOf = { l: 'afront', r: 'afront' };
     this.gap = { l: null, r: null };
     this.cur = null; this.ang = { l: 90, r: 90 };
     this.setBody(this.body);
@@ -243,20 +255,20 @@
     if (!this.cur) this.cur = JSON.parse(JSON.stringify(tg));
     var c = this.cur;
     ['lh', 'rh', 'lf', 'rf'].forEach(function (n) { c[n][0] += (tg[n][0] - c[n][0]) * k; c[n][1] += (tg[n][1] - c[n][1]) * k; });
-    ['lb', 'rb', 'llb', 'rlb', 'y', 'rot', 'head', 'lfr', 'rfr', 'lL', 'rL'].forEach(function (n) { c[n] += (tg[n] - c[n]) * k; });
+    ['lb', 'rb', 'llb', 'rlb', 'x', 'y', 'rot', 'head', 'lfr', 'rfr', 'lL', 'rL'].forEach(function (n) { c[n] += (tg[n] - c[n]) * k; });
 
     if (!this.body) {
       this.el.bodyg.removeAttribute('transform'); this.el.headg.removeAttribute('transform');
       return;
     }
     var e = this.el;
-    var bodyT = 'translate(0 ' + f(c.y) + ') rotate(' + f(c.rot) + ' ' + PIVOT[0] + ' ' + PIVOT[1] + ')';
+    var bodyT = 'translate(' + f(c.x) + ' ' + f(c.y) + ') rotate(' + f(c.rot) + ' ' + PIVOT[0] + ' ' + PIVOT[1] + ')';
     e.bodyg.setAttribute('transform', bodyT);
     e.headg.setAttribute('transform', 'rotate(' + f(c.head) + ' ' + NECK[0] + ' ' + NECK[1] + ')');
 
     // hips move with the body; ankles stay in world space so feet stay planted
     var r = c.rot * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
-    function world(p) { var x = p[0] - PIVOT[0], y = p[1] - PIVOT[1]; return [PIVOT[0] + x * cs - y * sn, PIVOT[1] + x * sn + y * cs + c.y]; }
+    function world(p) { var x = p[0] - PIVOT[0], y = p[1] - PIVOT[1]; return [PIVOT[0] + x * cs - y * sn + c.x, PIVOT[1] + x * sn + y * cs + c.y]; }
     var lleg = limb(world(HIP_L), c.lf, LEG, c.llb), rleg = limb(world(HIP_R), c.rf, LEG, -c.rlb);
     setD(e.ll, lleg.d); setD(e.rl, rleg.d);
     var lg = rings(lleg, LEG_RINGS), rg = rings(rleg, LEG_RINGS);
@@ -269,7 +281,8 @@
 
     // arms are in body space, so a hand on the hip stays on the hip when Fuzz leans
     var la = limb(SH_L, c.lh, c.lL, c.lb), ra = limb(SH_R, c.rh, c.rL, -c.rb);
-    this.layer('l', tg.lback); this.layer('r', tg.rback);
+    this.layer('l', tg.lunder ? 'aunder' : tg.lback ? 'aback' : 'afront');
+    this.layer('r', tg.runder ? 'aunder' : tg.rback ? 'aback' : 'afront');
     setD(e.la, la.d); setD(e.ra, ra.d);
     var lr = rings(la, RINGS), rr = rings(ra, RINGS);
     e.lab.setAttribute('d', lr.bump); e.lal.setAttribute('d', lr.line);
@@ -277,11 +290,11 @@
     this.hand('l', e.lhand, c.lh, tg.lrot == null ? la.ang : tg.lrot, gapOf(tg.lhand, tg.lclack, t), k);
     this.hand('r', e.rhand, c.rh, tg.rrot == null ? ra.ang : tg.rrot, gapOf(tg.rhand, tg.rclack, t + .2), k);
   };
-  Rig.prototype.layer = function (side, back) {
-    back = !!back;
-    if (this.back[side] === back) return;
-    this.back[side] = back;
-    var arm = this.el[side + 'arm'], to = back ? this.el.aback : this.el.afront;
+  Rig.prototype.layer = function (side, name) {
+    if (this.layerOf[side] === name) return;
+    this.layerOf[side] = name;
+    this.el[side + 'shcap'].classList.toggle('on', name === 'aunder');  // the shoulder keeps its look while the arm is behind the torso
+    var arm = this.el[side + 'arm'], to = this.el[name];
     if (side === 'l') to.insertBefore(arm, to.firstChild); else to.appendChild(arm);
   };
   function gapOf(shape, clack, t) {

@@ -1,0 +1,40 @@
+/* The rig, same as spikes/fuzz-body. Shared by the comparison page and the studio. */
+.rig { display: block; width: 100%; height: auto; overflow: visible; }
+.rig #bot { width: 140px; height: 126px; display: inline; overflow: visible; }
+.rig:not(.nobody) #bot > ellipse { display: none; }
+.rig.nobody .legs, .rig.nobody .arms, .rig.nobody .torso, .rig.nobody .neck, .rig.nobody .bshadow, .rig.nobody .vhs, .rig.nobody .paper { display: none; }
+.rig { --limb: color-mix(in srgb, var(--trim) 45%, #9c8f84); --limb-o: var(--bezel); }
+.limb-o { fill: none; stroke: var(--limb-o); stroke-width: 6.6; stroke-linecap: round; stroke-linejoin: round; }
+.limb-i { fill: none; stroke: var(--limb); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.rig:not(.hinges) .joint { display: none; }
+.arm .limb-o, .leg .limb-o { stroke-width: 8.6; }
+.arm .limb-i, .leg .limb-i { stroke-width: 5.8; }
+.ring-b { fill: none; stroke: var(--limb-o); stroke-width: 3.2; stroke-linecap: butt; }
+.ring-l { fill: none; stroke: var(--limb-o); stroke-width: 1.3; stroke-linecap: butt; opacity: .85; }
+.hand .claw { fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.5; stroke-linejoin: round; }
+.hand .wrist { fill: var(--limb-o); }
+.foot .fo { fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.6; stroke-linejoin: round; }
+.foot .fs { fill: var(--limb-o); }
+.shcap { display: none; fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.4; }
+.shcap.on { display: inline; }
+.neck rect { fill: var(--bezel); }
+.neck path { stroke: var(--limb); stroke-width: 1.2; opacity: .6; }
+.bshadow { fill: #000; opacity: .12; }
+.tled { fill: var(--ok); }
+.vb { fill: #2a2622; stroke: var(--limb-o); stroke-width: 1; }
+.vl { fill: #f3ead7; }
+.vt { fill: #3a2c25; font-family: var(--font-display); font-weight: 700; }
+.vw { fill: #151311; }
+.vs { fill: #e4dccb; }
+.paper .sh { fill: #f8f2e4; stroke: var(--limb-o); stroke-width: .9; }
+.paper .ln { fill: none; stroke: #3a2c25; stroke-width: 1.1; opacity: .5; }
+.paper .mk { fill: var(--amber); }
+.paper .ok { fill: var(--ok); }
+/* One z, once, as Fuzz nods off. The zzz stays hidden the rest of the time. */
+#bot.snooze .zzz { display: block; }
+#bot.snooze .zzz text { display: none; }
+#bot.snooze .zzz text:nth-child(2) { display: inline; animation: zfloat 2.4s ease-in 1; }
+.mic .mh { fill: var(--limb-o); }
+.mic .mc { fill: var(--limb); stroke: var(--limb-o); stroke-width: .7; }
+.mic .mb { fill: #d9d2c5; stroke: var(--limb-o); stroke-width: 1.3; }
+.mic .mg { fill: none; stroke: var(--limb-o); stroke-width: .7; opacity: .6; }

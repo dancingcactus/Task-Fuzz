@@ -1,0 +1,62 @@
+# Spike: Fuzz with hidden elbows and knees
+
+Do real pivots fix the noodly poses left over from `spikes/fuzz-anime`, without giving up the tube look? This page lets
+you judge by watching the hoses and the new limbs side by side.
+
+Open `spikes/fuzz-joints/index.html` in a browser. It works straight from the file system, or from any static server
+started at the repo root. The page runs the untouched `spikes/fuzz-anime/fuzz-anime.js` on the left, and uses the
+anime.js copy from that folder, so keep the two spikes together.
+
+## What's here
+
+- **Hidden pivots** (`fuzz-joints.js`): each arm and leg moves as two equal segments that pivot at an elbow or knee,
+  but it is drawn as one ringed tube that rounds the corner. The six arm rings and five leg rings are spaced along
+  the whole limb, as they were on the hoses.
+- **Show hinges**: a toggle on the page draws the same pivots as pinned joints, with the tube's corner left sharp.
+  The two share all their motion, so you can flip between them during a reaction.
+- **Elbows that find their own way**: each elbow is pulled toward a point down and out from its shoulder. That
+  replaces the per-pose bend settings, and the bend comes out right in every reaction: elbows drop when the hands go
+  up and stick out on the hips. When a hand crosses that line the elbow swings past the viewer, so it never snaps across.
+- **The studio runs here**: `spikes/fuzz-anime/studio.html` uses this rig, so this file also carries what the studio
+  needs from the anime.js spike: sitting on the card, swinging legs, the slower Floss, and the transitions.
+- **Wave hello**: the upper arm holds still and the forearm swings from the elbow. To change it, edit `WAVE_ARM`,
+  `WAVE_DROP` and the forearm angles in the `wave()` calls.
+- **Finger guns are gone**: the pose didn't read on claws.
+- **Disco**: a new reaction, on this rig only. The classic point, four counts on each arm, in shades.
+- **Straight hand paths**: hands swing round the shoulder by default. A pose can set `lst` or `rst` to blend toward a
+  straight line, from 0 for the full arc to 1 for dead straight. Disco uses 1, and the studio calls this Straight path.
+- **Working**: on this rig, Fuzz holds a stack of papers and moves the front sheet to the back, three times, then taps
+  them even. Take out papers and Put papers away are transitions, like Sit down and Get up: they run on the way in and
+  out of Working, and the studio lists them with the other transitions.
+- **Working: printout**: a second working reaction. A sheet feeds out of the chest slot in jerks, Fuzz takes it, reads
+  it, and puts it behind its back the same way as the papers.
+- **Rushing**: the fists pump opposite the feet, chest to hip, on the side of the shoulder that keeps the elbows low.
+  There are three speeds, matching the app's urgency levels: brisk walk, jog and sprint. `strides()` scales one cycle.
+- **Gestures**: Salute, Hop, Lean in, Gulp, Bow and Lift play once for the app's quick moments, and Listening is a
+  hold for dictation: Fuzz takes a mic from behind its back, with its own pair of transitions, and holds it out to you. Fuzz faces front, so `hp` tips the head toward the viewer to bow or lean.
+- **Ta-da, Jazz hands and Mic drop**: options for the "ta-da" task-done moment. The app's spin is not on this rig, because a front-on Fuzz can't really turn.
+- **Gulp**: a sheet sails in from the side, Fuzz catches it and feeds it to the chest slot, which swallows it in gulps.
+- **Wake up and Power on**: transitions that run on the edge of the card before Get up, when Fuzz leaves Sit & doze or
+  Power off for anything standing.
+- **Sit & doze and Power off**: Fuzz sits down awake and swings its legs before dropping off. Sit & doze lets one z
+  float up with each nod.
+- **Same timing**: the reactions are the ones from the anime.js spike. A few poses changed: Thinking and Shrug lost
+  their shortened arms because the elbow now folds, Cheer lost an exaggerated leg bend, Sit & doze and Power off rest
+  their hands on the knees, and the arm in Flick antenna stretches less.
+
+- **Bored: old tape**: a new reaction, on this rig only. Fuzz slumps, looks down, and a VHS tape pops out of the chest
+  slot. The claw pulls it out and holds it up, Fuzz reads the label, turns it over to the back, then slides it home.
+  The tape turns as a box, so edge-on it shows its spine, and the claw twists with it.
+  It plays once and goes back to what Fuzz was doing.
+
+## First impressions
+
+- **Better than the hoses:** Hands on hips, the head scratch, Shrug and Arms crossed read at a glance, because an arm
+  now has a clear upper and lower part.
+- **Better than visible hinges:** Fuzz keeps the tube character, and the chest poses are much cleaner with no hinges
+  piled on a 48-wide torso. Worried and Grateful gain the most. Claws on the chest are still the busiest part.
+- **Still a cheat:** arms stretch to reach. Flick antenna's arm is about two and a half times its normal length,
+  though it is easier to accept on a tube than on a jointed arm.
+- **Cost:** almost nothing. A draw takes about 0.12 ms against about 0.08 ms for the hoses, on one rig in headless Chromium.
+- **Not done:** dark-theme check, follow-through on the antennas and claws, and wiring any of this into the app. The
+  poses were judged on still frames, and nobody has judged them at full speed yet.

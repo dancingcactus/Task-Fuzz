@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuzz Motion Spike</title>
+<link rel="icon" type="image/svg+xml" href="../../assets/fuzz-favicon.svg">
+<link rel="stylesheet" href="../../css/app.css">
+<link rel="stylesheet" href="../../css/fuzz.css">
+<link rel="stylesheet" href="rig.css">
+<style>
+  body { padding: 0 16px 64px; }
+  main { max-width: 980px; margin: 0 auto; }
+  header.top { padding: 28px 0 8px; }
+  header.top h1 { font-family: var(--font-display); font-size: 26px; }
+  header.top p { color: var(--muted); max-width: 66ch; margin: 6px 0 0; }
+  h2 { font-family: var(--font-display); font-size: 18px; margin: 36px 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
+
+  /* ---- side by side ---- */
+  .say { min-height: 1.5em; margin: 14px 0 10px; font-size: 15px; }
+  .duel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .stagebox { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 20px; padding: 12px 16px 16px; box-shadow: var(--shadow); }
+  .stagebox h3 { font-family: var(--font-display); font-size: 15px; }
+  .stagebox .meta { color: var(--muted); font-size: 13px; margin: 1px 0 0; }
+  .rigbox { max-width: 280px; margin: 6px auto 0; cursor: pointer; position: relative; z-index: 2; }
+  .rigbox .rig, .mperch .rig { margin-bottom: -4%; }   /* the feet land on the card's top edge */
+  .reacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 16px; }
+  .reacts button { text-align: left; padding: 9px 12px; border-radius: 12px; border: var(--bw) solid var(--line); background: var(--surface); font-size: 14px; }
+  .reacts button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); margin-top: 14px; }
+  .toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* ---- at app size ---- */
+  .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .variant { background: var(--field); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; }
+  .variant h3 { font-family: var(--font-display); font-size: 15px; margin-bottom: 8px; }
+  .mperch { width: 160px; margin: 0 4px 0 auto; position: relative; z-index: 2; }  /* right of the title, so dangling legs don't cover it */
+  .mcard { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 16px; padding: 16px 14px 14px; box-shadow: var(--shadow); position: relative; z-index: 1; }
+  .mcard b { font-family: var(--font-display); display: block; font-size: 16px; }
+  .mcard span { color: var(--muted); font-size: 13px; }
+
+  .notes { columns: 2 300px; gap: 28px; }
+  .notes li { margin-bottom: 8px; break-inside: avoid; }
+
+  @media (max-width: 520px) {
+    .stagebox { padding: 10px 10px 12px; }
+    .stagebox .mcard > * { visibility: hidden; }   /* too narrow to clear the legs; the app-size cards below keep their text */
+    .notes { columns: 1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Fuzz, moving more normally</h1>
+    <p>A spike: the same Fuzz body, moved two ways. On the left, the original spike, where each joint follows a sine wave.
+      On the right, anime.js playing key poses with holds, wind-ups and real arcs. Pick a reaction, or click either Fuzz to boop both.
+      To tune a reaction, open the <a href="studio.html">studio</a>.</p>
+  </header>
+
+  <p class="say" id="say"></p>
+  <section class="duel">
+    <div class="stagebox">
+      <h3>Before</h3>
+      <div class="meta">Sine waves, per joint</div>
+      <div class="rigbox" id="before" title="Click to boop"></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span></div>
+    </div>
+    <div class="stagebox">
+      <h3>After</h3>
+      <div class="meta">anime.js key poses</div>
+      <div class="rigbox" id="after" title="Click to boop"></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span></div>
+    </div>
+  </section>
+  <div class="reacts" id="reacts" role="group" aria-label="Reactions"></div>
+  <div class="toggles">
+    <label><input type="checkbox" id="slow"> Slow motion</label>
+    <label><input type="checkbox" id="calm"> Calm (app setting)</label>
+    <label><input type="checkbox" id="cycle"> Cycle through all</label>
+  </div>
+
+  <h2>At app size</h2>
+  <p class="sub">Motion that looks fine at 280&nbsp;px can turn to noise at real size, so here are both on a task card.</p>
+  <div class="variants">
+    <div class="variant">
+      <h3>Before</h3>
+      <div class="mperch mini" data-kind="before"></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span></div>
+    </div>
+    <div class="variant">
+      <h3>After</h3>
+      <div class="mperch mini" data-kind="after"></div>
+      <div class="mcard"><b>Renew passport</b><span>Due Friday &middot; Errands</span></div>
+    </div>
+  </div>
+
+  <h2>What to look at</h2>
+  <ul class="notes">
+    <li><b>Slow motion is the fastest way to see it.</b> Turn it on for Cheer, Shrug and Point, and watch the hips start before the arms and the arms before the head.</li>
+    <li><b>Stillness.</b> Before never stops moving. After gets somewhere and stays there, with only breathing underneath.</li>
+    <li><b>Cheer:</b> a dip, then a rise that slows at the top and a fall that speeds up, then a landing that sinks into the knees. The old one bounces off the floor at full speed.</li>
+    <li><b>Wave:</b> the wrist trails the arm, and there is a pause between waves.</li>
+    <li><b>Rushing:</b> four key poses, down and up on each foot, instead of two sine waves.</li>
+    <li><b>Sit &amp; doze:</b> Fuzz hops onto the top edge of the card, and the legs settle and hang still. The nod is one slow sink and one fast catch, which a sine wave can&rsquo;t do.</li>
+    <li><b>Bored: old tape:</b> only After knows this one. It plays once, then goes back to what Fuzz was doing.</li>
+    <li><b>Power off:</b> the head drops first, then the legs sway to a stop. Pick another reaction and Fuzz hops back up. Boop it while it&rsquo;s seated and it stays seated.</li>
+    <li><b>Switching:</b> click reactions quickly. A new one starts from wherever Fuzz is.</li>
+    <li><b>Calm:</b> After does the gesture once, then holds still. Before ignores the setting below the neck.</li>
+  </ul>
+</main>
+
+<script src="../../js/fuzz-svg.js"></script>
+<script src="vendor/anime.umd.min.js"></script>
+<script src="../fuzz-body/fuzz-body.js"></script>
+<script src="fuzz-anime.js"></script>
+<script>
+(function () {
+  var FB = window.FuzzBody, FA = window.FuzzAnime, R = FA.reactions;
+  var say = document.getElementById('say'), reacts = document.getElementById('reacts');
+  var buttons = {};
+
+  var after = FA.rig(document.getElementById('after'), {
+    onPlay: function (name, r) {
+      say.textContent = r.say;
+      Object.keys(buttons).forEach(function (k) { buttons[k].setAttribute('aria-pressed', String(k === name)); });
+    }
+  });
+  var before = FB.rig(document.getElementById('before'));
+  var all = [after, before];
+  [].forEach.call(document.querySelectorAll('.mini'), function (el) {
+    all.push(el.dataset.kind === 'after' ? FA.rig(el) : FB.rig(el));
+  });
+  function playAll(name) { all.forEach(function (r) { r.play(name); }); }
+
+  Object.keys(R).forEach(function (name) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = R[name].label; b.setAttribute('aria-pressed', String(name === 'idle'));
+    b.addEventListener('click', function () { stopCycle(); playAll(name); });
+    reacts.appendChild(b); buttons[name] = b;
+  });
+  say.textContent = R.idle.say;
+
+  ['before', 'after'].forEach(function (id) {
+    document.getElementById(id).addEventListener('click', function () { playAll('boop'); });
+  });
+  document.getElementById('slow').addEventListener('change', function (e) {
+    var s = e.target.checked ? .3 : 1;
+    FB.setSpeed(s); FA.setSpeed(s);
+  });
+  document.getElementById('calm').addEventListener('change', function (e) {
+    document.documentElement.classList.toggle('calm', e.target.checked);
+    playAll(after.prev || 'idle');
+  });
+
+  var cyc = null, cycEl = document.getElementById('cycle');
+  function stopCycle() { if (cyc) { clearInterval(cyc); cyc = null; cycEl.checked = false; } }
+  cycEl.addEventListener('change', function (e) {
+    if (!e.target.checked) return stopCycle();
+    var names = Object.keys(R).filter(function (n) { return !R[n].once; }), i = names.indexOf(after.name);
+    cyc = setInterval(function () { i = (i + 1) % names.length; playAll(names[i]); }, 3600);
+  });
+})();
+</script>
+</body>
+</html>

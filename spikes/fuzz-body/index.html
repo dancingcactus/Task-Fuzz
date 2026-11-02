@@ -32,6 +32,8 @@
   .hand .wrist { fill: var(--limb-o); }
   .foot .fo { fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.6; stroke-linejoin: round; }
   .foot .fs { fill: var(--limb-o); }
+  .shcap { display: none; fill: var(--limb); stroke: var(--limb-o); stroke-width: 1.4; }
+  .shcap.on { display: inline; }
   .neck rect { fill: var(--bezel); }
   .neck path { stroke: var(--limb); stroke-width: 1.2; opacity: .6; }
   .bshadow { fill: #000; opacity: .12; }
@@ -132,7 +134,7 @@
     <li><b>Toggle &ldquo;Show body&rdquo;</b> on the big Fuzz to flip between the two versions mid-reaction.</li>
     <li><b>Space:</b> the triage card would sit 60&ndash;80&nbsp;px lower, or the face gets smaller. The small logo marks and notice faces stay head-only either way.</li>
     <li><b>Calm setting:</b> the head already turns down its motion; the limbs here don&rsquo;t yet, and would need to.</li>
-    <li><b>Layering:</b> raised arms (cheer, wave, antenna flick) swap behind the head so they don&rsquo;t cross the screen; hands near the face (chin, scratch) stay in front.</li>
+    <li><b>Layering:</b> raised arms (cheer, wave, antenna flick) swap behind the head so they don&rsquo;t cross the screen; hands near the face (chin, scratch) stay in front. The floss takes arms behind the torso, and each one only changes sides out where it is clear of the body.</li>
     <li><b>Cost:</b> limbs are three paths each, redrawn per frame with JavaScript (the head is pure CSS). Fine for one Fuzz on screen.</li>
   </ul>
 </main>
