@@ -24,7 +24,25 @@
     { id: 'indigo', name: 'Indigo', note: 'Deep and bookish', l: ['#4A55B8', '#FFFFFF', '#3E49A8'], d: ['#9AA5F0', '#12153A', '#B1B9F4'], hl: ['#2B338F', '#FFFFFF', '#252C80'], hd: ['#B8C0FF', '#0B0E33', '#CCD2FF'] },
     { id: 'plum', name: 'Plum', note: 'Muted violet-rose', l: ['#8E4A7C', '#FFFFFF', '#7C3C6B'], d: ['#D79BC6', '#2E0F27', '#E3B3D6'], hl: ['#6B2A5C', '#FFFFFF', '#5E2351'], hd: ['#F0B5DF', '#280A20', '#F7CBEA'] },
     { id: 'espresso', name: 'Espresso', note: 'Quiet warm brown', l: ['#5A3E2F', '#FFFFFF', '#4E3426'], d: ['#D2A57C', '#2A1809', '#E0BC98'], hl: ['#3A241A', '#FFFFFF', '#331F16'], hd: ['#F0C9A0', '#1F1006', '#F7D9BA'] },
-    { id: 'warmgray', name: 'Warm gray', note: 'Quietest, closest to neutral', l: ['#6B645C', '#FFFFFF', '#57514A'], d: ['#BDB5AA', '#1F1C18', '#D2CBC0'], hl: ['#3F3A34', '#FFFFFF', '#38332E'], hd: ['#E3DDD3', '#181512', '#EFEAE2'] }
+    { id: 'warmgray', name: 'Warm gray', note: 'Quietest, closest to neutral', l: ['#6B645C', '#FFFFFF', '#57514A'], d: ['#BDB5AA', '#1F1C18', '#D2CBC0'], hl: ['#3F3A34', '#FFFFFF', '#38332E'], hd: ['#E3DDD3', '#181512', '#EFEAE2'] },
+    /* Retro: a black-and-white TV. It brings its own grey foundation and code colours (status keeps only a
+       faint tint, and its icon), and the stylesheet adds scan lines and a vignette. Random never picks it. */
+    { id: 'retro', name: 'Retro', note: 'Black-and-white TV', retro: true,
+      l: ['#3A3A3A', '#FFFFFF', '#2E2E2E'], d: ['#CFCFCB', '#141414', '#E2E2DE'], hl: ['#111111', '#FFFFFF', '#111111'], hd: ['#F2F2EE', '#000000', '#FFFFFF'],
+      foundation: {
+        std: {
+          light: { bg: '#E4E4E1', surface: '#F1F1EE', field: '#D9D9D5', ink: '#1C1C1C', muted: '#5C5C59', line: '#C2C2BE', chip: '#D0D0CC', done: '#4B584D', wait: '#675E4E', blocked: '#6B4D4A' },
+          dark: { bg: '#121212', surface: '#1C1C1C', field: '#262626', ink: '#E6E6E2', muted: '#A2A29F', line: '#383838', chip: '#2B2B2B', done: '#A8B6AA', wait: '#C7BDA8', blocked: '#C6A8A4' }
+        },
+        hc: {
+          light: { bg: '#F2F2F0', surface: '#FFFFFF', field: '#E6E6E3', ink: '#000000', muted: '#383838', line: '#585858', chip: '#DEDEDA', done: '#2C392E', wait: '#463D2C', blocked: '#4B2C29' },
+          dark: { bg: '#000000', surface: '#0D0D0D', field: '#191919', ink: '#FFFFFF', muted: '#D2D2CE', line: '#989898', chip: '#252525', done: '#C6D6C9', wait: '#E4DAC4', blocked: '#E4C6C2' }
+        }
+      },
+      code: {
+        light: { code: '#D9D9D5', head: '#D0D0CC', line: '#C2C2BE', hl: '#CDCDC9', k: '#1A1A1A', s: '#4E4E4E', n: '#5A5A5A', f: '#262626', t: '#3A3A3A', p: '#303030', c: '#7A7A77', rem: '#D6CFCD', add: '#CDD4CE', remInk: '#5C3E3B', addInk: '#3C493E' },
+        dark: { code: '#0E0E0E', head: '#262626', line: '#383838', hl: '#222222', k: '#F2F2EE', s: '#B4B4B0', n: '#C6C6C2', f: '#E0E0DC', t: '#CACAC6', p: '#D6D6D2', c: '#8E8E8B', rem: '#2E2524', add: '#232A24', remInk: '#C6A8A4', addInk: '#A8B6AA' }
+      } }
   ];
 
   /* Syntax colours. k keyword, s string, n number, f function, t type, p property, c comment. */
@@ -58,7 +76,7 @@
     return { accent: a[0], onAccent: a[1], link: a[2] };
   }
   function palette(id, mode, contrast) {
-    var f = FOUNDATION[contrast === 'high' ? 'hc' : 'std'][mode], a = accents(byId(id), mode, contrast);
+    var th = byId(id), f = (th.foundation || FOUNDATION)[contrast === 'high' ? 'hc' : 'std'][mode], a = accents(th, mode, contrast);
     return Object.assign({}, f, a);
   }
 
@@ -81,7 +99,7 @@
     st.setProperty('--deco', hc ? 'underline' : 'none');
     st.setProperty('--edge', hc ? p.ink : p.accent); st.setProperty('--obc', hc ? p.link : p.accent);
     st.setProperty('--chipline', hc ? p.line : p.chip);
-    var c = CODE[m + (hc ? 'HC' : '')];
+    var c = th.code ? th.code[m] : CODE[m + (hc ? 'HC' : '')];
     Object.keys(CODE_KEYS).forEach(function (k) { st.setProperty(CODE_KEYS[k], c[k]); });
     var cf = codeFontById(codeFont); st.setProperty('--font-code', cf.family); loadCodeFont(cf.id);
     root.dataset.theme = th.id; root.dataset.mode = m; root.dataset.contrast = hc ? 'high' : 'standard';
@@ -90,8 +108,18 @@
     if (meta) meta.setAttribute('content', p.bg);
   }
 
+  /* Random: a different theme each time Fuzz opens, never Retro and never the one shown last time */
+  var LAST = 'fuzz.theme.last';
+  function pickRandom() {
+    var last = null; try { last = localStorage.getItem(LAST); } catch (e) {}
+    var pool = THEMES.filter(function (t) { return !t.retro && t.id !== last; });
+    var t = pool[Math.floor(Math.random() * pool.length)];
+    try { localStorage.setItem(LAST, t.id); } catch (e) {}
+    return t.id;
+  }
+
   window.Themes = {
-    list: THEMES, foundation: FOUNDATION, code: CODE, codeFonts: CODE_FONTS,
+    list: THEMES, pickRandom: pickRandom, foundation: FOUNDATION, code: CODE, codeFonts: CODE_FONTS,
     byId: byId, codeFontById: codeFontById, palette: palette, apply: apply, resolveMode: resolveMode, loadCodeFont: loadCodeFont,
     onSystemChange: function (fn) { if (mq && mq.addEventListener) mq.addEventListener('change', fn); }
   };

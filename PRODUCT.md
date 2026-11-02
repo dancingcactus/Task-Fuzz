@@ -40,7 +40,7 @@ Fuzz is an execution partner, not a list. "Assign to Fuzz" is the primary action
 ## Brand Commitments
 
 - **Fuzz is canon.** The TV-headed robot character, its moods and reactions, its warm and quirky voice, and the rule that everything the app tells you comes from Fuzz (from the Triage perch, or a small Fuzz on other pages), never a toast. Assets: `assets/fuzz-mark.svg`, `assets/fuzz-logo.svg`, `assets/fuzz-favicon.svg`, `js/fuzz-svg.js`.
-- **The Warm Theme System is settled** (`js/themes.js`): warm foundation surfaces and status colours, eight accent themes (Terracotta, Honey, Moss, Lagoon, Indigo, Plum, Espresso, Warm gray), Light / Dark / Match system, Standard and High contrast, Nunito ExtraBold for headings and Nunito Sans for body, and a choice of code font. Future work extends it rather than redesigning it.
+- **The Warm Theme System is settled** (`js/themes.js`): warm foundation surfaces and status colours, eight accent themes (Terracotta, Honey, Moss, Lagoon, Indigo, Plum, Espresso, Warm gray), plus Retro (a black-and-white TV with its own grey foundation) and Random (one of the eight per page load), Light / Dark / Match system, Standard and High contrast, Nunito ExtraBold for headings and Nunito Sans for body, and a choice of code font. Future work extends it rather than redesigning it.
 
 ## Evidence on Hand
 

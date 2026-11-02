@@ -266,17 +266,14 @@
 
   /* ---------- Look and feel: this browser's, applied at once (the same as the header's quick settings) ---------- */
   function lookHTML() {
-    var pr = App.prefs(), mode = Themes.resolveMode(pr.mode);
+    var pr = App.prefs();
     var seg = function (attr, label, opts, cur) {
       return '<div class="segrow" role="group" aria-label="' + label + '">' + opts.map(function (o) {
         return '<button type="button" class="seg" ' + attr + '="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>';
       }).join('') + '</div>';
     };
     return section('look', 'Look and feel', 'Changes show straight away and are kept in this browser.',
-      '<h3>Theme</h3><div class="palettes set-pals" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
-        var p = Themes.palette(t.id, mode, pr.contrast), on = t.id === pr.theme;
-        return '<button type="button" class="pal" data-look-theme="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
-      }).join('') + '</div>' +
+      '<h3>Theme</h3><div class="palettes set-pals" role="group" aria-label="Theme">' + App.themePicks('data-look-theme') + '</div>' +
       '<h3>Appearance</h3>' + seg('data-look-mode', 'Appearance', [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']], pr.mode) +
       '<h3>Contrast</h3>' + seg('data-look-contrast', 'Contrast', [['standard', 'Standard'], ['high', 'High contrast']], pr.contrast) +
       '<h3><label for="look-font">Code font</label></h3><div class="selectrow"><select id="look-font">' + Themes.codeFonts.map(function (f) {

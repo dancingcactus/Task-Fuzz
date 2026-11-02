@@ -12,17 +12,23 @@
   var PREF_KEY = 'fuzz.prefs.v1';
   var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
   var current = null, currentName = null, tempCalm = false, reduce = false;
+  /* The theme on screen: your pick, or with Random, the one picked when this page loaded */
+  var shown = 'terracotta';
 
   function load() {
     try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) prefs = Object.assign(prefs, p); } catch (e) { /* storage can be blocked */ }
-    if (!Themes.list.some(function (t) { return t.id === prefs.theme; })) prefs.theme = 'terracotta';
+    if (prefs.theme !== 'random' && !Themes.list.some(function (t) { return t.id === prefs.theme; })) prefs.theme = 'terracotta';
+    shown = prefs.theme === 'random' ? Themes.pickRandom() : prefs.theme;
   }
   function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
-  function paint() { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); save(); paintPopover(); }
+  function paint() { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); save(); paintPopover(); }
 
   var App = {
-    setTheme: function (id) { prefs.theme = id; paint(); },
+    /* Random picks one now, so choosing it shows a change; after that, one per page load */
+    setTheme: function (id) { prefs.theme = id; shown = id === 'random' ? Themes.pickRandom() : id; paint(); },
+    shownTheme: function () { return shown; },
+    themePicks: themePicks,
     setMode: function (m) { prefs.mode = m; paint(); },
     setContrast: function (c) { prefs.contrast = c; paint(); },
     setCodeFont: function (id) { prefs.codeFont = id; paint(); },
@@ -128,15 +134,27 @@
       return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
+  /* The theme choices, for the quick settings and the Settings page: every theme, then Random */
+  function themePicks(attr) {
+    var mode = Themes.resolveMode(prefs.mode);
+    function sw(p) { return '<span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span>'; }
+    var picks = Themes.list.map(function (t) {
+      var on = t.id === prefs.theme;
+      return '<button type="button" class="pal' + (t.retro ? ' pal-retro' : '') + '" ' + attr + '="' + t.id + '" aria-pressed="' + on + '">' + sw(Themes.palette(t.id, mode, prefs.contrast)) + '<span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
+    });
+    var rnd = prefs.theme === 'random', today = rnd && Themes.byId(shown);
+    var mix = ['honey', 'lagoon', 'plum'].map(function (id) { return Themes.palette(id, mode, prefs.contrast).accent; });
+    picks.push('<button type="button" class="pal" ' + attr + '="random" aria-pressed="' + rnd + '"><span class="pal-sw pal-rnd" style="background:' + Themes.palette('terracotta', mode, prefs.contrast).bg + ';border-color:' + Themes.palette('terracotta', mode, prefs.contrast).line + '">' +
+      mix.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('') + '</span><span class="pal-n">Random</span><span class="pal-f">' +
+      (today ? 'Today: ' + esc(today.name) : 'A new one each time you open Fuzz') + '</span></button>');
+    return picks.join('');
+  }
   function paintPopover() {
     var pop = document.getElementById('themepop'); if (!pop) return;
     var mode = Themes.resolveMode(prefs.mode);
     var ae = document.activeElement, focused = ae && pop.contains(ae) ? ae.getAttribute('data-theme-id') || ae.getAttribute('data-mode') || ae.getAttribute('data-contrast') : null;
     pop.innerHTML =
-      '<h2 class="pop-title">Settings</h2><h2>Theme</h2><div class="palettes" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
-        var p = Themes.palette(t.id, mode, prefs.contrast), on = t.id === prefs.theme;
-        return '<button type="button" class="pal" data-theme-id="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
-      }).join('') + '</div>' +
+      '<h2 class="pop-title">Settings</h2><h2>Theme</h2><div class="palettes" role="group" aria-label="Theme">' + themePicks('data-theme-id') + '</div>' +
       '<h2>Appearance</h2><div class="segrow" role="group" aria-label="Appearance">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']].map(function (m) { return '<button type="button" class="seg" data-mode="' + m[0] + '" aria-pressed="' + (prefs.mode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
       '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
@@ -196,8 +214,8 @@
 
   /* ---------- Boot ---------- */
   load();
-  Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont);
-  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
+  Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont);
+  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
   reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;
