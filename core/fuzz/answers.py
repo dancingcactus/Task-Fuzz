@@ -107,22 +107,46 @@ def _entity_term(core, card, t, option, value):
 
 
 def _is_task(core, card, t, option, value):
+    """One card can ask about several asks from the same message. Mine takes the ids you ticked (all of
+    them without a list); the ones you didn't tick are someone else's. The other answers cover them all."""
+    many = cards.asks(core, card) or [t]
     if option == "mine":
+        ids = {a["id"] for a in many}
+        pick = set(value) if isinstance(value, list) else ids
+        if not pick or pick - ids:
+            raise FuzzError(f"value is the ids of the asks that are yours, from {sorted(ids)}", "value")
         with core.tx("human"):
-            ch = events.Changes()
-            cards.mark_answered(core, ch, card, option)
-            ch.task(t["id"], owner="me", variant_tags=tasks._tags(t, remove=("unconfirmed",)), question=None)
-            events.emit(core, "task.confirmed", task_id=t["id"], changes=ch, log=("status", "You said this is yours."))
-            cards.sync(core, t["id"])
+            for a in many:
+                if a["id"] not in pick:
+                    tasks.theirs(core, a["id"], card=card if a["id"] == t["id"] else None, option="mine")
+                    _not_task(core, a["id"], "is_task card: not ticked")
+            for a in many:
+                if a["id"] in pick:
+                    ch = events.Changes()
+                    if a["id"] == t["id"]:
+                        cards.mark_answered(core, ch, card, option, value)
+                    ch.task(a["id"], owner="me", variant_tags=tasks._tags(a, remove=("unconfirmed",)), question=None)
+                    events.emit(core, "task.confirmed", task_id=a["id"], changes=ch, log=("status", "You said this is yours."))
+                    cards.sync(core, a["id"])
         return
     if option == "not_task":
         with core.tx("human"):
-            tasks.let_go(core, t["id"], card=card, option="not_task", why="You said this isn't a task.")
-            core.q("INSERT INTO feedback (user_id, ts, kind, a, note) VALUES (?,?,?,?,?)",
-                   (core.user_id, core.now_iso(), "not_task", t["id"], "is_task card"))
+            for a in many:
+                tasks.let_go(core, a["id"], card=card if a["id"] == t["id"] else None, option="not_task",
+                             why="You said this isn't a task.")
+                _not_task(core, a["id"], "is_task card")
         return
     if option == "someone_else":
-        return tasks.theirs(core, t["id"], on=value if isinstance(value, str) else None, card=card)
+        with core.tx("human"):
+            for a in many:
+                tasks.theirs(core, a["id"], on=value if isinstance(value, str) else None,
+                             card=card if a["id"] == t["id"] else None)
+        return
+
+
+def _not_task(core, task_id, note):
+    core.q("INSERT INTO feedback (user_id, ts, kind, a, note) VALUES (?,?,?,?,?)",
+           (core.user_id, core.now_iso(), "not_task", task_id, note))
 
 
 def _draft(core, card, t, option, value):
@@ -178,12 +202,13 @@ def _postpone(core, card, t):
             if card["kind"] == "duplicate":
                 from . import matching
                 matching.keep_separate(core, card["task_id"], card["other_id"], card=None, feedback=False)
-            if card["kind"] == "is_task" and t:
+            many = cards.asks(core, card) if card["kind"] == "is_task" else []
+            for a in many:
                 ch = events.Changes()
-                ch.task(t["id"], variant_tags=tasks._tags(t, remove=("unconfirmed",)))
-                events.emit(core, "task.confirmed", task_id=t["id"], changes=ch, data={"by": "expiry"})
-            if card["task_id"]:
-                cards.sync(core, card["task_id"])
+                ch.task(a["id"], variant_tags=tasks._tags(a, remove=("unconfirmed",)))
+                events.emit(core, "task.confirmed", task_id=a["id"], changes=ch, data={"by": "expiry"})
+            for tid in [a["id"] for a in many] or ([card["task_id"]] if card["task_id"] else []):
+                cards.sync(core, tid)
         return
     ch = events.Changes()
     ch.card(card["id"], postponed=card["postponed"] + 1, order_key=cards.next_order(core))

@@ -369,6 +369,8 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .pseen { font-size: 13px; color: var(--muted); }
 .mentions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mentions li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); }
+.asks { border: 0; margin: 0 0 12px; padding: 0; min-width: 0; }
+.asks legend { padding: 0 0 8px; font-size: 12.5px; color: var(--muted); }
 /* The session recap on the empty queue */
 .recap { margin: 2px 0 4px; font-weight: 600; }
 /* Key guide */

@@ -254,6 +254,64 @@ class QueueRules(CoreCase):
 
 
 
+class OneEmailManyAsks(CoreCase):
+    """Asks from one message that may not be yours share one "Are any of these yours?" card."""
+
+    def broadcast(self, asks, n=[0]):
+        n[0] += 1
+        tools.submit_signals(self.core, [{"source": "email", "source_id": f"b{n[0]}", "anchor": f"email:b{n[0]}",
+                                          "ts": "2026-10-20T08:00:00Z", "from": {"name": "Team list"},
+                                          "quote": " ".join(asks),
+                                          "candidates": [{"ask": a, "owner": "unclear"} for a in asks]}])
+        ids = [self.core.one("SELECT id FROM tasks WHERE ask=?", (a,))["id"] for a in asks]
+        return ids, self.card_for(ids[0], "is_task")
+
+    def test_one_card_lists_every_ask(self):
+        ids, card = self.broadcast(ASKS[:3])
+        self.assertEqual([c["task_id"] for c in self.open_cards()], [ids[0]])
+        v = cards.view(self.core, cards.get(self.core, card["id"]))
+        self.assertEqual(v["prompt"], "Are any of these yours?")
+        self.assertEqual([a["id"] for a in v["asks"]], ids)
+
+    def test_mine_keeps_the_ticked_ones_and_lets_the_rest_go(self):
+        ids, card = self.broadcast(ASKS[:3])
+        answers.answer(self.core, card["id"], "mine", [ids[1]])
+        self.assertEqual([self.task(i)["state"] for i in ids], ["letgo", "triage", "letgo"])
+        self.assertEqual(cards.get(self.core, card["id"])["status"], "answered")
+        self.card_for(ids[1], "task")
+        self.assertEqual(self.core.one("SELECT COUNT(*) n FROM feedback WHERE kind='not_task'")["n"], 2)
+        events.undo(self.core)
+        self.assertEqual([self.task(i)["state"] for i in ids], ["triage"] * 3, "one undo puts them all back")
+        self.assertEqual(events.check_replay(self.core), [])
+
+    def test_none_of_them(self):
+        ids, card = self.broadcast(ASKS[:3])
+        answers.answer(self.core, card["id"], "not_task")
+        self.assertEqual({self.task(i)["state"] for i in ids}, {"letgo"})
+        self.assertEqual(self.open_cards(), [])
+
+    def test_mine_checks_the_ids(self):
+        ids, card = self.broadcast(ASKS[:2])
+        with self.assertRaises(FuzzError):
+            answers.answer(self.core, card["id"], "mine", [9999])
+        with self.assertRaises(FuzzError):
+            answers.answer(self.core, card["id"], "mine", [])
+
+    def test_postponed_twice_keeps_them_all(self):
+        ids, card = self.broadcast(ASKS[:2])
+        for _ in range(3):
+            answers.answer(self.core, card["id"], "not_sure")
+        self.assertEqual([self.card_for(i)["kind"] for i in ids], ["task", "task"])
+
+    def test_a_folded_ask_gets_its_own_card_when_the_first_leaves(self):
+        ids, card = self.broadcast(ASKS[:3])
+        tasks.done(self.core, ids[0])
+        scheduler.tick(self.core)
+        again = self.card_for(ids[1], "is_task")
+        self.assertEqual([a["id"] for a in cards.view(self.core, again)["asks"]], ids[1:])
+        self.assertEqual(len(self.open_cards()), 1)
+
+
 class Brief(CoreCase):
     def test_context_and_question(self):
         tid = tasks.capture(self.core, "Do the corporate compliance video")

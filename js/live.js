@@ -253,8 +253,14 @@
       f.profiles = []; f.mentions = []; f.meta = '';
       /* Is it yours? needs what Fuzz found about the task itself; the reason already reads above the answers */
       if (c.kind !== 'is_task') { f.aiHeading = 'Why Fuzz asked'; f.aiNote = c.reason || f.aiNote; }
+      /* Several asks from one message that may not be yours: one card, and you tick the ones that are */
+      if (c.asks && c.asks.length > 1) {
+        f.asks = c.asks.map(function (a) { return { id: a.id, title: a.title || a.ask || 'Untitled' }; });
+        f.title = c.asks.length + ' asks in one message';
+        f.primary = 'The ticked ones are mine'; f.secondary = 'None are mine';
+      } else delete it.asks;
     } else {
-      ['entity', 'dupOf', 'primary', 'secondary', 'third', 'answers', 'boxLabel', 'placeholder', 'profiles', 'mentions'].forEach(function (k) { delete it[k]; });
+      ['entity', 'dupOf', 'primary', 'secondary', 'third', 'answers', 'boxLabel', 'placeholder', 'profiles', 'mentions', 'asks'].forEach(function (k) { delete it[k]; });
     }
     /* What you typed but haven't sent stays; everything else is the core's */
     return Object.assign(it, f);
@@ -470,6 +476,7 @@
       var it = S.item(id), q = QUESTION[it.cardKind];
       var opt = q && (which === 'dismissed' ? q.dismissed : (q[which] || [])[0]), note = document.getElementById('note');
       var text = (note && note.value.trim()) || '', value = opt === 'define' ? text || undefined : undefined;
+      if (opt === 'mine' && it.asks) value = [].map.call(document.querySelectorAll('[data-ask]:checked'), function (b) { return +b.dataset.ask; });
       S.leave(id); it.state = 'resolved'; it.resolution = which;
       if (opt && !quiet) { gen++; write(then(decide(it, opt, value), it.cardKind === 'permission' ? resume(it, text) : null)); }
     };

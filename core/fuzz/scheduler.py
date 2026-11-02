@@ -229,6 +229,24 @@ def claim_next(core, task_id=None):
             return tasks.get(core, t["id"]), None
 
 
+def work_waiting(core, task_id=None):
+    """Whether claim_next would find anything, checked before a run starts a client to ask it."""
+    expire_leases(core)
+    return bool(_eligible(core, task_id))
+
+
+def extract_hours(core, now=None):
+    """Whether it's within the hours launchd may start the extractor. Outside them it skips; the next run
+    reads from the cursor, so nothing is missed, only seen later."""
+    h = core.config["extract"]["hours"]
+    if not h:
+        return True
+    loc = (now or core.now()).astimezone(timeres.local_tz(core))
+    if loc.weekday() >= 5 and not core.config["extract"]["weekends"]:
+        return False
+    return h[0] <= loc.hour + loc.minute / 60 < h[1]
+
+
 def sends_waiting(core):
     return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL",
                     (core.user_id,))["n"]
@@ -435,6 +453,13 @@ def tick(core):
                     ch.card(c["id"], suggested="keep")
             events.emit(core, "task.stale", task_id=t["id"], changes=ch)
         out["stale"] += 1
+    # An ask folded into another task's "Is this yours?" card loses it when that task leaves triage some
+    # other way (merged, a reply brought it back); it gets a card of its own, or joins the next one
+    for t in core.all("SELECT * FROM tasks t WHERE user_id=? AND state='triage' AND NOT EXISTS "
+                      "(SELECT 1 FROM cards c WHERE c.task_id=t.id AND c.status='open')", (core.user_id,)):
+        if not cards.covered(core, t):
+            with core.tx("system"):
+                cards.sync(core, t["id"])
     out["review"] = review.release(core)
     out["quiet_sessions"] = sessions.quiet(core)
     return out
