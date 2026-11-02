@@ -202,8 +202,8 @@ that would be handling the request. The page has to survive that and reconnect.
 ## As built
 
 - **The order.** Fuzz introduces himself first, asks two questions (name and app), asks his first
-  question on a card in Triage (working hours), and only then asks for a task, then the app's header
-  appears and Fuzz points at the New task button (the floating one on a phone). Until then the header,
+  question on a card in Triage (working hours), and only then asks for a task, pointing at the New task
+  button (the floating one on a phone). The app's header appears with the Triage question; until then it,
   Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
   reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
   mode, but high contrast can't be switched on until the header appears.
