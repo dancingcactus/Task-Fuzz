@@ -147,6 +147,16 @@
         log: [L('action', '9 days ago', 'Pulled this task out of the retro notes.')],
         sources: [{ type: 'Doc', title: 'Retro notes' }, { type: 'Doc', title: 'Current naming guide' }] },
 
+      { id: 'vendor', kind: 'task', doneWhen: 'the analytics vendor list is reviewed and the renewals are flagged', state: 'triage', title: 'Review the analytics vendor list', source: 'Captured by you', who: 'You',
+        age: '3 weeks', stage: 'fresh', mins: 30, energy: 'normal', putOff: true,
+        incoming: 'You captured this after the budget meeting.',
+        ask: 'This keeps coming back. Is something in the way?',
+        hint: 'Go through the vendor list and flag anything renewing this quarter.',
+        aiHeading: 'What Fuzz noticed', aiNote: 'This has had a new time a few times now, and came back each time. Nothing in it says which list, or what to do with it once it’s reviewed.',
+        firstStep: 'Find the vendor list and note which one it is.',
+        log: [L('status', 'Today', 'This came back at its time again. Fuzz is asking what’s in the way.'), L('status', 'Yesterday', 'You scheduled this: when you’re back at your desk.'), L('status', '6 days ago', 'You scheduled this: next week.'), L('status', '2 weeks ago', 'You scheduled this: later today.'), L('status', '3 weeks ago', 'You captured this task.')],
+        sources: [] },
+
       { id: 'owner', kind: 'task', doneWhen: 'someone has said the filter bug is theirs', state: 'triage', title: 'Confirm who owns the dashboard filter bug', source: 'Slack', who: 'Jules',
         age: '3 hours', stage: 'fresh', mins: 2, energy: 'low',
         incoming: 'Two people reported that saved filters reset after a refresh, and nobody has said who is picking it up.',

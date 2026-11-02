@@ -100,6 +100,8 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
     pend = ch.pending("tasks", t["id"])
     remove = set(remove_tags)
     if t["state"] == "triage" and to != "triage":
+        if "put_off" in (pend.get("variant_tags") or t.get("variant_tags") or []):
+            fields.setdefault("reschedules", 0)   # it asked what's in the way and you answered: the count starts over
         remove |= cards.TRIAGE_TAGS | {"unconfirmed"}
         fields.setdefault("reason", None)
         fields.setdefault("quick_answers", None)
@@ -312,6 +314,11 @@ def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=N
         extra["notes"] = ((t.get("notes") or "") + f"\nYou said: {said}").strip()
         log = ("guidance", f"You scheduled this: {when}. You said: {said}")
     look = bool(said and gather)
+    # Giving a task a new time from its triage card counts toward "This keeps coming back" (put_off). A draft
+    # you put off and the core's own scheduling don't; answering the put_off card with a time starts over.
+    if offered_only and t["state"] == "triage" and (card or the_card or {}).get("kind") == "task":
+        tags = t.get("variant_tags") or []
+        extra["reschedules"] = 0 if "put_off" in tags else (t.get("reschedules") or 0) + 1
     # "Ask me later" on a result: it comes back as the same result, still asking if it's done
     keep = ("result",) if "result" in (t.get("variant_tags") or []) and not look else ()
     with core.tx("human"):
@@ -327,16 +334,29 @@ def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=N
     return t["id"]
 
 
+PUT_OFF_REASON = "This keeps coming back. Often that means the next step isn’t clear, or it doesn’t matter much anymore."
+
+
+def put_off_again(core, t):
+    """You've given this task a new time often enough that its next return asks what's in the way."""
+    n = (core.config.get("reschedule") or {}).get("ask_after") or 0
+    return bool(n) and (t.get("reschedules") or 0) >= n
+
+
 def bring_back(core, task_id, where="back", reason=None, type="task.came_back", actor="human", tags=("returning",),
                log=None):
     """Back into triage: a scheduled task's time came, you pulled it back, or a reply came in. A draft
-    you put off ("Not now") comes back to review instead, for your OK."""
+    you put off ("Not now") comes back to review instead, for your OK. A task you've scheduled again and
+    again comes back asking what's in the way (put_off) when its time comes."""
     t = require(core, task_id)
     if t["state"] in ("triage", "review"):
         return None
     to = "triage"
     if t["state"] == "scheduled" and core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
         to, tags = "review", ()
+    elif t["state"] == "scheduled" and type == "task.came_back" and put_off_again(core, t):
+        tags, reason = tuple(tags) + ("put_off",), PUT_OFF_REASON
+        log = log or ("status", "This came back at its time again. Fuzz is asking what’s in the way.")
     with core.tx(actor):
         ch = events.Changes()
         move(core, ch, t, to, add_tags=tags, order_key=next_order(core, where), reason=reason,
@@ -388,15 +408,22 @@ def keep_parked(core, task_id, card):
                 option="keep_parked", question=None, reviewed_at=core.now_iso(), reviews=(t.get("reviews") or 0) + 1)
 
 
-def clarify(core, task_id, card, option="now", log="You brought this back from Parked."):
+def clarify(core, task_id, card, option="now", log=None):
     """It's yours to decide again: it stays in triage, first in line, as a fresh task card. From the parked
-    review (you want it now) and from a check-back (they got back to you)."""
+    review (you want it now), from a check-back (they got back to you) and from a task that keeps coming
+    back (it still matters: the count starts over)."""
     t = require(core, task_id)
+    tags = t.get("variant_tags") or []
+    if log is None:
+        log = "You said this still matters." if "put_off" in tags else "You brought this back from Parked."
     with core.tx("human"):
         ch = events.Changes()
-        f = dict(variant_tags=_tags(t, remove=("review", "check_back")), order_key=next_order(core, "front"), reason=None)
-        if option == "now":
+        f = dict(variant_tags=_tags(t, remove=("review", "check_back", "put_off")), order_key=next_order(core, "front"),
+                 reason=None)
+        if option == "now" and "review" in tags:
             f["reviewed_at"] = core.now_iso()
+        if "put_off" in tags:
+            f["reschedules"] = 0
         ch.task(t["id"], **f)
         _answered(core, ch, card, option)
         events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": option},

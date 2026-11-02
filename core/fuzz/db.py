@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   summary TEXT,                    -- a sentence or two on what the AI did or found, shown above the brief
   question TEXT,                   -- the one question the AI is asking the human now
   quick_answers TEXT,              -- json list, from a handback
-  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed, review
+  variant_tags TEXT,               -- json list: time_sensitive, stale, returning, handed_back, reopened, woke, needs_permission, unconfirmed, review, put_off
   reason TEXT,                     -- why it is back: "Priya asked for the deck again on Slack"
   effort_mins INTEGER,
   energy TEXT,                     -- low | normal | high
@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   group_id INTEGER,                -- the tasks that came from the same place (groups.py)
   reviewed_at TEXT,                -- the last time a parked review asked about it (review.py)
   reviews INTEGER,                 -- how many times you kept it parked when asked
+  reschedules INTEGER,             -- how many times you gave it a new time from triage since it last asked (put_off)
   next_step TEXT,                  -- where a working session left off: the next thing to do (sessions.py)
   session_id TEXT,                 -- the Claude or Copilot conversation it's open in, to resume
   session_launch TEXT,             -- the latest window opened on it; only that one closing brings it back
@@ -345,6 +346,7 @@ def connect(home):
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
+                        ("reschedules", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 

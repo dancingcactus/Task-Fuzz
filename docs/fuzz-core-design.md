@@ -729,6 +729,7 @@ sometimes a panel.
 | Time-sensitive | A live countdown and Fuzz's three rush levels |
 | Stale | "Still care about this?" above the actions: Yes, keep it · Let it go |
 | Returning | A "Where you left off" recap from History. Used for scheduled tasks that came back |
+| Keeps coming back (`put_off`) | A scheduled task whose time came after you'd given it a new time from triage `reschedule.ask_after` times (3). That usually means it isn't important or it isn't clear what to do, so instead of the usual actions it asks "This keeps coming back. Is something in the way?": Help me start · It still matters · Give it a time · Park it · Let it go. Any answer starts the count over |
 | Handed back | Fuzz's question and the quick answers he wrote, plus the normal actions. Goes to the end of the queue |
 | Reopened | The reason ("Priya asked for the deck again on Slack") and the recap. **Done** means "keep it closed" |
 
@@ -775,6 +776,8 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | | Stale: Yes, keep it | `card.answered` | Stays, stale clock resets |
 | | Parked review: Keep it parked | `task.kept_parked` | Back to `parked`; not asked again for `review.again_days` |
 | | Parked review: Bring it back | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
+| | Keeps coming back: Help me start | `task.assigned` | `queued`, for Fuzz to work out what's asked, what done looks like and the smallest first step, handing back one question if anything is still unclear |
+| | Keeps coming back: It still matters | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
 | | Check-back: They got back to me | `card.answered` | Stays in `triage`, first in line, as an ordinary task card |
 | | Check-back: Nudge them | `task.assigned` | `queued`, for Fuzz to draft a nudge for your OK |
 | | Check-back: Keep waiting | `task.waiting` | Back to `waiting` with a new check-back time |

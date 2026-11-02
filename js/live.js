@@ -215,6 +215,8 @@
       review: tags.indexOf('review') > -1 && state === 'triage', leansGo: !!(c && c.suggested === 'drop'),
       /* A waiting task back to ask if they got back to you; and one you said was someone else's */
       checkBack: tags.indexOf('check_back') > -1 && state === 'triage', theirs: tags.indexOf('theirs') > -1,
+      /* A task you keep giving a new time, back to ask what's in the way */
+      putOff: tags.indexOf('put_off') > -1 && state === 'triage',
       isNew: state === 'triage' && !origin && (Date.now() - (ts(t.created_at) || 0)) < 10 * 60000 && !(t.log || []).some(function (l) { return l.actor && l.actor.indexOf('fuzz') === 0; }),
       dueAt: null, due: null,
       waitingOn: t.waiting_on || 'Someone', waitedFor: ago(t.state_changed_at),
@@ -446,6 +448,8 @@
     wrap('gotIt', function (id) { return decide(S.item(id), 'got_it'); });
     wrap('keepWaiting', function (id) { return decide(S.item(id), 'keep_waiting'); });
     wrap('nudgeThem', function (id) { var it = S.item(id); return then(decide(it, 'nudge'), function () { return kick(it); }); });
+    wrap('unclear', function (id) { var it = S.item(id); return then(decide(it, 'unclear'), function () { return kick(it); }); });
+    wrap('stillMatters', function (id) { return decide(S.item(id), 'now'); });
     wrap('theirs', function (id) { return decide(S.item(id), 'someone_else', undefined, 'theirs'); });
     wrap('letGo', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
     wrap('drop', function (id) { return decide(S.item(id), 'drop', undefined, 'letgo'); });
