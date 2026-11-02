@@ -31,6 +31,13 @@ anime.js copy from that folder, so keep the two spikes together.
 - **Working: printout**: a second working reaction. A sheet feeds out of the chest slot in jerks, Fuzz takes it, reads
   it, and puts it behind its back the same way as the papers.
 - **Rushing**: the fists pump opposite the feet, chest to hip, on the side of the shoulder that keeps the elbows low.
+  There are three speeds, matching the app's urgency levels: brisk walk, jog and sprint. `strides()` scales one cycle.
+- **Gestures**: Salute, Hop, Lean in, Gulp, Bow and Lift play once for the app's quick moments, and Listening is a
+  hold for dictation: Fuzz takes a mic from behind its back, with its own pair of transitions, and holds it out to you. Fuzz faces front, so `hp` tips the head toward the viewer to bow or lean.
+- **Ta-da, Jazz hands and Mic drop**: options for the "ta-da" task-done moment. The app's spin is not on this rig, because a front-on Fuzz can't really turn.
+- **Gulp**: a sheet sails in from the side, Fuzz catches it and feeds it to the chest slot, which swallows it in gulps.
+- **Wake up and Power on**: transitions that run on the edge of the card before Get up, when Fuzz leaves Sit & doze or
+  Power off for anything standing.
 - **Sit & doze and Power off**: Fuzz sits down awake and swings its legs before dropping off. Sit & doze lets one z
   float up with each nod.
 - **Same timing**: the reactions are the ones from the anime.js spike. A few poses changed: Thinking and Shrug lost

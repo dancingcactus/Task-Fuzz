@@ -8,19 +8,23 @@
   var T = {
     sitDown: { label: 'Sit down', list: FA.transitions.sitDown, code: 'SIT_DOWN', from: 'idle', target: 'sleepy', mood: 'idle', when: 'whenever Fuzz has to get onto the card.' },
     getUp: { label: 'Get up', list: FA.transitions.getUp, code: 'GET_UP', from: 'sleepy', target: 'idle', when: 'whenever Fuzz has to get off the edge of the card.' },
+    wake: { label: 'Wake up', list: FA.transitions.wake, code: 'WAKE', from: 'sleepy', target: 'idle', when: 'whenever Fuzz gets up from Sit & doze, just before Get up.' },
+    powerOn: { label: 'Power on', list: FA.transitions.powerOn, code: 'POWER_ON', from: 'chill', target: 'idle', when: 'whenever Fuzz gets up from Power off, just before Get up.' },
     takeOut: { label: 'Take out papers', list: FA.transitions.takeOut, code: 'TAKE_OUT', from: 'idle', target: 'working', when: 'whenever Fuzz needs the papers in hand.' },
-    putAway: { label: 'Put papers away', list: FA.transitions.putAway, code: 'PUT_AWAY', from: 'working', target: 'idle', when: 'whenever Fuzz leaves the papers for anything else.' }
+    putAway: { label: 'Put papers away', list: FA.transitions.putAway, code: 'PUT_AWAY', from: 'working', target: 'idle', when: 'whenever Fuzz leaves the papers for anything else.' },
+    takeMic: { label: 'Take out mic', list: FA.transitions.takeMic, code: 'TAKE_MIC', from: 'idle', target: 'listen', when: 'whenever Fuzz needs the mic in hand.' },
+    putMic: { label: 'Put mic away', list: FA.transitions.putMic, code: 'PUT_MIC', from: 'listen', target: 'idle', when: 'whenever Fuzz leaves the mic for anything else.' }
   };
   var MOODS = ['idle', 'happy', 'eager', 'proud', 'grateful', 'caring', 'thinking', 'puzzled', 'working', 'rushed', 'worried', 'sheepish', 'stare', 'bored', 'sleepy', 'chill', 'boop'];
   var EASES = ['linear', 'inOutSine', 'in(2)', 'in(2.4)', 'out(2)', 'out(3)', 'inOut(2)', 'inOut(3)', 'outBack(1.2)', 'outBack(1.6)', 'outBack(2)', 'outElastic(1,.45)'];
   var CHOICE = { mood: MOODS, lhand: ['open', 'fist', 'point', 'shut'], rhand: ['open', 'fist', 'point', 'shut'], llay: ['afront', 'aback', 'aunder'], rlay: ['afront', 'aback', 'aunder'], pl: ['front', 'back'] };
   var FIELDS = [
-    ['Body', { y: 'Body y', x: 'Hips x', rot: 'Lean', head: 'Head tilt', br: 'Breath', sit: 'Seated' }],
-    ['Arms', { lh: 'L hand', rh: 'R hand', lL: 'L arm length', rL: 'R arm length', lst: 'L straight path', rst: 'R straight path', lrot: 'L wrist', rrot: 'R wrist', lgap: 'L claw gap', rgap: 'R claw gap', lhand: 'L claw', rhand: 'R claw', llay: 'L arm layer', rlay: 'R arm layer' }],
+    ['Body', { y: 'Body y', x: 'Hips x', rot: 'Lean', head: 'Head tilt', hp: 'Head tip forward', br: 'Breath', sit: 'Seated' }],
+    ['Arms', { lh: 'L hand', rh: 'R hand', lL: 'L arm length', rL: 'R arm length', lst: 'L straight path', rst: 'R straight path', lrot: 'L wrist', rrot: 'R wrist', lgap: 'L claw gap', rgap: 'R claw gap', lhand: 'L claw', rhand: 'R claw', llay: 'L arm layer', rlay: 'R arm layer', mc: 'Mic out', md: 'Mic dropped' }],
     ['Legs', { lf: 'L foot', rf: 'R foot', llb: 'L knee', rlb: 'R knee', lfr: 'L foot tilt', rfr: 'R foot tilt', dg: 'Leg swing' }],
     ['Face', { mood: 'Mood', urgency: 'Urgency', cool: 'Shades', ex: 'Eyes x', ey: 'Eyes y' }],
     ['Tape', { tp: 'Tape out', th: 'Tape to claw', tr: 'Tape tilt', tf: 'Tape turn' }],
-    ['Papers', { pp: 'Papers out', pg: 'Papers in R claw', pm: 'Sheet in R claw', pz: 'Sheet order', pl: 'Papers layer', pr: 'Sheet printed', solo: 'One sheet' }]
+    ['Papers', { pp: 'Papers out', pg: 'Papers in R claw', pm: 'Sheet in R claw', pz: 'Sheet order', pl: 'Papers layer', pr: 'Sheet printed', solo: 'One sheet', pi: 'Sheet flying in' }]
   ];
   var LABEL = {}; FIELDS.forEach(function (g) { for (var k in g[1]) LABEL[k] = g[1][k]; });
   var FALLBACK = { lL: 50, rL: 50, llb: .75, rlb: .75, br: 1, lgap: FA.gaps.open, rgap: FA.gaps.open, mood: 'idle', lhand: 'open', rhand: 'open', llay: 'afront', rlay: 'afront', cool: true, tf: 1, pl: 'front', solo: true };

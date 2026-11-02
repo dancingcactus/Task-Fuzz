@@ -34,3 +34,7 @@
 #bot.snooze .zzz { display: block; }
 #bot.snooze .zzz text { display: none; }
 #bot.snooze .zzz text:nth-child(2) { display: inline; animation: zfloat 2.4s ease-in 1; }
+.mic .mh { fill: var(--limb-o); }
+.mic .mc { fill: var(--limb); stroke: var(--limb-o); stroke-width: .7; }
+.mic .mb { fill: #d9d2c5; stroke: var(--limb-o); stroke-width: 1.3; }
+.mic .mg { fill: none; stroke: var(--limb-o); stroke-width: .7; opacity: .6; }

@@ -66,16 +66,17 @@
       lrot: num(o.lrot, 0), rrot: num(o.rrot, 0), lw: o.lrot == null ? 0 : 1, rw: o.rrot == null ? 0 : 1,
       br: num(o.br, 1), sit: num(o.sit, 0), dg: num(o.dg, 0),
       tp: num(o.tp, 0), th: num(o.th, 0), tr: num(o.tr, 0), tf: num(o.tf, 1), ex: num(o.ex, 0), ey: num(o.ey, 0),
-      pp: num(o.pp, 0), pg: num(o.pg, 0), pm: num(o.pm, 0), pr: num(o.pr, 0)
+      pp: num(o.pp, 0), pg: num(o.pg, 0), pm: num(o.pm, 0), pr: num(o.pr, 0),
+      hp: num(o.hp, 0), mc: num(o.mc, 0), pi: num(o.pi, 0), md: num(o.md, 0)
     };
   }
   function num(v, d) { return v == null ? d : v; }
 
   /* The order things move in, as a fraction of the beat: hips and feet first, the claws last. */
   var GROUPS = [
-    { keys: ['x', 'y', 'rot', 'lfx', 'lfy', 'rfx', 'rfy', 'lfr', 'rfr', 'llb', 'rlb', 'br', 'sit', 'dg', 'tp', 'ex', 'ey'], start: 0 },
-    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th', 'pp', 'pg', 'pm', 'pr'], start: .08, arm: true },
-    { keys: ['head'], start: .18 },
+    { keys: ['x', 'y', 'rot', 'lfx', 'lfy', 'rfx', 'rfy', 'lfr', 'rfr', 'llb', 'rlb', 'br', 'sit', 'dg', 'tp', 'ex', 'ey', 'md'], start: 0 },
+    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th', 'pp', 'pg', 'pm', 'pr', 'mc', 'pi'], start: .08, arm: true },
+    { keys: ['head', 'hp'], start: .18 },
     { keys: ['lgap', 'rgap', 'lrot', 'rrot', 'lw', 'rw', 'tr', 'tf'], start: .26 }
   ];
 
@@ -240,13 +241,24 @@
     ].concat(PUT_AWAY) };
   /* A run cycle: down on the planted foot, up through the push-off, then the same with the feet swapped.
      The fists pump opposite the feet, chest to hip, staying on the side of the shoulder that keeps the
-     elbows low and out. Past it they'd flip over at every swing. */
-  R.rushed = { label: 'Rushing', say: 'Due in 20 minutes! Go go go!', s: { mood: 'rushed', urgency: 3, lhand: 'fist', rhand: 'fist', rot: 4, br: 0 }, loop: [
-    { d: 90, tight: 1, ease: SINE, y: 3, lf: [94, 204], rf: [108, 192], lfr: -6, rfr: 10, lh: [92, 146], rh: [136, 166], head: 1 },
-    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 203], rf: [112, 198], lfr: 12, rfr: -8, lh: [76, 158], rh: [124, 158], head: -1 },
-    { d: 90, tight: 1, ease: SINE, y: 3, lf: [92, 192], rf: [106, 204], lfr: 10, rfr: -6, lh: [64, 166], rh: [108, 146], head: 1 },
-    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 198], rf: [112, 203], lfr: -8, rfr: 12, lh: [76, 158], rh: [124, 158], head: -1 }
-  ] };
+     elbows low and out. Past it they'd flip over at every swing. size scales the whole stride down from
+     a sprint at 1, so each urgency is the same cycle, smaller and slower. */
+  function strides(d, size) {
+    function by(v, rest) { return +(rest + (v - rest) * size).toFixed(1); }
+    function at(p, rest) { return [by(p[0], rest[0]), by(p[1], rest[1])]; }
+    function stride(y, lf, rf, lfr, rfr, lh, rh, head) {
+      return { d: d, tight: 1, ease: SINE, y: by(y, 0), lf: at(lf, [90, 204]), rf: at(rf, [110, 204]), lfr: by(lfr, 0), rfr: by(rfr, 0), lh: at(lh, [66, 172]), rh: at(rh, [134, 172]), head: by(head, 0) };
+    }
+    return [
+      stride(3, [94, 204], [108, 192], -6, 10, [92, 146], [136, 166], 1),
+      stride(-5, [88, 203], [112, 198], 12, -8, [76, 158], [124, 158], -1),
+      stride(3, [92, 192], [106, 204], 10, -6, [64, 166], [108, 146], 1),
+      stride(-5, [88, 198], [112, 203], -8, 12, [76, 158], [124, 158], -1)
+    ];
+  }
+  R.hurry = { label: 'Rushing: brisk walk', say: 'Due this afternoon. Let’s keep moving.', s: { mood: 'rushed', urgency: 1, lhand: 'fist', rhand: 'fist', rot: 1.5, br: 0 }, loop: strides(210, .35) };
+  R.jog = { label: 'Rushing: jog', say: 'Due within the hour. Picking up the pace.', s: { mood: 'rushed', urgency: 2, lhand: 'fist', rhand: 'fist', rot: 2.5, br: 0 }, loop: strides(140, .65) };
+  R.rushed = { label: 'Rushing: sprint', say: 'Due in 20 minutes! Go go go!', s: { mood: 'rushed', urgency: 3, lhand: 'fist', rhand: 'fist', rot: 4, br: 0 }, loop: strides(90, 1) };
   R.worried = { label: 'Worried', say: 'Uh oh. That deadline slipped past.', s: { mood: 'worried', lh: [95, 136], rh: [105, 136], lhand: 'fist', rhand: 'fist', llb: -1, rlb: -1, lf: [84, 204], rf: [116, 204], head: -3 }, loop: [
     { d: 340, hold: 520, ease: IO, y: 2 },
     { d: 45, tight: 1, ease: SINE, y: 2, x: 1, head: -2 },
@@ -338,6 +350,103 @@
     a.addEventListener('animationend', function () { a.classList.remove('twang'); }, { once: true });
   }
 
+  /* Short gestures for the app's quick moments. They play once and go back to what Fuzz was doing. */
+  R.salute = { label: 'Salute', once: true, say: 'On it.', s: { mood: 'eager', rhand: 'shut', lf: [92, 204], rf: [108, 204] }, enter: [
+    { d: 130, ease: IO, y: 1.5, head: 2, rh: [142, 166] },
+    { d: 210, hold: 620, ease: OUT, aease: 'outBack(1.4)', y: -2, head: -3, rh: [158, 52], rL: 110, rrot: -160 },
+    { d: 120, ease: OUT, y: -2, head: -3, rh: [170, 46], rL: 110, rrot: -130 },
+    { d: 300, ease: IO }
+  ] };
+  R.hop = { label: 'Hop', once: true, say: 'Nice.', s: { mood: 'happy' }, enter: [
+    { d: 110, ease: IO, y: 7, head: 3, lh: [66, 166], rh: [134, 166], lf: [86, 204], rf: [114, 204] },
+    { d: 190, ease: 'out(2.4)', y: -24, head: -3, lh: [48, 140], rh: [152, 140], lf: [86, 190], rf: [114, 190], lfr: -6, rfr: 6 },
+    { d: 170, ease: 'in(2.4)', y: 0, head: 2, lf: [86, 204], rf: [114, 204] },
+    { d: 90, ease: OUT, y: 5, head: 3, lf: [86, 204], rf: [114, 204] },
+    { d: 170, ease: 'outBack(1.6)' }
+  ] };
+  /* hp tips the head toward the viewer, which is the only way a front-on Fuzz can lean or bow forward. */
+  R.lean = { label: 'Lean in', once: true, say: 'Tell me more.', s: { mood: 'eager', lhand: 'fist', rhand: 'fist' }, enter: [
+    { d: 150, ease: IO, y: 1.5, head: 2 },
+    { d: 260, hold: 800, ease: 'outBack(1.5)', rot: -7, x: -2, y: 2, head: -4, hp: .6, lh: [70, 150], rh: [128, 150] },
+    { d: 320, ease: IO, rot: -2 }
+  ] };
+  /* The mic lives behind Fuzz like the papers, and comes out the same way. It sits in the right claw, so
+     it follows the arm from layer to layer. mc says it's out. Fuzz holds it upright, out to you, and only listens. */
+  var REACH = { rh: [112, 140], rlay: 'aunder', rot: 3, head: 2 };
+  var TAKE_MIC = [
+    mix(REACH, { d: 380, ease: IO, rgap: 34 }),
+    mix(REACH, { d: 130, hold: 110, ease: OUT, rgap: 9, mc: 1 }),
+    { d: 300, ease: IO, rh: [150, 158], rlay: 'aunder', rgap: 9, mc: 1, head: 2 },
+    { d: 200, ease: IO, rh: [150, 150], rgap: 9, mc: 1, head: 2 }
+  ];
+  var PUT_MIC = [
+    { d: 300, ease: IO, rh: [150, 158], rgap: 9, mc: 1, head: 2 },
+    mix(REACH, { d: 300, ease: IO, rgap: 9, mc: 1 }),
+    mix(REACH, { d: 130, hold: 90, ease: OUT, rgap: 34 }),
+    { d: 320, ease: IO, rlay: 'aunder' }
+  ];
+  R.listen = { label: 'Listening', say: 'I’m all antennas. Go ahead.', s: { mood: 'eager', mc: 1, rh: [172, 116], rL: 66, rrot: -40, rgap: 9, rot: -2, head: 6, lf: [86, 204], rf: [114, 204] }, loop: [
+    { d: 360, hold: 900, ease: IO, aease: 'outBack(1.4)' },
+    { d: 420, hold: 700, ease: IO, head: 9, rot: -3 },
+    { d: 140, ease: OUT, head: 6 },
+    { d: 140, hold: 800, ease: OUT, head: 8 }
+  ] };
+  /* A sheet sails in from off to the side (pi is how far away it still is), Fuzz catches it, and feeds it
+     to the chest slot, which swallows it in gulps: the printout, run backwards. */
+  function feeding(o) { return mix({ pp: 1, pr: 1, rh: [118, 148], rrot: 180, rgap: 34 }, o); }
+  var CATCH = { rh: [160, 126], rrot: -40, rgap: 34, head: 5, ex: 4, ey: -2, rot: -1 };
+  R.gulp = { label: 'Gulp', once: true, say: 'Got it.', s: { mood: 'eager', solo: true }, enter: [
+    mix(CATCH, { d: 200, ease: IO, pi: 1 }),
+    mix(CATCH, { d: 1, tight: 1, pp: 1, pg: 1, pi: 1 }),
+    mix(CATCH, { d: 300, ease: 'in(1.6)', aease: 'in(1.6)', pp: 1, pg: 1 }),
+    mix(CATCH, { d: 90, tight: 1, ease: OUT, pp: 1, pg: 1, pr: 1, rh: [164, 131], rgap: 9, y: 1.5 }),
+    feeding({ d: 300, ease: IO, rgap: 9, head: 4, ex: -1, ey: 3 }),
+    feeding({ d: 130, tight: 1, ease: IO, mood: 'boop', pr: .6, y: -2, head: -2 }),
+    feeding({ d: 130, tight: 1, ease: IO, mood: 'boop', pr: .3, y: 2, head: 3 }),
+    feeding({ d: 130, tight: 1, ease: 'in(2)', mood: 'boop', pr: .02, y: 3, head: 4 }),
+    { d: 120, tight: 1, ease: OUT, mood: 'happy', y: -2, head: -2 },
+    { d: 280, ease: 'outBack(1.6)', mood: 'happy' }
+  ] };
+  R.bow = { label: 'Bow', once: true, say: 'Thank you, thank you.', s: { mood: 'happy' }, enter: [
+    { d: 180, ease: IO, y: -1.5, head: -3, rh: [134, 158], lh: [60, 170] },
+    { d: 360, hold: 520, ease: IO, y: 6, rot: 3, head: 9, hp: 1, rh: [104, 158], lh: [48, 156] },
+    { d: 320, ease: 'outBack(1.4)', y: -1, head: -2 },
+    { d: 240, ease: IO }
+  ] };
+  R.lift = { label: 'Lift', once: true, say: 'Nailed it.', s: { mood: 'happy' }, enter: [
+    { d: 380, hold: 120, ease: OUT, y: -7, head: -5, lh: [56, 160], rh: [144, 160], lf: [88, 199], rf: [112, 199], lfr: -5, rfr: 5 },
+    { d: 600, ease: IO }
+  ] };
+
+  /* Options for the "ta-da" moment when a task is done. */
+  R.tada = { label: 'Ta-da', once: true, say: 'Ta-da.', s: { mood: 'happy', br: 0 }, enter: [
+    { d: 120, ease: IO, y: 6, head: 3, lh: [66, 166], rh: [134, 166], lf: [86, 204], rf: [114, 204] },
+    { d: 240, hold: 420, ease: 'out(2.4)', aease: 'outBack(1.6)', y: -5, head: -4, lh: [34, 84], rh: [166, 84], lL: 64, rL: 64, lf: [84, 204], rf: [116, 204] },
+    { d: 280, ease: IO }
+  ] };
+  /* The claws stay open and twist at the wrist, mirrored, while the hips sway a little under them. */
+  function jazz(s) { return { d: 110, tight: 1, ease: SINE, x: s * 1, rot: s * .8, lrot: -110 + s * 16, rrot: -70 - s * 16 }; }
+  R.jazz = { label: 'Jazz hands', once: true, say: 'Ta-da.', s: { mood: 'happy', br: 0, lh: [36, 124], rh: [164, 124], lL: 60, rL: 60, lf: [84, 204], rf: [116, 204] }, enter: [
+    { d: 120, ease: IO, y: 4, head: 3, lh: [60, 160], rh: [140, 160], lL: ARM, rL: ARM },
+    { d: 180, ease: 'outBack(1.6)', y: -2, head: -2, lrot: -110, rrot: -70 },
+    jazz(1), jazz(-1), jazz(1), jazz(-1),
+    { d: 240, ease: IO, lh: STAND.lh, rh: STAND.rh, lL: ARM, rL: ARM, lf: STAND.lf, rf: STAND.rf }
+  ] };
+  /* The mic comes out as usual if it isn't already in hand. Letting go swaps it for a loose copy (md: 0 in the
+     claw, 1 on the floor, 2 faded away), and the shades go on because Fuzz has earned them. The next play
+     clears md outright, because tweening it back would fly the mic up to the claw again. */
+  function dropped(o) { return mix({ mc: 0, rh: [178, 108], rgap: 34, cool: true, head: -5 }, o); }
+  R.micdrop = { label: 'Mic drop', once: true, say: 'And that’s the task.', s: { mood: 'proud', mc: 1, rh: [172, 116], rL: 66, rrot: -40, rgap: 9, head: -3 }, enter: [
+    { d: 300, hold: 420, ease: IO, aease: 'outBack(1.4)', y: -1.5 },
+    { d: 130, ease: OUT, rh: [178, 108], y: -1.5 },
+    dropped({ d: 1, tight: 1, md: .01 }),
+    dropped({ d: 320, ease: 'in(2)', md: 1 }),
+    dropped({ d: 110, ease: OUT, md: .92 }),
+    dropped({ d: 110, hold: 100, ease: 'in(2)', md: 1 }),
+    dropped({ d: 160, hold: 240, ease: IO, md: 2 }),
+    { d: 280, ease: IO, mc: 0, md: 2 }
+  ] };
+
   /* Getting onto the edge and off it. Both are small hops, so the feet clear the lip of the card instead
      of sliding through it. These run before a reaction's own beats, when it needs Fuzz to change places. */
   var SIT_DOWN = [
@@ -351,6 +460,18 @@
     mix(SEAT, { d: 200, ease: IO, dg: 0, head: 4, lh: [60, 176], rh: [140, 176], lf: [86, 244], rf: [114, 244] }),
     { d: 280, ease: 'out(2.4)', y: -12, head: -3, lh: [52, 156], rh: [148, 156], lf: [84, 196], rf: [116, 196], lfr: -8, rfr: 8 },
     { d: 190, ease: 'in(2.2)', y: 5, head: 3, lf: [88, 204], rf: [112, 204] }
+  ];
+  /* Coming round on the edge of the card, before getting up. Each runs when Fuzz leaves that state for any
+     standing reaction. A dozing Fuzz stretches, and the set comes back on with its head still down. */
+  var WAKE = [
+    mix(SEAT, { d: 500, hold: 220, ease: IO, mood: 'sleepy', dg: 0, br: 1, head: 4 }),
+    mix(SEAT, { d: 420, hold: 300, ease: OUT, mood: 'sleepy', dg: 0, head: -6, lh: [44, 92], rh: [156, 92], lL: 60, rL: 60 }),
+    mix(SEAT, { d: 340, hold: 260, ease: IO, mood: 'idle', dg: .5, head: 0 })
+  ];
+  var POWER_ON = [
+    mix(SEAT, { d: 260, hold: 500, ease: IO, mood: 'chill', dg: 0, br: 0, head: 12 }),
+    mix(SEAT, { d: 420, hold: 240, ease: 'outBack(1.4)', mood: 'idle', dg: 0, br: 1, head: 0 }),
+    mix(SEAT, { d: 300, hold: 300, ease: IO, mood: 'idle', dg: .6, head: -2 })
   ];
   /* A boop or a flick while seated stays seated: the same beats, but it can't drop through the card. */
   function onSeat(b) {
@@ -425,9 +546,11 @@
     return 'M' + pt(R, g) + 'A' + R + ' ' + R + ' 0 1 1 ' + pt(R, -g) +
       'L' + pt(r, -g) + 'A' + r + ' ' + r + ' 0 1 0 ' + pt(r, g) + 'Z';
   }
+  var MIC = '<g class="mic" transform="translate(8.5 0) rotate(-50)"><rect class="mh" x="-10" y="-2.6" width="25" height="5.2" rx="1.4"/><rect class="mc" x="13" y="-3.6" width="3.4" height="7.2" rx=".8"/><circle class="mb" cx="21" r="6.4"/><path class="mg" d="M16 -2.6H26M15.2 0H26.8M16 2.6H26M19 -5.6V5.6M23 -5.6V5.6"/></g>';   // the claw grips the handle partway up, angled across it
   var HAND = '<rect class="wrist" x="-1.5" y="-2.6" width="5" height="5.2" rx="1.2"/><path class="claw"/>';
   var FOOT = '<path class="fo" d="M-5.5 -3H5.5L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/><path class="fs" d="M-9.6 7H9.6L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/>';
 
+  var THROWN = [250, 40];   // where a sheet flying in to Fuzz comes from
   var SHEETHOLD = 18, SHEETGRIP = 14;   // left hand to stack centre (right hand is the same, across it), and hand to stack when the right claw has it all
   var SPINE = 7;   // how thick the tape is, seen from the side
   var SLOT = 133;   // where the printout comes through the chest
@@ -449,7 +572,7 @@
 
   function armSvg(s) {
     return '<g class="arm ' + s + 'arm"><path class="limb-o ' + s + 'a"/><path class="ring-b ' + s + 'ab"/><path class="limb-i ' + s + 'a"/>' +
-      '<path class="ring-l ' + s + 'al"/>' + JOINT.replace('%', s + 'elbow') + '<g class="hand ' + s + 'hand">' + HAND + '</g></g>';
+      '<path class="ring-l ' + s + 'al"/>' + JOINT.replace('%', s + 'elbow') + '<g class="hand ' + s + 'hand">' + (s === 'r' ? MIC : '') + HAND + '</g></g>';
   }
   function legSvg(s) {
     return '<g class="leg"><path class="limb-o ' + s + 'l"/><path class="ring-b ' + s + 'lb"/><path class="limb-i ' + s + 'l"/><path class="ring-l ' + s + 'll"/>' + JOINT.replace('%', s + 'knee') + '</g>';
@@ -493,12 +616,13 @@
           '<g class="pfront">' + PAPER + '</g>' +
           '<g class="arms afront">' + armSvg('l') + armSvg('r') + '</g>' +
         '</g>' +
+        '<g class="dmic">' + MIC + '</g>' +
       '</svg>';
     var q = function (s) { return host.querySelector(s); }, qa = function (s) { return host.querySelectorAll(s); };
     this.svg = q('svg.rig'); this.bot = q('#bot');
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
     this.el = { ll: qa('.ll'), rl: qa('.rl'), llb: q('.llb'), rlb: q('.rlb'), lll: q('.lll'), rll: q('.rll'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
-      vhs: q('.vhs'), vface: q('.vface'), vside: q('.vside'), vfront: q('.vfront'), vback: q('.vback'), paper: q('.paper'), sheets: qa('.sheet'), pfront: q('.pfront'), pback: q('.pback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
+      vhs: q('.vhs'), vface: q('.vface'), vside: q('.vside'), vfront: q('.vfront'), vback: q('.vback'), mic: q('.mic'), dmic: q('.dmic'), paper: q('.paper'), sheets: qa('.sheet'), pfront: q('.pfront'), pback: q('.pback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
       larm: q('.larm'), rarm: q('.rarm'), lshcap: q('.lshcap'), rshcap: q('.rshcap'), aunder: q('.aunder'), aback: q('.aback'), afront: q('.afront') };
     this.layerOf = { l: 'afront', r: 'afront' };
     this.p = expand({}, {});
@@ -588,21 +712,24 @@
     var r = R[name], self = this;
     if (!r) return;
     this.stop();
+    var was = this.name;
     this.name = name;
+    this.p.md = 0;
     if (!r.once) this.prev = name;
     if (this.opts.onPlay) this.opts.onPlay(name, r);
     var seated = this.p.sit > .5, stay = r.once && seated;
     var s = stay ? mix(SEAT, r.s) : r.s || {}, from = {}, k, t = 0;
     var sitting = !r.once && !seated && s.sit;
-    var holding = this.p.pp > .5, needs = s.pp > .5, keep = holding && needs && !this.solo;
-    var lead = (holding && !keep ? PUT_AWAY : []).concat(r.once ? [] : seated && !s.sit ? GET_UP : sitting ? SIT_DOWN : [], needs && !keep ? TAKE_OUT : []), leadS = { mood: sitting ? 'idle' : s.mood, solo: this.solo };
+    var holding = this.p.pp > .5, needs = s.pp > .5, keep = holding && needs && !this.solo, mic = this.p.mc > .5, wantsMic = s.mc > .5;
+    var rise = (was === 'sleepy' ? WAKE : was === 'chill' ? POWER_ON : []).concat(GET_UP);
+    var lead = (holding && !keep ? PUT_AWAY : []).concat(mic && !wantsMic ? PUT_MIC : [], r.once ? [] : seated && !s.sit ? rise : sitting ? SIT_DOWN : [], needs && !keep ? TAKE_OUT : [], wantsMic && !mic ? TAKE_MIC : []), leadS = { mood: sitting ? 'idle' : s.mood, solo: this.solo };
     for (k in this.p) from[k] = this.p[k];
     var tl = A.createTimeline({ onComplete: function () {
       if (self.tl !== tl) return;
       if (r.once) self.play(self.prev || 'idle'); else if (r.loop) self.cycle(r);
     } });
     this.tl = tl;
-    this.flip(lead.length ? leadS : s, {});
+    this.flip(lead.length ? mix(leadS, { mood: this.bot.dataset.mood }) : s, {});  // the first beat sets the mood, so waking doesn't flash the next face
     var beats = (r.enter || []).concat(r.loop ? [r.loop[0]] : []);
     if (stay) beats = beats.map(onSeat);
     lead.forEach(function (b, i) { t = self.beat(tl, leadS, i ? b : arrive(b), from, t); });
@@ -638,7 +765,7 @@
     var br = this.breath.v * c.br * still, sw = this.swing.v * c.dg * still;
     var y = c.y + br * .7 * (1 - c.sit), headRot = c.head + br * .7;  // seated, the card holds the body still and only the head breathes
     e.bodyg.setAttribute('transform', 'translate(' + f(c.x) + ' ' + f(y) + ') rotate(' + f(c.rot) + ' ' + PIVOT[0] + ' ' + PIVOT[1] + ')');
-    e.headg.setAttribute('transform', 'rotate(' + f(headRot) + ' ' + NECK[0] + ' ' + NECK[1] + ')');
+    e.headg.setAttribute('transform', 'rotate(' + f(headRot) + ' ' + NECK[0] + ' ' + NECK[1] + ') translate(' + NECK[0] + ' ' + NECK[1] + ') scale(1 ' + f(1 - c.hp * .16) + ') translate(' + -NECK[0] + ' ' + -NECK[1] + ')');
 
     // hips move with the body; ankles stay in world space so feet stay planted
     var r = c.rot * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
@@ -669,6 +796,14 @@
     var rang = this.hand('r', e.rhand, rh, ra.ang, c.rrot, c.rw, c.rgap, c.tf);
     this.tape(rh, rang);
     this.paper(lh, rh, rang);
+    e.mic.style.display = c.mc > .5 && c.md <= 0 ? 'inline' : 'none';
+    e.dmic.style.display = c.md > 0 && c.md < 2 ? 'inline' : 'none';
+    if (c.md > 0) {
+      // a loose mic falls from the claw, tumbles, and lands on its side
+      var dm = Math.min(c.md, 1), wr = world(rh), dx = wr[0] + 12 * dm, dy = wr[1] + (GROUND - 6 - wr[1]) * dm;
+      e.dmic.setAttribute('transform', 'translate(' + f(dx) + ' ' + f(dy) + ') rotate(' + f(rang + dm * 270) + ')');
+      e.dmic.style.opacity = f(Math.min(1, 2 - c.md));
+    }
     this.look();
   };
   /* The wrist follows the arm until a pose gives it its own angle; lw and rw blend between the two. */
@@ -708,7 +843,9 @@
     if (!on) return;
     var cx = this.solo ? 100 : l[0] + SHEETHOLD, cy = this.solo ? SLOT - 14 + c.pr * 28 : l[1], order = this.stack(), lifted = order[this.pz % 2 ? 0 : 2];
     if (this.solo && c.pg < .01) this.el.pfront.setAttribute('clip-path', 'url(#' + this.clip + ')'); else this.el.pfront.removeAttribute('clip-path');
-    g.setAttribute('transform', 'translate(' + f(cx + (p[0] + Math.cos(r) * SHEETGRIP - cx) * c.pg) + ' ' + f(cy + (p[1] + Math.sin(r) * SHEETGRIP - cy) * c.pg) + ') rotate(' + f(c.pg * 10) + ')');
+    var gx = cx + (p[0] + Math.cos(r) * SHEETGRIP - cx) * c.pg, gy = cy + (p[1] + Math.sin(r) * SHEETGRIP - cy) * c.pg;
+    g.style.opacity = c.pi > 0 ? f(Math.min(1, (1 - c.pi) / .2)) : '';  // fades up as it comes, so it never just appears
+    g.setAttribute('transform', 'translate(' + f(gx + (THROWN[0] - gx) * c.pi) + ' ' + f(gy + (THROWN[1] - gy) * c.pi) + ') rotate(' + f(c.pg * 10 + c.pi * 240) + ') scale(' + f(1 - c.pi * .4) + ')');
     for (i = 0; i < 3; i++) {
       var side = i - 1, x = this.solo ? 0 : side * 1.3, y = this.solo ? 0 : Math.abs(side) * .8, t = this.solo ? 0 : side * 2;
       this.el.sheets[order[i]].style.display = this.solo && i !== 2 ? 'none' : 'inline';
@@ -727,7 +864,7 @@
   var rigs = [];
   window.FuzzJoints = {
     reactions: R,
-    transitions: { sitDown: SIT_DOWN, getUp: GET_UP, takeOut: TAKE_OUT, putAway: PUT_AWAY },
+    transitions: { sitDown: SIT_DOWN, getUp: GET_UP, wake: WAKE, powerOn: POWER_ON, takeOut: TAKE_OUT, putAway: PUT_AWAY, takeMic: TAKE_MIC, putMic: PUT_MIC },
     feel: FEEL, groups: GROUPS, stand: STAND, gaps: GAP,
     rig: function (host, opts) { var r = new Rig(host, opts); rigs.push(r); return r; },
     all: function () { return rigs; },
