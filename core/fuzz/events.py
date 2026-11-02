@@ -24,7 +24,7 @@ EVENT_TYPES = {
     "task.session_opened", "task.next_step", "task.session_ended",
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "entity.merged", "entity.kept_separate", "entity.defined",
-    "card.created", "card.answered", "card.postponed", "card.expired",
+    "card.created", "card.answered", "card.postponed", "card.expired", "card.updated",
     "permission.asked", "permission.granted", "permission.denied",
     "checkin.due", "checkin.answered",
     "run.started", "run.finished",

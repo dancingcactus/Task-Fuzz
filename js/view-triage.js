@@ -413,6 +413,11 @@
       h += '<ul class="mentions">' + it.mentions.map(function (m) { return '<li><span class="pill pill--muted">' + esc(m.where) + '</span><span>' + esc(m.text) + '</span></li>'; }).join('') + '</ul>';
     }
     /* Is it yours? shows what was actually said, and by whom, before you answer */
+    if (it.kind === 'entity' && it.entity === 'is_task' && it.asks) {
+      h += '<fieldset class="asks"><legend>Tick the ones that are yours</legend><ul class="mentions">' + it.asks.map(function (a) {
+        return '<li><label class="check"><input type="checkbox" data-ask="' + a.id + '"' + (edits[it.id + ':ask' + a.id] ? ' checked' : '') + '> <span>' + esc(a.title) + '</span></label></li>';
+      }).join('') + '</ul></fieldset>';
+    }
     if (it.kind === 'entity' && it.entity === 'is_task') {
       var said = it.sources.filter(function (s) { return s.quote; });
       if (said.length) h += '<ul class="mentions">' + said.map(function (s) { return '<li><span class="pill pill--muted">' + esc(s.title || s.type) + '</span><span>' + esc(s.quote) + '</span></li>'; }).join('') + '</ul>';
@@ -1076,6 +1081,7 @@
   }
   async function answerEntity(which) {
     var it = cur(); if (!it || it.kind === 'task') return;
+    if (it.asks && which === 'primary' && !card.querySelector('[data-ask]:checked')) { Fuzz.say('Tick the ones that are yours first.', { type: false }); return; }
     var ch = Store.track([it.id, it.dupOf], function () { Store.resolve(it.id, which); });
     var msg = it.answers[which];
     offer('Answered “' + it[which] + '”: ' + it.title + '.', ch, msg);
@@ -1140,6 +1146,7 @@
     card.addEventListener('change', function (e) {
       if (e.target.id === 'afile') { addFiles(e.target.files); e.target.value = ''; return; }
       var it = cur();
+      if (it && e.target.dataset.ask !== undefined) edits[it.id + ':ask' + e.target.dataset.ask] = e.target.checked;
       if (it && e.target.dataset.ref !== undefined) { var rs = it.sources.filter(function (x) { return srcKey(x) === e.target.dataset.ref; })[0]; if (rs) { setRef(it, rs, e.target.checked); paintRefChips(); } }
     });
     /* A file dragged anywhere onto the screen opens the drop zone; letting go anywhere adds it to the task.
