@@ -949,3 +949,21 @@ html[data-theme="retro"] .card img, html[data-theme="retro"] .brand img { filter
 /* Random's swatch: three themes at once */
 .pal-rnd i:nth-child(2) { transform: translateY(3px); }
 .pal-rnd i:nth-child(3) { transform: translateY(-3px); }
+
+/* ---------- Technicolor: early colour film (js/themes.js gives it its cream stock, carmine and teal) ---------- */
+/* A warm vignette and a little grain, never in the way of a click */
+html[data-theme="technicolor"] body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; opacity: .55;
+  background:
+    radial-gradient(ellipse at center, transparent 58%, rgba(120, 30, 10, .22) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .2 0 0 0 0 .1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+html[data-theme="technicolor"][data-mode="dark"] body::after {
+  opacity: .7;
+  background:
+    radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, .5) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .8 0 0 0 0 .6 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+html[data-theme="technicolor"][data-contrast="high"] body::after { display: none; }
+/* Fuzz in rich, saturated colour */
+html[data-theme="technicolor"] .pwrap, html[data-theme="technicolor"] .fzmini { filter: saturate(1.35) contrast(1.06); }

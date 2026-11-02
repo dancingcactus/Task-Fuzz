@@ -27,7 +27,7 @@
     { id: 'warmgray', name: 'Warm gray', note: 'Quietest, closest to neutral', l: ['#6B645C', '#FFFFFF', '#57514A'], d: ['#BDB5AA', '#1F1C18', '#D2CBC0'], hl: ['#3F3A34', '#FFFFFF', '#38332E'], hd: ['#E3DDD3', '#181512', '#EFEAE2'] },
     /* Retro: a black-and-white TV. It brings its own grey foundation and code colours (status keeps only a
        faint tint, and its icon), and the stylesheet adds scan lines and a vignette. Random never picks it. */
-    { id: 'retro', name: 'Retro', note: 'Black-and-white TV', retro: true,
+    { id: 'retro', name: 'Retro', note: 'Black-and-white TV', retro: true, special: true,
       l: ['#3A3A3A', '#FFFFFF', '#2E2E2E'], d: ['#CFCFCB', '#141414', '#E2E2DE'], hl: ['#111111', '#FFFFFF', '#111111'], hd: ['#F2F2EE', '#000000', '#FFFFFF'],
       foundation: {
         std: {
@@ -42,6 +42,24 @@
       code: {
         light: { code: '#D9D9D5', head: '#D0D0CC', line: '#C2C2BE', hl: '#CDCDC9', k: '#1A1A1A', s: '#4E4E4E', n: '#5A5A5A', f: '#262626', t: '#3A3A3A', p: '#303030', c: '#7A7A77', rem: '#D6CFCD', add: '#CDD4CE', remInk: '#5C3E3B', addInk: '#3C493E' },
         dark: { code: '#0E0E0E', head: '#262626', line: '#383838', hl: '#222222', k: '#F2F2EE', s: '#B4B4B0', n: '#C6C6C2', f: '#E0E0DC', t: '#CACAC6', p: '#D6D6D2', c: '#8E8E8B', rem: '#2E2524', add: '#232A24', remInk: '#C6A8A4', addInk: '#A8B6AA' }
+      } },
+    /* Technicolor: early colour film. Warm cream stock, saturated carmine and teal (the two strips), golden
+       highlights, a warm vignette and a little grain from the stylesheet. Random never picks it either. */
+    { id: 'technicolor', name: 'Technicolor', note: 'Early colour film', special: true,
+      l: ['#B8202B', '#FFF6E8', '#14706A'], d: ['#FF6A55', '#2A0A06', '#56C9BC'], hl: ['#8C1018', '#FFFFFF', '#0B524D'], hd: ['#FF8A78', '#1C0503', '#7FE0D4'],
+      foundation: {
+        std: {
+          light: { bg: '#F4E3C8', surface: '#FCF1DE', field: '#EED8B6', ink: '#2A120E', muted: '#6E4A3A', line: '#E2C49C', chip: '#EBCFA6', done: '#1F7A5E', wait: '#B0700A', blocked: '#A8162A' },
+          dark: { bg: '#170C0B', surface: '#241411', field: '#311C17', ink: '#FBEBD3', muted: '#D2AE92', line: '#4A2C23', chip: '#3A221B', done: '#5FD0A6', wait: '#F2B640', blocked: '#FF7A84' }
+        },
+        hc: {
+          light: { bg: '#FBEEDA', surface: '#FFFAF1', field: '#F3E0C2', ink: '#160806', muted: '#4A2A1E', line: '#7A4E36', chip: '#EED7B2', done: '#0F5A43', wait: '#7A4C00', blocked: '#7E0C1D' },
+          dark: { bg: '#0C0504', surface: '#1A0D0B', field: '#26130F', ink: '#FFF6E6', muted: '#EED3B8', line: '#B08868', chip: '#331C16', done: '#86E8C2', wait: '#FFD27A', blocked: '#FFA5AC' }
+        }
+      },
+      code: {
+        light: { code: '#EED8B6', head: '#EBCFA6', line: '#E2C49C', hl: '#F2DEBE', k: '#B8202B', s: '#14706A', n: '#B05A00', f: '#7A1E5A', t: '#0F6A63', p: '#5A2A1A', c: '#7E5A48', rem: '#F2CDBF', add: '#CFE6D2', remInk: '#A8162A', addInk: '#1F7A5E' },
+        dark: { code: '#120807', head: '#311C17', line: '#4A2C23', hl: '#2A1713', k: '#FF6A55', s: '#56C9BC', n: '#F5A84A', f: '#F08AC4', t: '#7FE0D4', p: '#F2D2B0', c: '#B8917A', rem: '#3E1A18', add: '#163A2E', remInk: '#FF7A84', addInk: '#5FD0A6' }
       } }
   ];
 
@@ -108,11 +126,11 @@
     if (meta) meta.setAttribute('content', p.bg);
   }
 
-  /* Random: a different theme each time Fuzz opens, never Retro and never the one shown last time */
+  /* Random: a different theme each time Fuzz opens, never a special one (Retro, Technicolor) and never the one shown last time */
   var LAST = 'fuzz.theme.last';
   function pickRandom() {
     var last = null; try { last = localStorage.getItem(LAST); } catch (e) {}
-    var pool = THEMES.filter(function (t) { return !t.retro && t.id !== last; });
+    var pool = THEMES.filter(function (t) { return !t.special && t.id !== last; });
     var t = pool[Math.floor(Math.random() * pool.length)];
     try { localStorage.setItem(LAST, t.id); } catch (e) {}
     return t.id;
