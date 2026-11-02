@@ -9,7 +9,7 @@ python3 -m http.server 8000
 ```
 
 Everything runs in the browser. Nothing is sent anywhere, and the data is invented. Only your theme,
-appearance and calm-mode choices are saved (in `localStorage`). **Settings > Reset demo data** starts over.
+appearance and calm-mode choices are saved (in `localStorage`). **Settings › Demo › Reset demo data** starts over.
 
 ## Use it for real
 
@@ -114,7 +114,7 @@ the MCP server for the AI roles, the HTTP API and the installer for Claude Code 
 **Live mode.** `fuzz serve` also serves these screens, and prints a link with your token
 (`http://127.0.0.1:8765/?token=…`). Open it once and the same screens run on your real queue
 (`js/live.js`): every decision goes to the core, Undo is the core's, Assign starts the executor right away,
-and what Fuzz does shows up as it happens through the event stream. Settings > Use demo data goes back to
+and what Fuzz does shows up as it happens through the event stream. Settings › Your queue › Switch account goes back to
 the demo. The conversation tab and code previews are demo-only for now, since the core doesn't have them
 yet.
 
@@ -144,7 +144,7 @@ js/onboarding.js    the first run, the later tips and the setup cards
 js/view-settings.js Settings: about you, the app, working hours, what Fuzz can read and send, files, look
 js/notify.js        Fuzz speaks: notices and Undo (no toasts)
 js/progress.js      the segmented triage progress bar
-js/app.js           router, header, theme popover
+js/app.js           router, header (the gear opens Settings), theme picker
 assets/             Fuzz logo files
 install.sh          the one-paste install
 ```

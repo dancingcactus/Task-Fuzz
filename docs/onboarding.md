@@ -247,14 +247,14 @@ that would be handling the request. The page has to survive that and reconnect.
 - **Later tips** are said by Fuzz, once each, a moment after the card they belong to arrives, and only if
   you're still on it.
 
-- **Settings** (`#/settings`, `js/view-settings.js`, from All settings in the header's quick settings)
+- **Settings** (`#/settings`, `js/view-settings.js`, the gear in the header; there are no quick settings)
   replaces the four-step wizard with one page of sections, each saved on its own: About you (names,
   emails, Slack IDs); App (status, set up, repair, switch, check again); Working hours (the same choices
   as Fuzz's question); What Fuzz can read and send (one row per source in plain words, with Reading and
   Sending switches, List again, and each tool by name under Details, with its token cost); Where Fuzz
   saves files; Look and feel (theme, appearance, contrast, code font, Calm mode, applied at once and kept
-  in this browser, the same as the header's quick settings); and Show me around again. In the demo the
-  page has only Look and feel and the tour.
+  in this browser); Your queue (Refresh now, or Reset demo data in the demo, and Switch account); and Show me
+  around again. In the demo the page has only Look and feel, Demo and the tour.
 
 Not built yet:
 

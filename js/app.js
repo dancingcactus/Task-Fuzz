@@ -22,7 +22,7 @@
   }
   function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
-  function paint() { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); save(); paintPopover(); }
+  function paint() { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); save(); }
 
   var App = {
     /* Random picks one now, so choosing it shows a change; after that, one per page load */
@@ -33,7 +33,7 @@
     setContrast: function (c) { prefs.contrast = c; paint(); },
     setCodeFont: function (id) { prefs.codeFont = id; paint(); },
     setCalm: function (v) {
-      prefs.calm = !!v; Fuzz.setCalm(prefs.calm || tempCalm); save(); paintPopover();
+      prefs.calm = !!v; Fuzz.setCalm(prefs.calm || tempCalm); save();
     },
     /* The onboarding's intro is always calm, whatever the setting; the setting comes back after it */
     tempCalm: function (on) { tempCalm = !!on; Fuzz.setCalm(prefs.calm || tempCalm || reduce); },
@@ -63,10 +63,8 @@
         '<div class="undowrap"><button type="button" class="themebtn undobtn" id="undobtn" aria-expanded="false" aria-controls="undopop" aria-haspopup="dialog" disabled>' +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span class="lbl">Undo</span><span class="navcount" id="undocount"></span></button>' +
         '<div class="themepop undopop" id="undopop" role="dialog" aria-label="Recent actions" hidden></div></div>' +
-        '<button type="button" class="themebtn iconbtn" id="setbtn" aria-label="Settings" title="Settings" aria-expanded="false" aria-controls="themepop" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>' +
-        '<div class="themepop" id="themepop" role="dialog" aria-label="Settings" hidden></div></div>';
-    document.getElementById('setbtn').addEventListener('click', function () { toggleUndo(false); togglePopover(); });
-    document.getElementById('undobtn').addEventListener('click', function () { togglePopover(false); toggleUndo(); });
+        '<a href="#/settings" data-nav="settings" class="themebtn iconbtn" id="setbtn" aria-label="Settings" title="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>';
+    document.getElementById('undobtn').addEventListener('click', function () { toggleUndo(); });
     document.getElementById('undopop').addEventListener('click', function (e) {
       e.stopPropagation();
       var b = e.target.closest('[data-undo]'); if (!b) return;
@@ -79,37 +77,17 @@
     var downAt = null;
     document.addEventListener('pointerdown', function (e) { downAt = e.target; }, true);
     document.addEventListener('click', function (e) {
-      var t = downAt && downAt.isConnected ? downAt : e.target, pop = document.getElementById('themepop');
-      if (!pop.hidden && !t.closest('#themepop') && !t.closest('#setbtn')) togglePopover(false);
+      var t = downAt && downAt.isConnected ? downAt : e.target;
       if (!document.getElementById('undopop').hidden && !t.closest('#undopop') && !t.closest('#undobtn')) toggleUndo(false);
     });
     /* Escape closes an open popover wherever focus is, before any view sees the key. */
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
-      var open = !document.getElementById('themepop').hidden ? ['setbtn', togglePopover] : !document.getElementById('undopop').hidden ? ['undobtn', toggleUndo] : null;
+      var open = !document.getElementById('undopop').hidden ? ['undobtn', toggleUndo] : null;
       if (!open) return;
       e.preventDefault(); e.stopPropagation(); open[1](false); document.getElementById(open[0]).focus();
     }, true);
-    document.getElementById('themepop').addEventListener('click', function (e) {
-      e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup],[data-again]'); if (!t) return;
-      if (t.dataset.disconnect) { Live.switchAccount(); return; }
-      if (t.dataset.again) { togglePopover(false); Onboard.again(); return; }
-      if (t.dataset.setup) { togglePopover(false); App.navigate('#/settings'); return; }
-      if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
-      else if (t.dataset.mode) App.setMode(t.dataset.mode);
-      else if (t.dataset.contrast) App.setContrast(t.dataset.contrast);
-      else if (t.dataset.reset) { togglePopover(false); App.resetDemo(); }
-    });
-    document.getElementById('themepop').addEventListener('change', function (e) { if (e.target.id === 'calmbox') App.setCalm(e.target.checked); if (e.target.id === 'codefont') App.setCodeFont(e.target.value); });
     Progress.mount(document.getElementById('prog'));
-    paintPopover();
-  }
-  function togglePopover(force) {
-    var pop = document.getElementById('themepop'), btn = document.getElementById('setbtn');
-    var show = force === undefined ? pop.hidden : force;
-    pop.hidden = !show; btn.setAttribute('aria-expanded', String(show));
-    if (show) { var first = pop.querySelector('[aria-pressed="true"]'); if (first) first.focus(); }
   }
   function toggleUndo(force) {
     var pop = document.getElementById('undopop'), btn = document.getElementById('undobtn');
@@ -134,7 +112,7 @@
       return '<li><button type="button" data-undo="' + i + '"' + (why ? ' aria-disabled="true" class="u-blocked"' : '') + '><span class="u-l">' + esc(u.label) + '</span><span class="u-m">' + (why ? esc(why) : ago(u.at)) + '</span></button></li>';
     }).join('') + '</ul>';
   }
-  /* The theme choices, for the quick settings and the Settings page: every theme, then Random */
+  /* The theme choices on the Settings page: the eight, Random, then the specials */
   function themePicks(attr) {
     var mode = Themes.resolveMode(prefs.mode);
     function sw(p) { return '<span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span>'; }
@@ -153,29 +131,13 @@
     if (special.length) picks.push('<div class="pal-divider" role="separator"><span>Specials</span><small>Random skips these</small></div>' + special.map(pick).join(''));
     return picks.join('');
   }
-  function paintPopover() {
-    var pop = document.getElementById('themepop'); if (!pop) return;
-    var mode = Themes.resolveMode(prefs.mode);
-    var ae = document.activeElement, focused = ae && pop.contains(ae) ? ae.getAttribute('data-theme-id') || ae.getAttribute('data-mode') || ae.getAttribute('data-contrast') : null;
-    pop.innerHTML =
-      '<h2 class="pop-title">Settings</h2><h2>Theme</h2><div class="palettes" role="group" aria-label="Theme">' + themePicks('data-theme-id') + '</div>' +
-      '<h2>Appearance</h2><div class="segrow" role="group" aria-label="Appearance">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match system']].map(function (m) { return '<button type="button" class="seg" data-mode="' + m[0] + '" aria-pressed="' + (prefs.mode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
-      '<h2>Contrast</h2><div class="segrow" role="group" aria-label="Contrast">' + [['standard', 'Standard'], ['high', 'High contrast']].map(function (m) { return '<button type="button" class="seg" data-contrast="' + m[0] + '" aria-pressed="' + (prefs.contrast === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
-      '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
-      '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
-      (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">All settings</button><button type="button" class="btn small" data-again="1">Show me around again</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
-        : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button><button type="button" class="btn small" data-again="1">Show me around again</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
-    if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
-  }
-
   /* ---------- Router ---------- */
   function route(force) {
     var name = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'triage';
     if (!ROUTES[name]) name = 'triage';
     if (!force && name === currentName) return;
     if (current) current.unmount();
-    togglePopover(false); toggleUndo(false);
+    toggleUndo(false);
     var main = document.getElementById('view');
     main.innerHTML = '';
     main.className = 'view view--' + name;
@@ -219,7 +181,7 @@
   /* ---------- Boot ---------- */
   load();
   Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont);
-  Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
+  Themes.onSystemChange(function () { if (prefs.mode === 'auto') Themes.apply(shown, prefs.mode, prefs.contrast, prefs.codeFont); });
   reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;

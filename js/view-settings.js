@@ -1,5 +1,5 @@
-/* Settings (#/settings): what Fuzz knows and may do, one section each, saved on its own. Replaces the
-   old four-step guided setup.
+/* Settings (#/settings, the gear in the header): what Fuzz knows and may do, how he looks, one section
+   each, saved on its own. Replaces the old four-step guided setup and the header's quick settings.
 
    About you        your other names, emails and Slack IDs (PUT /me)
    App              the app Fuzz works through: status, install, repair, switch (/engine)
@@ -7,8 +7,8 @@
    What Fuzz can …  one row per source, in plain words, with Reading and Sending switches; the tool-by-tool
                     list folds away under Details (PUT /setup/tools; List again runs discovery)
    Files            the one folder Fuzz may write to (PUT /setup/folder)
-
-   Look and feel (theme, contrast, Calm mode) stays in the header's quick settings. */
+   Look and feel    theme, appearance, contrast, code font, Calm mode (this browser's)
+   Your queue       refresh (or reset the demo), switch account; then the tour */
 (function () {
   var esc = UI.esc;
   var V = {}, root = null, data = null, poll = 0, busy = {}, hoursEdit = null, open = {}, picks = null;
@@ -26,7 +26,7 @@
     root.addEventListener('toggle', function (e) { if (e.target.dataset && e.target.dataset.open) open[e.target.dataset.open] = e.target.open; }, true);
     if (!Live.on()) {
       root.innerHTML = '<section class="settings"><h1>Settings</h1><p class="meta">You’re using the demo, so only the look is yours to change. The rest is for your real queue, from the Fuzz core on your Mac.</p>' +
-        lookHTML() + againHTML() + '</section>';
+        lookHTML() + queueHTML() + againHTML() + '</section>';
       return;
     }
     root.innerHTML = '<section class="settings"><h1>Settings</h1><p class="meta" role="status">One moment…</p></section>';
@@ -51,7 +51,7 @@
     var y = window.scrollY;
     root.innerHTML = '<section class="settings" aria-labelledby="set-h"><h1 id="set-h">Settings</h1>' +
       '<p class="meta">What Fuzz knows about you, what he may do, and how he looks. Each part saves on its own.</p>' +
-      meHTML() + appHTML() + hoursHTML() + sourcesHTML() + folderHTML() + lookHTML() + againHTML() + '</section>';
+      meHTML() + appHTML() + hoursHTML() + sourcesHTML() + folderHTML() + lookHTML() + queueHTML() + againHTML() + '</section>';
     window.scrollTo(0, y);
   }
   /* Redraw one section, so what you're typing in another stays put; focus comes back to the same control */
@@ -264,7 +264,7 @@
     }, function (e) { busy.choose = false; repaint('folder'); root.querySelector('#set-folder').value = typed; said('folder', 'The folder chooser didn’t open: ' + e.message); });
   }
 
-  /* ---------- Look and feel: this browser's, applied at once (the same as the header's quick settings) ---------- */
+  /* ---------- Look and feel: this browser's, applied at once ---------- */
   function lookHTML() {
     var pr = App.prefs();
     var seg = function (attr, label, opts, cur) {
@@ -280,6 +280,14 @@
         return '<option value="' + f.id + '"' + (f.id === pr.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>';
       }).join('') + '</select></div>' +
       '<h3>Motion</h3><label class="check"><input type="checkbox" id="look-calm"' + (pr.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>');
+  }
+
+  /* Your queue: bring it up to date with the core, or in the demo start it over; and switch who's using Fuzz */
+  function queueHTML() {
+    var live = Live.on();
+    return section('queue', live ? 'Your queue' : 'Demo', live ? 'Connected to the Fuzz core on this Mac. This is your real queue.' : 'Invented tasks to try things out. Nothing reaches your accounts.',
+      '<div class="set-actions"><button type="button" class="btn small" data-queue="reset">' + (live ? 'Refresh now' : 'Reset demo data') + '</button>' +
+      (live || Live.canSwitch() ? '<button type="button" class="btn small" data-queue="switch">Switch account</button>' : '') + '</div>');
   }
 
   function againHTML() {
@@ -303,6 +311,8 @@
     if (b.dataset.list) return listAgain();
     if (b.dataset.choose) return chooseFolder();
     if (b.dataset.again) return Onboard.again();
+    if (b.dataset.queue === 'reset') return App.resetDemo();
+    if (b.dataset.queue === 'switch') return Live.switchAccount();
     if (b.dataset.lookTheme) { App.setTheme(b.dataset.lookTheme); return repaint('look'); }
     if (b.dataset.lookMode) { App.setMode(b.dataset.lookMode); return repaint('look'); }
     if (b.dataset.lookContrast) { App.setContrast(b.dataset.lookContrast); return repaint('look'); }
