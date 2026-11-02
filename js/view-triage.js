@@ -691,7 +691,7 @@
     var sc = $('#setupcard'); sc.hidden = false; sc.className = 'card setupcard enter';
     paintSetup();
     $('#sc-h').focus({ preventScroll: true });
-    Fuzz.setMood('eager'); Fuzz.say({ hours: 'A quick one while I read up on your task.', lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
+    Fuzz.setMood('eager'); Fuzz.say({ hours: 'First, a quick question.', lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
     return true;
   }
   function appName() { var e = scState.card.engine; return e === 'copilot' ? 'Copilot' : 'Claude Code'; }
@@ -748,7 +748,7 @@
   }
   function hoursAnswer(what) {
     var cur = (scState.card.hours && scState.card.hours.hours) || [8, 18.5], body;
-    if (what === 'later') { Onboard.skipHours(); return closeSetup('Okay. Weekdays, ' + span(cur) + ', for now.'); }
+    if (what === 'later') { Onboard.skipHours(); closeSetup(null); return Onboard.questionDone(); }
     if (what === 'other' || what === 'back') { scState.step = what === 'other' ? 'other' : 'ask'; paintSetup(); var f = $(what === 'other' ? '#sc-from' : '#sc-h'); if (f) f.focus({ preventScroll: true }); return; }
     if (what === 'save') {
       var a = parseFloat($('#sc-from').value), b = parseFloat($('#sc-until').value);
@@ -756,7 +756,7 @@
       body = { hours: [a, b], weekends: $('#sc-wkd').checked };
     } else body = what === 'none' ? { hours: null, weekends: true } : { hours: cur, weekends: what === 'everyday' };
     Onboard.answerHours(body).then(function () {
-      closeSetup(body.hours ? 'Got it. I’ll read for new asks then, and stay quiet the rest of the time.' : 'Got it. I’ll read for new asks whenever they come.');
+      closeSetup(null); Onboard.questionDone();   /* next, Fuzz asks for one real task */
     }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
   }
 

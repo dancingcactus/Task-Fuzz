@@ -87,6 +87,7 @@
     chrome(s);
     if (s === 'intro') return paintIntro();
     if (s === 'form') return paintForm();
+    if (s === 'question') { App.navigate('#/triage'); return; }
     if (s === 'capture') return paintAsk();
     if (s === 'wait') return paintWait(true);
     if (s === 'card') { App.navigate('#/triage'); return; }
@@ -235,7 +236,7 @@
       return names.indexOf(name) > -1 ? null : Live.saveMe({ names: [name].concat(names) });
     });
     Promise.all([saveName]).then(function () {
-      return save({ step: 'capture', name: name || null, app: chosen });
+      return save({ step: afterForm(), name: name || null, app: chosen });
     }).then(paint, function (e) { if (go) go.disabled = false; Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
   }
 
@@ -253,6 +254,8 @@
   }
   /* The questions come only when there's something to set: a live core, with no app or hours yet */
   function needsForm() { return Live.on() && !st.app; }
+  /* Fuzz's first question comes next if it's still open; then he asks for a task */
+  function afterForm() { return Live.on() && !st.hours_set ? 'question' : 'capture'; }
 
   /* ---------- 1. Fuzz introduces himself ---------- */
   function paintIntro() {
@@ -273,8 +276,8 @@
     var name = st.name ? ', ' + st.name : '';
     var app = st.app && client(st.app) ? client(st.app).label : { 'claude-code': 'Claude Code', copilot: 'GitHub Copilot' }[st.app];
     root.innerHTML = '<section class="onb onb-intro" aria-labelledby="onb-h">' +
-      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">All set' + esc(name) + '.</h1>' +
-        (app ? '<p class="meta">I’m working through ' + esc(app) + '. Right now I only know what you type here.</p>' : '<p class="meta">Right now I only know what you type here.</p>') + '</div></div>' +
+      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">' + (st.hours_set ? 'Thanks' : 'All set') + esc(name) + '.</h1>' +
+        '<p class="meta">' + (st.hours_set ? 'That was a card: one question, one answer. ' : '') + (app ? 'I’m working through ' + esc(app) + '. ' : '') + 'Right now I only know what you type here.</p></div></div>' +
       '<div class="onb-ask"><h2>Let’s try it on something real</h2>' +
         '<p>Tell me one thing on your plate. Something I can write or think through works best for now, like a reply to draft or a plan to sketch, since I can’t look things up yet.</p>' +
         '<p>Press the <b>New task</b> button, or <kbd>N</kbd> from anywhere. It’s always there.</p></div>' +
@@ -340,16 +343,11 @@
     if (!root || st.step !== 'wait') return;
     var it = taskItem(), s = status(it);
     if (s === 'moved' || s === 'lost') { if (first) return finish(it ? 'moved' : 'lost'); return; }
-    if (s === 'gathering' && hoursQuestion()) s = 'question';
     var top = root.querySelector('#onb-status');
     /* The next habit: Triage is where Fuzz brings things to decide, this task and any question he has */
     var html = s === 'ready'
       ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">' + (it.result ? 'Done. It’s in Triage.' : 'It’s in Triage.') + '</h1><p>“' + esc(it.title) + '” is waiting there for you' + (it.result ? ', already done' : '') + '. Take your time; it’ll keep.</p>' +
         '<button type="button" class="btn primary" data-onb="show" id="onb-show">Open Triage<kbd aria-hidden="true">↵</kbd></button></div></div>'
-      : s === 'question'
-      ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">I’ve got a question for you in Triage.</h1>' +
-        '<p>An easy one, while I read up on “' + esc(it.title) + '”. Triage is where I bring you things to decide: your tasks once I’ve looked into them, and any questions I have.</p>' +
-        '<button type="button" class="btn primary" data-onb="triage" id="onb-show">Open Triage<kbd aria-hidden="true">↵</kbd></button></div></div>'
       : '<div class="onb-status">' + Fuzz.mini('think', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">Next, keep an eye on Triage.</h1>' +
         '<p>That’s where I bring you things to decide: your tasks once I’ve looked into them, and any questions I have. “' + esc(it.title) + '” lands there when I’m done reading up on it.</p>' +
         '<p class="meta" role="status"><span class="spin" aria-hidden="true"></span> Usually a minute or two. <span id="onb-el"></span> The dot on Triage means something’s waiting.</p></div></div>';
@@ -513,7 +511,7 @@
      answers it, which makes it an easy first card. Skipping keeps the usual hours. */
   var hoursSkipped = false;
   function hoursQuestion() {
-    return !!(st && Live.on() && active() && (st.step === 'wait' || st.step === 'card') && !st.hours_set && !hoursSkipped);
+    return !!(st && Live.on() && active() && st.step === 'question' && !st.hours_set && !hoursSkipped);
   }
   function answerHours(body) {
     return Live.saveHours(body).then(function (h) { hours = h; st.hours = h; st.hours_set = true; return h; });
@@ -546,8 +544,7 @@
     if (a === 'recheck') { apps = null; appState = {}; return loadApps(); }
     if (a === 'demo') { Live.useDemo(); location.hash = '#/welcome'; try { localStorage.setItem(LOCAL, JSON.stringify(Object.assign(blank(), { step: 'capture' }))); } catch (x) {} location.reload(); return; }
     if (a === 'skip') return finish('skip');
-    if (a === 'hello') return save({ step: needsForm() ? 'form' : 'capture' }).then(paint);
-    if (a === 'triage') return App.navigate('#/triage');
+    if (a === 'hello') return save({ step: needsForm() ? 'form' : afterForm() }).then(paint);
     if (a === 'show') return showCard();
     if (a === 'ics') return downloadIcs();
   }
@@ -573,13 +570,14 @@
         Store.on(watchCard);
         if (!active()) { chrome('done'); return null; }
         calm(true); chrome(st.step);
+        if (st.step === 'question') return '#/triage';
         if (st.step === 'card') { var it = taskItem(); if (it && Store.inQueue(it.id)) { Store.pick(it.id); return '#/triage'; } st.step = 'wait'; }
         return '#/welcome';
       }, function () { chrome('done'); return null; });
     },
     active: active,
     /* N is the way into New task, except on the form, where it would skip what Fuzz needs */
-    blocksCapture: function () { return active() && (st.step === 'intro' || st.step === 'form'); },
+    blocksCapture: function () { return active() && (st.step === 'intro' || st.step === 'form' || st.step === 'question'); },
     /* On New task during the onboarding: the dictation tip, and Esc leads back here */
     onCapture: function () {
       var can = window.Dictate && Dictate.supported;   /* a tip for something this browser can't do isn't said */
@@ -603,6 +601,8 @@
     hasQuestion: hoursQuestion,
     answerHours: answerHours,
     skipHours: function () { hoursSkipped = true; },
+    /* Answered (or skipped): Fuzz asks for one real task */
+    questionDone: function () { return save({ step: 'capture' }).then(function () { App.navigate('#/welcome'); }); },
     clock: clock,
     hourSteps: HOURS,
     answerSetup: answerSetup,
