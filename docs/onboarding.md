@@ -13,7 +13,7 @@ in Settings for anyone who wants to change everything in one place.
 
 ## The flow
 
-1. **One paste.** A single pasted command installs the core, initialises it, starts `fuzz serve` and
+1. **One paste.** A single command, copied from the README, installs the core, initialises it, starts `fuzz serve` and
    opens the browser, already signed in. The user never copies a token or opens a log file, and never
    goes back to the terminal.
 2. **A short form.** Name, app (Claude or Copilot) and working hours. These are the only things asked
@@ -21,7 +21,7 @@ in Settings for anyone who wants to change everything in one place.
    - The app Fuzz finds on the Mac is highlighted. Choosing one installs Fuzz for it in the background.
    - Working hours include weekends and "no fixed hours". Fuzz reads for new asks during these hours.
    - See [When the app isn't ready](#when-the-app-isnt-ready).
-3. **Fuzz introduces himself.** Who he is and what his job is, in his own voice, in a few lines. This
+3. **Fuzz introduces himself.** Who he is and what his job is, in his own tone, in a few lines. This
    includes the trust promise: nothing goes out without a yes, and everything has Undo.
 4. **Press N.** Fuzz asks them to press N and enter one real task, nudging towards something he can
    write or think through, since he has no lookup tools yet. The New task screen shows the dictation
@@ -162,7 +162,7 @@ don't replace them.
     experience to base them on. *Test:* each question either changes something on screen or tells the
     user what Fuzz may now do.
 
-Everything comes from Fuzz, in his voice, and Calm mode is respected, as `PRODUCT.md` already requires.
+Everything comes from Fuzz, in his tone, and Calm mode is respected, as `PRODUCT.md` already requires.
 
 These principles come from common ADHD traits and the code, not from testing. There are no real users
 yet, so treat them as hypotheses until someone with ADHD tries the flow.
@@ -171,8 +171,8 @@ yet, so treat them as hypotheses until someone with ADHD tries the flow.
 
 | Need | Today | Work |
 | --- | --- | --- |
-| Voice guide for Fuzz | Lines scattered through the UI | Write it first; the intro and tips depend on it |
-| One-paste bootstrap | Four commands, then a token link | A script that does it all and opens the browser signed in |
+| Tone guide for Fuzz's writing | Lines scattered through the UI | Write it first; the intro and tips depend on it |
+| One-paste bootstrap | Four commands, then a token link | A script that does it all and opens the browser signed in, with the command in the README |
 | Install from the browser | `POST /engine/clients/{client}/install` exists; the UI doesn't call it | UI only, but see below |
 | Choosing the app | `PUT /engine` exists; the UI doesn't call it | UI only |
 | Repairing a client | The `repair` action exists; the UI doesn't call it | UI only |
@@ -187,13 +187,9 @@ yet, so treat them as hypotheses until someone with ADHD tries the flow.
 **Installing restarts the server.** `fuzz install` reloads the launchd jobs, including the `fuzz serve`
 that would be handling the request. The page has to survive that and reconnect.
 
-## Open decision
-
-Where the paste command lives: a public page or the README. Hosting is undecided.
-
 ## Order of work
 
-1. Write the voice guide.
+1. Write the tone guide.
 2. Build the one-paste bootstrap and browser sign-in.
 3. Build the form, including the install path, its three outcomes and the restart.
 4. Build the intro, New task step, tips and first card.
