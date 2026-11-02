@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from . import outputs, setup
 from .db import FuzzError
 
-STEPS = ("intro", "form", "question", "capture", "how", "wait", "card", "done")   # Fuzz says hello, then asks
+STEPS = ("intro", "form", "how", "question", "capture", "wait", "card", "done")   # Fuzz says hello, then asks
 SETUP_CARDS = ("lookup", "folder", "theme")
 THEME_AFTER_DAYS = 3        # the colour theme card is a light one, a few days in
 LATER_AGAIN_DAYS = 1        # a card you said Not now to can come back once, a day later at the soonest

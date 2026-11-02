@@ -67,7 +67,7 @@
     root.addEventListener('submit', onSubmit);
     root.addEventListener('change', onChange);
     root.addEventListener('input', onChange);
-    unsub = Store.on(function () { if (st && st.step === 'wait') paintWait(); else if (st && st.step === 'how') taskItem(); /* keeps the task's id once the core has it */ });
+    unsub = Store.on(function () { if (st && st.step === 'wait') paintWait(); });
     if (!st) { root.innerHTML = '<p class="meta" role="status">One moment…</p>'; load().then(paint); return; }
     paint();
   };
@@ -237,14 +237,14 @@
       return names.indexOf(name) > -1 ? null : Live.saveMe({ names: [name].concat(names) });
     });
     Promise.all([saveName]).then(function () {
-      return save({ step: afterForm(), name: name || null, app: chosen });
+      return save({ step: 'how', name: name || null, app: chosen });
     }).then(paint, function (e) { if (go) go.disabled = false; Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
   }
 
   /* ---------- The app's own controls stay out of the way until Fuzz shows them ---------- */
   /* bare: the header is hidden (the intro and the questions); reveal: it fades in, New task pointed out */
   function chrome(step) {
-    var bare = active() && (step === 'intro' || step === 'form');
+    var bare = active() && (step === 'intro' || step === 'form' || step === 'how');
     var was = document.body.classList.contains('onb-bare');
     document.body.classList.remove('onb-wait');
     document.body.classList.toggle('onb-bare', bare);
@@ -330,12 +330,11 @@
       line: 'Miss a session and everything waits where you left it. Stopping with cards left is fine too.',
       why: 'Nothing piles up against you: no overdue counts, no streaks to break. The time is there to help you start, not to measure you.' }
   ];
-  /* Its own step, right after your first task goes to Fuzz: how he helps you get things done, guilt-free */
+  /* Its own step, right after the questions: how Fuzz helps you get things done, guilt-free */
   function paintHow() {
-    var it = taskItem();
     root.innerHTML = '<section class="onb onb-how" aria-labelledby="onb-h">' +
       '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">Here’s how I help you get things done, guilt-free.</h1>' +
-        '<p class="meta">' + (it ? 'While I read up on “' + esc(it.title) + '”: three' : 'Three') + ' things that help a lot of people. None of them is required.</p></div></div>' +
+        '<p class="meta">Three things that help a lot of people. None of them is required.</p></div></div>' +
       '<ol class="onb-tips">' + TIPS.map(function (t, i) {
         return '<li class="onb-tip"><p class="tip-title">' + esc(t.title) + '</p><p class="tip-line">' + esc(t.line) + '</p>' + (i === 0 ? calendarHTML() : '') + '<details><summary>Why this helps</summary><p>' + esc(t.why) + '</p></details></li>';
       }).join('') + '</ol>' +
@@ -351,6 +350,8 @@
   }
   function status(it) {
     if (!it) return 'lost';
+    /* Not yet with the core: it may still go to Fuzz first, so it isn't ready however the page has it */
+    if (!it.coreId && Live.on()) return 'gathering';
     if (Store.inQueue(it.id) && it.kind === 'task') return 'ready';
     if (it.gathering || it.state === 'ai-queued' || it.state === 'ai' || !it.coreId && Live.on()) return 'gathering';
     if (it.state === 'triage') return 'gathering';
@@ -442,7 +443,7 @@
   }
   /* Triage asks for the lesson on the card in front: one action, the one that fits */
   function guide(it) {
-    if (!st || st.done || ['how', 'wait', 'card'].indexOf(st.step) < 0 || !it) return null;
+    if (!st || st.done || ['wait', 'card'].indexOf(st.step) < 0 || !it) return null;
     var mine = taskItem();
     if (!mine || mine.id !== it.id) return null;
     guidedId = it.id;
@@ -558,9 +559,9 @@
     if (a === 'recheck') { apps = null; appState = {}; return loadApps(); }
     if (a === 'demo') { Live.useDemo(); location.hash = '#/welcome'; try { localStorage.setItem(LOCAL, JSON.stringify(Object.assign(blank(), { step: 'capture' }))); } catch (x) {} location.reload(); return; }
     if (a === 'skip') return finish('skip');
-    if (a === 'hello') return save({ step: needsForm() ? 'form' : afterForm() }).then(paint);
+    if (a === 'hello') return save({ step: needsForm() ? 'form' : 'how' }).then(paint);
     if (a === 'show') return showCard();
-    if (a === 'howdone') return save({ step: 'wait' }).then(paint);
+    if (a === 'howdone') return save({ step: afterForm() }).then(paint);   /* Fuzz's question in Triage, or a task */
     if (a === 'ics') return downloadIcs();
   }
   function onSubmit(e) { if (e.target.id === 'onb-form') { e.preventDefault(); submitForm(); } }
@@ -592,7 +593,7 @@
     },
     active: active,
     /* N is the way into New task, except on the form, where it would skip what Fuzz needs */
-    blocksCapture: function () { return active() && (st.step === 'intro' || st.step === 'form' || st.step === 'question'); },
+    blocksCapture: function () { return active() && ['intro', 'form', 'how', 'question'].indexOf(st.step) > -1; },
     /* On New task during the onboarding: the dictation tip, and Esc leads back here */
     onCapture: function () {
       var can = window.Dictate && Dictate.supported;   /* a tip for something this browser can't do isn't said */
@@ -604,7 +605,7 @@
     captured: function (it) {
       if (!active() || st.step !== 'capture') return false;
       pendingItem = it;
-      save({ step: 'how', task_id: it.coreId || null });
+      save({ step: 'wait', task_id: it.coreId || null });
       App.navigate('#/welcome');
       return true;
     },

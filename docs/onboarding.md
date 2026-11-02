@@ -201,8 +201,8 @@ that would be handling the request. The page has to survive that and reconnect.
 
 ## As built
 
-- **The order.** Fuzz introduces himself first, asks two questions (name and app), asks his first
-  question on a card in Triage (working hours), only then asks for a task, then says how he helps, pointing at the New task
+- **The order.** Fuzz introduces himself first, asks two questions (name and app), says how he helps,
+  asks his first question on a card in Triage (working hours), and only then asks for a task, pointing at the New task
   button (the floating one on a phone). The app's header appears with the Triage question; until then it,
   Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
   reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
@@ -215,15 +215,15 @@ that would be handling the request. The page has to survive that and reconnect.
   waits for the server's `boot` id in `GET /health` to change (or a few quiet seconds where nothing
   restarts), checks the client and picks it with `PUT /engine`. A client that isn't there gets a link to
   get it, "I've installed it" to look again, and Try the demo, which runs the same intro on demo data.
-- **Working hours are Fuzz's first question**, right after the form. The header fades in on Triage,
+- **Working hours are Fuzz's first question**, right after how he helps. The header fades in on Triage,
   where a question card waits ("When do you work?", introduced as "This is Triage… here's an easy one to
   start"), so the first card anyone works is an easy one. One key answers it: your usual hours on
   weekdays, every day, no fixed hours, or Different hours for a picker. Esc keeps the usual hours for now.
   N stays off until it's answered.
 - **Then the new task.** Answering (or skipping) brings Fuzz's ask for one real task, with the New task
   button ringed and pointed at.
-- **How Fuzz helps, guilt-free** is its own step, right after the first task goes to him (and while he
-  reads up on it). The three first tips are told as what Fuzz does: one queue, so a short session is enough
+- **How Fuzz helps, guilt-free** is its own step, right after the name and app, still with the header
+  hidden. The three first tips are told as what Fuzz does: one queue, so a short session is enough
   (with the calendar file); nothing he does is final; he doesn't keep score. Each has "Why this helps"
   folded away, and Got it (Enter) moves on.
 - **The wait** teaches the next habit: keep an eye on Triage, where Fuzz brings tasks he has looked into
