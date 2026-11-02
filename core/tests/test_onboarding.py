@@ -1,13 +1,14 @@
 """The onboarding: where you are in it, working hours, and the setup cards that come after it."""
 
 import os
+import time
 import unittest
 from unittest import mock
 
 from helpers import CoreCase
 from test_http import Server
 
-from fuzz import cli, installer, onboarding, outputs, scheduler, setup, tasks
+from fuzz import answers, cards, cli, installer, onboarding, outputs, scheduler, setup, tasks
 from fuzz.db import FuzzError
 
 
@@ -217,3 +218,120 @@ class Start(CoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Kickoff(CoreCase):
+    """The onboarding's last card: Fuzz's own task to find your asks, with a permission card per source."""
+
+    FOUND = {"tools": [
+        {"allow": "mcp__claude_ai_Gmail__search", "server": "Gmail", "kind": "lookup", "suggested": True, "does": "Search your email."},
+        {"allow": "mcp__claude_ai_Gmail__get_message", "server": "Gmail", "kind": "lookup", "suggested": True, "does": "Read a message."},
+        {"allow": "mcp__claude_ai_Gmail__send", "server": "Gmail", "kind": "send", "suggested": False, "does": "Send an email."},
+        {"allow": "mcp__claude_ai_Slack__search", "server": "Slack", "kind": "lookup", "suggested": True, "does": "Search Slack."},
+    ], "servers": [{"name": "Gmail"}, {"name": "Slack"}], "discovered_at": "2026-10-20T09:00:00Z"}
+
+    def setUp(self):
+        super().setUp()
+        cfg = self.core.config
+        cfg["engine"] = {"client": "claude-code", "model": None}
+        self.core.save_config(cfg)
+        run = mock.patch("fuzz.engine.run_now")
+        self.run_now = run.start()
+        self.addCleanup(run.stop)
+
+    def found(self, data=None):
+        from fuzz import connectors
+        connectors._save(self.core, {"claude-code": data if data is not None else self.FOUND})
+
+    def start(self):
+        tid = onboarding.kickoff(self.core)["kickoff_task"]
+        card = next(c for c in cards.open_cards(self.core, tid) if c["kind"] == "task")
+        self.assertEqual(onboarding.start_kickoff(self.core, tid, card), "claude-code")
+        return tid
+
+    def perms(self, tid):
+        return [c for c in cards.open_cards(self.core, tid) if c["kind"] == "permission"]
+
+    def test_made_once_in_triage_with_its_question(self):
+        v = onboarding.kickoff(self.core)
+        tid = v["kickoff_task"]
+        self.assertEqual(onboarding.kickoff(self.core)["kickoff_task"], tid)
+        t = tasks.get(self.core, tid)
+        self.assertEqual((t["state"], t["title"]), ("triage", "Let me find your asks"))
+        self.assertIn("kickoff", t["variant_tags"])
+        self.assertEqual(cards.view(self.core, cards.open_cards(self.core, tid)[0])["prompt"],
+                         "Want me to find your asks myself?")
+
+    def test_the_executor_never_claims_it(self):
+        tid = self.start()
+        self.assertEqual(tasks.get(self.core, tid)["state"], "queued")
+        self.assertEqual(scheduler.claim_next(self.core, tid)[0], None)
+
+    def test_a_card_per_source_reading_only_then_done_and_reading(self):
+        tid = self.start()
+        self.found()
+        made = onboarding.after_discovery(self.core, tid)
+        self.assertEqual(len(made), 2)   # Gmail and Slack; the send tool is never asked about
+        views = [cards.view(self.core, c) for c in self.perms(tid)]
+        self.assertEqual([v["prompt"] for v in views], ["Can I read Gmail?", "Can I read Slack?"])
+        self.assertIn("search your email; read a message", views[0]["reason"])
+        gmail, slack = self.perms(tid)
+        answers.answer(self.core, gmail["id"], "always_allow")
+        self.assertFalse(onboarding.after_answer(self.core, tid))   # Slack still open
+        answers.answer(self.core, slack["id"], "deny")
+        self.assertTrue(onboarding.after_answer(self.core, tid))
+        self.assertEqual(tasks.get(self.core, tid)["state"], "done")
+        read = self.core.config["read"]["tools"]["claude-code"]
+        self.assertEqual(sorted(read), ["mcp__claude_ai_Gmail__get_message", "mcp__claude_ai_Gmail__search"])
+        self.run_now.assert_called_once_with(self.core, "extractor")
+        self.assertTrue(onboarding.view(self.core)["first_read"])
+
+    def test_saying_no_to_all_still_finishes_without_reading(self):
+        tid = self.start()
+        self.found()
+        onboarding.after_discovery(self.core, tid)
+        for c in self.perms(tid):
+            answers.answer(self.core, c["id"], "deny")
+            onboarding.after_answer(self.core, tid)
+        self.assertEqual(tasks.get(self.core, tid)["state"], "done")
+        self.run_now.assert_not_called()
+
+    def test_nothing_to_read_with_comes_back_to_you(self):
+        tid = self.start()
+        self.found({"tools": [], "servers": []})
+        onboarding.after_discovery(self.core, tid)
+        t = tasks.get(self.core, tid)
+        self.assertEqual(t["state"], "triage")
+        self.assertIn("handed_back", t["variant_tags"])
+        self.assertIn("Connect one there", t["question"])
+
+    def test_a_failed_listing_comes_back_with_why(self):
+        tid = self.start()
+        onboarding.after_discovery(self.core, tid, "the run timed out")
+        self.assertIn("the run timed out", tasks.get(self.core, tid)["question"])
+
+    def test_it_replaces_the_lookup_setup_card(self):
+        onboarding.kickoff(self.core)
+        onboarding.update(self.core, {"done": True})
+        self.assertNotEqual((onboarding.view(self.core)["setup_card"] or {}).get("name"), "lookup")
+
+
+class KickoffRoutes(Server):
+    def test_assigning_it_starts_the_listing_not_the_executor(self):
+        cfg = self.core.config
+        cfg["engine"] = {"client": "claude-code", "model": None}
+        self.core.save_config(cfg)
+        self.assertEqual(self.req("POST", "/onboarding/kickoff")[0], 201)
+        tid = self.req("GET", "/onboarding")[1]["kickoff_task"]
+        card = next(c for c in self.req("GET", "/cards")[1]["cards"] if c["task"]["id"] == tid)
+        with mock.patch("fuzz.connectors.discover", side_effect=RuntimeError("no client here")), \
+                mock.patch("fuzz.engine.run_now") as run_now:
+            status, out = self.req("POST", f"/cards/{card['id']}/answer", {"option": "assign"})
+            self.assertEqual((status, out["kickoff"]), (200, True))
+            for _ in range(50):   # the listing runs in the background
+                if self.req("GET", f"/tasks/{tid}")[1]["state"] == "triage":
+                    break
+                time.sleep(0.05)
+        t = self.req("GET", f"/tasks/{tid}")[1]
+        self.assertIn("no client here", t["question"])
+        run_now.assert_not_called()

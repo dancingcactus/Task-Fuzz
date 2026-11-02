@@ -230,9 +230,17 @@ that would be handling the request. The page has to survive that and reconnect.
   and any questions he has. The Triage tab is ringed and pointed at. Going there early is fine: Fuzz is
   shown reading up on the task, and when it lands the lesson is on its card.
 - **The first card** is picked to the front of Triage and carries the lesson above its question. Acting on
-  it in any way ends the onboarding: the Undo tip, the one line on what's next, and a first read (Run now).
+  it in any way ends the onboarding: the Undo tip, and one line saying the next card is a task for Fuzz.
+- **Fuzz's own task, "Let me find your asks",** is the last card (`POST /onboarding/kickoff`, made once,
+  tagged `kickoff`). Assigning it doesn't start the executor (the tag keeps it off the executor's list):
+  Fuzz asks the app what it can reach (the guided setup's discovery run), then asks one permission card
+  per source, "Can I read Gmail?", reading only, Yes or Not this one. Yes turns on that source's lookup
+  tools; send tools are never asked about here. When every card is answered the task is done, its log
+  says what was allowed, and the first read starts (Run now). Nothing found, or the listing failing,
+  hands the task back with what to do. It replaces the lookup setup card. Check-ins wait until it's done.
 - **The intro is calm**: Calm mode is on from the form to the first card, whatever the setting.
-- **Setup cards** are drawn by Triage, like check-ins, with the core keeping the answers. One shows per
+- **Setup cards** (output folder, then colour theme; lookup only for anyone without the kickoff task) are
+  drawn by Triage, like check-ins, with the core keeping the answers. One shows per
   visit, after a card is cleared, never on the visit the onboarding ended. Not now always works (Escape),
   and a second Not now retires the card. The lookup card asks the app what it can reach (the guided setup's
   discovery run) and offers only its suggested ways to read, in the tools' own plain words.

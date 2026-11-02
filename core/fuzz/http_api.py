@@ -134,6 +134,7 @@ class App:
             ("GET", r"/onboarding", self.onboarding_get),
             ("PUT", r"/onboarding", self.onboarding_put),
             ("POST", r"/onboarding/setup/(lookup|folder|theme)", self.onboarding_setup),
+            ("POST", r"/onboarding/kickoff", self.onboarding_kickoff),
             ("GET", r"/hours", self.hours_get),
             ("PUT", r"/hours", self.hours_put),
             ("GET", r"/groups", self.list_groups),
@@ -181,6 +182,9 @@ class App:
 
     def task_action(self, core, m, body, q):
         tid, act = int(m.group(1)), m.group(2)
+        from . import onboarding
+        if act == "assign" and onboarding.is_kickoff(core, tid) and tasks.get(core, tid)["state"] == "triage":
+            return self.kickoff_assign(core, tid)
         if act == "assign":
             tasks.assign(core, tid, body.get("instructions"), refs=body.get("refs"))
         elif act == "done":
@@ -315,6 +319,30 @@ class App:
         from . import onboarding
         return onboarding.answer_setup(core, m.group(1), body.get("answer"))
 
+    def onboarding_kickoff(self, core, m, body, q):
+        """The end of the onboarding: Fuzz's own task, "Let me find your asks", in Triage. Made once."""
+        from . import onboarding
+        return onboarding.kickoff(core), 201
+
+    def kickoff_assign(self, core, task_id, card=None):
+        """You handed Fuzz the kickoff task: ask the app what it can reach (one run, in the background, like
+        setup's discovery), then one permission card per source."""
+        from . import onboarding
+        client = onboarding.start_kickoff(core, task_id, card)
+        if client:
+            def work():
+                from . import connectors
+                err = None
+                try:
+                    connectors.discover(core, client)
+                except Exception as e:   # said on the task, which comes back to you
+                    err = str(e)
+                with core.lock:
+                    onboarding.after_discovery(core, task_id, err)
+                self._notify()
+            threading.Thread(target=work, daemon=True).start()
+        return {"task_id": task_id, "state": tasks.get(core, task_id)["state"], "kickoff": True}
+
     def hours_get(self, core, m, body, q):
         from . import onboarding
         return onboarding.hours(core)
@@ -356,7 +384,17 @@ class App:
     def answer(self, core, m, body, q):
         if "option" not in body:
             raise FuzzError("option is required", "option")
-        out = answers.answer(core, int(m.group(1)), body["option"], body.get("value"))
+        from . import onboarding
+        card = cards.get(core, int(m.group(1)))
+        kick = card["status"] == "open" and onboarding.is_kickoff(core, card["task_id"])
+        if kick and card["kind"] == "task" and body["option"] in ("assign", "quick"):
+            return self.kickoff_assign(core, card["task_id"], card)
+        option = body["option"]
+        if kick and card["kind"] == "permission" and option == "allow_once":
+            option = "always_allow"   # reading is the point of these cards: allowing turns its tools on
+        out = answers.answer(core, int(m.group(1)), option, body.get("value"))
+        if kick and card["kind"] == "permission":
+            onboarding.after_answer(core, card["task_id"])
         if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
         return out

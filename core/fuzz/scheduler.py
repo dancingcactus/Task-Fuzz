@@ -193,7 +193,8 @@ def _eligible(core, task_id=None):
            + (" AND id=?" if task_id else ""))
     rows = core.all(sql, (core.user_id, task_id) if task_id else (core.user_id,))
     mine = _released_by_me(core)
-    rows = [t for t in rows if "needs_permission" not in (t.get("variant_tags") or []) and t["id"] not in mine
+    # kickoff: the onboarding's "find your asks" task, which Fuzz works without the executor
+    rows = [t for t in rows if not {"needs_permission", "kickoff"} & set(t.get("variant_tags") or []) and t["id"] not in mine
             and not files.waiting(core, t)]
     # a task waiting to be gathered goes first: you're about to see it in triage
     rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))

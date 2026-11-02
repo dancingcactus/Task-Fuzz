@@ -146,6 +146,7 @@ GET  /events?after=N           GET  /events/stream       (server-sent events; ?t
 POST /signals/at_desk          POST /tick
 GET  /onboarding               PUT  /onboarding {step?, task_id?, name?, app?, tips?, done?, skipped?, again?}
 POST /onboarding/setup/{lookup|folder|theme} {answer: yes|not_now}
+POST /onboarding/kickoff       (Fuzz's "Let me find your asks" task; assigning it asks per source, then reads)
 GET  /hours                    PUT  /hours {hours: [from, until] | null, weekends}
 GET  /engine?start=0           PUT  /engine {client, model}
 POST /engine/check             POST /engine/run {role: executor|extractor|sender, task_id?, scripted?}

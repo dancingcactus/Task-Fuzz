@@ -13,7 +13,7 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from . import outputs, setup
+from . import cards, events, outputs, setup, tasks
 from .db import FuzzError
 
 STEPS = ("intro", "form", "how", "question", "capture", "wait", "card", "done")   # Fuzz says hello, then asks
@@ -29,7 +29,7 @@ def _path(core):
 def _blank():
     return {"step": "intro", "done": False, "skipped": False, "started_at": None, "finished_at": None,
             "task_id": None, "name": None, "app": None, "hours_set": False, "first_read": None,
-            "tips": [], "setup": {}}
+            "tips": [], "setup": {}, "kickoff_task": None}
 
 
 def load(core):
@@ -74,7 +74,7 @@ def update(core, body):
     """Saves where you are. {step?, task_id?, name?, app?, tips?, done?, skipped?, again?}"""
     st = load(core)
     if body.get("again"):   # Settings > Show me around again: the intro and the tips, from the start
-        keep = {k: st[k] for k in ("setup", "first_read", "name", "app", "hours_set")}
+        keep = {k: st.get(k) for k in ("setup", "first_read", "name", "app", "hours_set", "kickoff_task")}
         st = _blank()
         st.update(keep)
         st["step"] = "intro"
@@ -160,7 +160,7 @@ def next_setup_card(core, st=None):
         rec = st["setup"].get(name) or {}
         if rec.get("status") in ("answered", "declined"):
             continue
-        if name == "lookup" and _lookup_set(core):
+        if name == "lookup" and (_lookup_set(core) or st.get("kickoff_task")):
             continue
         if name == "folder" and outputs.folder(core):
             continue
@@ -195,3 +195,149 @@ def answer_setup(core, name, answer):
     save(core, st)
     return view(core)
 
+
+
+# ---------------------------------------------------------------- the kickoff task
+
+KICKOFF_TAG = "kickoff"
+KICKOFF_TITLE = "Let me find your asks"
+
+
+def _engine(core):
+    from . import adapters
+    client = (core.config.get("engine") or {}).get("client")
+    return client, (adapters.get(client).label if client else "your app")
+
+
+def kickoff_id(core):
+    tid = load(core).get("kickoff_task")
+    t = tasks.get(core, tid) if tid else None
+    return t["id"] if t else None
+
+
+def is_kickoff(core, task_id):
+    t = tasks.get(core, task_id) if task_id else None
+    return bool(t and KICKOFF_TAG in (t.get("variant_tags") or []))
+
+
+def kickoff(core):
+    """The end of the onboarding: a task in Triage that is Fuzz's own. Assigning it starts him reading:
+    he asks the app what it can reach, asks you about each source with a permission card (reading only),
+    then starts the first read. Made once."""
+    if kickoff_id(core):
+        return view(core)
+    _, app = _engine(core)
+    tid = tasks.capture(core, KICKOFF_TITLE, actor="fuzz:onboarding")
+    with core.tx("fuzz:onboarding"):
+        ch = events.Changes()
+        ch.task(tid, variant_tags=[KICKOFF_TAG], question="Want me to find your asks myself?",
+                reason="Right now I only know what you type. With your email, Slack or calendar, I can find new asks "
+                       "on my own.",
+                summary=f"I’ll check what {app} can reach and ask you about each one. I only read with them, and "
+                        f"nothing goes out without your yes.")
+        events.emit(core, "task.brief_updated", task_id=tid, changes=ch, data={"fields": ["question", "reason", "summary"]})
+    st = load(core)
+    st["kickoff_task"] = tid
+    save(core, st)
+    return view(core)
+
+
+def _log(core, tid, kind, text):
+    with core.tx("fuzz:onboarding"):
+        events.emit(core, "task.step", task_id=tid, log=(kind, text))
+
+
+def start_kickoff(core, task_id, card=None):
+    """You assigned the kickoff task. The kickoff tag keeps the executor off it; this flow does the work.
+    Returns the client to ask, or None when there's no engine (it comes straight back to you)."""
+    client, app = _engine(core)
+    tasks.assign(core, task_id, card=card)
+    if not client:
+        _hand_back(core, task_id, "I need an app to work through first. Pick one in Settings, then hand this "
+                                  "back to me.")
+        return None
+    _log(core, task_id, "research", f"Asking {app} what it can reach. That’s one run; nothing is read yet.")
+    return client
+
+
+def _hand_back(core, task_id, question):
+    from . import scheduler
+    scheduler.hand_back(core, task_id, question, actor="fuzz:onboarding")
+
+
+def after_discovery(core, task_id, error=None):
+    """The app answered (or didn't). One permission card per source with ways to read; none: it comes back."""
+    from . import connectors
+    t = tasks.get(core, task_id)
+    if not t or t["state"] != "queued":
+        return []
+    client, app = _engine(core)
+    if error:
+        _hand_back(core, task_id, f"I couldn’t ask {app} what it can reach: {error}. Hand this back to me to try "
+                                  f"again.")
+        return []
+    v = connectors.view(core, client)
+    servers = {}
+    for x in v["tools"]:
+        if x["kind"] == "lookup" and x.get("suggested") and x.get("server") and not x["read"]:
+            servers.setdefault(x["server"], []).append(x.get("does") or x["allow"])
+    if not servers:
+        if any(x["read"] for x in v["tools"]):
+            return _complete(core, task_id)
+        _hand_back(core, task_id, f"I couldn’t find your email, Slack or calendar in {app} yet. Connect one there "
+                                  f"(on claude.ai, Settings, then Connectors), then hand this back to me.")
+        return []
+    names = list(servers)
+    _log(core, task_id, "research", f"{app} can reach {_list([_plain(n) for n in names])}. Asking you about each one.")
+    made = []
+    with core.tx("fuzz:onboarding"):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "queued", add_tags=("needs_permission",))
+        events.emit(core, "permission.asked", task_id=task_id, changes=ch,
+                    data={"scope": "connector", "resources": names, "kickoff": True})
+        for name in names:
+            does = servers[name]
+            why = "To find your asks, I’d " + "; ".join(d[:1].lower() + d[1:].rstrip(".") for d in does[:2]) + \
+                  (f", and {len(does) - 2} more ways to look things up." if len(does) > 2 else ".")
+            made.append(cards.create(core, "permission", task_id, reason=why,
+                                     prompt=f"Can I read {_plain(name)}?",
+                                     payload={"scope": "connector", "resource": name, "kickoff": True}))
+    return made
+
+
+def after_answer(core, task_id):
+    """A kickoff permission card was answered. When none is left open, the task is done and reading starts."""
+    t = tasks.get(core, task_id)
+    if not t or not is_kickoff(core, task_id) or t["state"] != "queued":
+        return False
+    if any(c["kind"] == "permission" for c in cards.open_cards(core, task_id)):
+        return False   # still asking (the kickoff tag keeps the executor off it meanwhile)
+    _complete(core, task_id)
+    return True
+
+
+def _complete(core, task_id):
+    from . import engine
+    client, app = _engine(core)
+    read = ((core.config.get("read") or {}).get("tools") or {}).get(client) or []
+    t = tasks.require(core, task_id)
+    if read:
+        line = "Done. I’m reading for new asks now, and then during your working hours."
+    else:
+        line = "Done. You didn’t allow any yet, so I’ll keep to what you type. Settings › Set up Fuzz has them."
+    tasks._one(core, "fuzz:onboarding", "task.done", t, "done", ("action", line), question=None)
+    if read:
+        engine.run_now(core, "extractor")   # Run now: scheduled reading stops outside working hours
+        st = load(core)
+        st["first_read"] = core.now_iso()
+        save(core, st)
+    return []
+
+
+def _plain(server):
+    """A connector as people say it: "claude.ai Gmail" is Gmail."""
+    return server[len("claude.ai "):] if server.lower().startswith("claude.ai ") else server
+
+
+def _list(names):
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]

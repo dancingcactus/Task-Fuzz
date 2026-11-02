@@ -34,7 +34,7 @@ EVENT_TYPES = {
 # Projected tables and their key column. user_state is keyed by (user_id, key).
 TABLES = {"tasks": "id", "groups": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
 
-ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "fuzz:session", "system")
+ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "fuzz:session", "fuzz:onboarding", "system")
 
 LOG_KINDS = ("research", "action", "guidance", "status", "sent", "blocked")
 

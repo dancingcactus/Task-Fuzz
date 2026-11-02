@@ -473,14 +473,13 @@
     finishing = true;
     clearInterval(ticker); ticker = 0;
     var patch = { done: true }; if (how === 'skip') patch.skipped = true;
-    if (Live.on()) {
-      patch.first_read = true;
-      /* Run now: scheduled reading stops outside working hours, and this is often a Saturday */
-      Live.firstRead().catch(function () {});
-    }
+    /* The last card is Fuzz's own: "Let me find your asks". Handing it over asks for each source he may
+       read, then starts the first read (Run now, since scheduled reading stops outside working hours). */
+    if (Live.on()) Live.kickoff().catch(function () {});
     save(patch).then(function () {
       finishing = false; calm(false); chrome('done');
-      var next = 'For now I only know what you type. Connect a source and I’ll find asks myself.';
+      var next = Live.on() ? 'Next card: a task for me. Hand it over and I’ll ask before I read anything.'
+        : 'For now I only know what you type. Connect a source and I’ll find asks myself.';
       setupShown = true;   /* the onboarding ends on that line; setup cards wait for another visit */
       quietUntil = Date.now() + 12000;   /* and no later tip talks over it */
       if (how === 'acted') {

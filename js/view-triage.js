@@ -17,7 +17,7 @@
   var ciAnswer = null, ciFollow = null;
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
   var ciCount = 0, ciNextAt = CI_FIRST, ciLastAt = 0, sessionAt = Date.now();
-  var lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
+  var shownCard = null, lastTask = null, streak = 0, rushTimer = 0, ambientTimer = 0;
   var scheduling = false, askingWho = false, schedMore = false, tab = null, keptStale = {}, edits = {}, greeted = false, refs = {}, refPick = {};
   var docClick = null, docKey = null, unhold = null, docDrag = null, booting = false, offSay = null, onScroll = null, echoTimer = 0, scrollHold = 0;
 
@@ -126,6 +126,11 @@
 
   function onStore(e) {
     if (!alive) return;
+    /* The task in front now asks something else (Fuzz's task moving on to a permission card, say): the card
+       on screen is out of date, so the new one comes in. Same card, new details: left alone, as ever. */
+    var f = cur();
+    if (f && shownCard && f.id === shownCard.id && (f.cardId !== shownCard.cardId || f.kind !== shownCard.kind) &&
+        card.style.display !== 'none' && !busy && !ciOpen && !scOpen) { showNext(); return; }
     if (e.type === 'handback') {
       stats(); updateStack(true);
       /* No announcement: the handback waits as its own card at the back of the queue. */
@@ -477,11 +482,13 @@
       h += '<div id="actions">' + actionsHTML(it) + '</div>';
     } else {
       h += '<p class="incoming">' + UI.text(it.incoming) + '</p>' + evidenceHTML(it);
-      h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span class="instr-side"><span>Optional. Edit anything.</span>' + Dictate.button('note', 'Dictate a note') + '</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>' +
+      /* Fuzz asking what he may read (the onboarding's last task) is a plain yes or no: no notes, no Not sure */
+      if (!it.kickoffAsk) h += '<div class="instr"><div class="instr-top"><label for="note">' + esc(it.boxLabel) + '</label><span class="instr-side"><span>Optional. Edit anything.</span>' + Dictate.button('note', 'Dictate a note') + '</span></div><textarea id="note" rows="2" placeholder="' + esc(it.placeholder || '') + '">' + esc(edits[it.id + ':note'] !== undefined ? edits[it.id + ':note'] : (it.hint || '')) + '</textarea></div>';
+      h +=
         '<div class="actions ent"><button type="button" class="btn primary" data-act="ent-primary" aria-keyshortcuts="1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' + esc(it.primary) + kbd(1) + '</button>' +
         '<button type="button" class="btn" data-act="ent-secondary" aria-keyshortcuts="2">' + esc(it.secondary) + kbd(2) + '</button>' +
         (it.third ? '<button type="button" class="btn" data-act="ent-third" aria-keyshortcuts="3">' + esc(it.third) + kbd(3) + '</button>' : '') +
-        '<button type="button" class="btn" data-act="ent-later" aria-keyshortcuts="' + (it.third ? 4 : 3) + '">Not sure yet' + kbd(it.third ? 4 : 3) + '</button></div>';
+        (it.kickoffAsk ? '' : '<button type="button" class="btn" data-act="ent-later" aria-keyshortcuts="' + (it.third ? 4 : 3) + '">Not sure yet' + kbd(it.third ? 4 : 3) + '</button>') + '</div>';
     }
 
     if (isTask && !parkrev && !checkback) h += '<p class="incoming">' + UI.text(it.incoming) + '</p>';
@@ -526,7 +533,7 @@
   /* Text boxes grow to show all their text, so nothing is cut off on a narrow screen */
   function fit(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + ta.offsetHeight - ta.clientHeight + 'px'; }
   function renderCard(it) {
-    lastTask = it; $('#checkin').hidden = true;
+    lastTask = it; shownCard = { id: it.id, cardId: it.cardId, kind: it.kind }; $('#checkin').hidden = true;
     clearTimeout(rushTimer); card.getAnimations().forEach(function (a) { a.cancel(); });
     scheduling = false; askingWho = false; if (tab && !richAvail(it).some(function (a) { return a[0] === tab; })) tab = null;
     card.className = 'card'; card.style.display = ''; card.style.visibility = '';
@@ -585,7 +592,8 @@
   /* Never mid-rush: wait until the time-sensitive cards are handled. */
   function shouldCheckin(next) {
     var waited = !ciCount || Date.now() - ciLastAt >= CI_GAP_MIN * Math.pow(2, ciCount - 1) * 60000;
-    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack;
+    /* nor while Fuzz is asking what he may read (the onboarding's last task): it waits until he's done */
+    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack && !next.kickoff;
   }
   function ciDone() {
     if (ciAnswer && !ciDemo && ciFollow !== 'hold_rest') Store.checkin(ciAnswer, ciFollow);
@@ -669,6 +677,8 @@
         Fuzz.say(t.askBack || 'I lost the signal on this one. Can you help me with it?').then(function () { if (alive) { Fuzz.setArm('none'); settleSheepish(); } });
       } else if (t.dueAt) {
         rushBurst(t);
+      } else if (t.kickoffAsk) {
+        Fuzz.setMood('caring'); Fuzz.say('Your call. I only read, and you can change it later.', { type: false });
       } else if (t.kind === 'entity' || t.kind === 'dup') {
         puzzledFor(t);
       } else if (t.isNew) {
