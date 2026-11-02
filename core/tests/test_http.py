@@ -39,7 +39,9 @@ class Api(Server):
     def test_token_required(self):
         self.assertEqual(self.req("GET", "/cards", token=False)[0], 401)
         self.assertEqual(self.req("GET", "/cards", token="wrong")[0], 401)
-        self.assertEqual(self.req("GET", "/health", token=False), (200, {"ok": True}))
+        status, health = self.req("GET", "/health", token=False)
+        self.assertEqual((status, health["ok"]), (200, True))
+        self.assertTrue(health["boot"])   # changes when the server restarts
 
     def test_serves_the_ui(self):
         status, body = self.req("GET", "/", token=False, raw=True)

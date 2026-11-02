@@ -11,8 +11,8 @@ from .db import FuzzError
 ACTIONS = ("install", "update", "repair", "uninstall")
 
 
-def get(core, refresh=False):
-    return doctor.status(core, refresh=refresh)
+def get(core, refresh=False, check_start=True):
+    return doctor.status(core, refresh=refresh, check_start=check_start)
 
 
 def action(core, client, what, roles=None, link=False):

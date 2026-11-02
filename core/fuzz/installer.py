@@ -200,13 +200,14 @@ def _plist(core, label, args, interval=None, keepalive=False):
     return d
 
 
-def _write_launchd(core, prior=None):
-    """prior: the last install's record, so folders it created are still removed on uninstall."""
+def _write_launchd(core, prior=None, roles=ROLES):
+    """prior: the last install's record, so folders it created are still removed on uninstall.
+    roles: the role jobs to write next to `fuzz serve`; none before any client is installed."""
     agents = Path(os.path.expanduser("~/Library/LaunchAgents"))
     created = list((prior or {}).get("created", []))
     _mkdirs(agents, created)
     jobs = {f"com.fuzz.u{core.user_id}.serve": _plist(core, f"com.fuzz.u{core.user_id}.serve", ["serve"], keepalive=True)}
-    for role in ROLES:
+    for role in roles:
         label = f"com.fuzz.u{core.user_id}.{role}"
         jobs[label] = _plist(core, label, ["run", role, "--trigger", "launchd"], interval=LAUNCHD_INTERVAL[role])
     paths = []
@@ -219,6 +220,28 @@ def _write_launchd(core, prior=None):
         paths.append(str(p))
         _reload(label, str(p), changed)
     return {"plists": paths, "created": created}
+
+
+def start_service(core):
+    """`fuzz start` on a Mac: keep `fuzz serve` running as a launchd job, so the page is there after a
+    restart and the browser can install a client. Before any client is installed that's the only job;
+    after, the role jobs are written too, as install writes them. Returns False where there's no launchd."""
+    if sys.platform != "darwin" or not shutil.which("launchctl"):
+        return False
+    man = load_manifest(core)
+    clients = [k for k in man if not k.startswith("_")]
+    man["_launchd"] = _write_launchd(core, man.get("_launchd"), roles=ROLES if clients else ())
+    save_manifest(core, man)
+    return True
+
+
+def restart_service(core):
+    """Restart the `fuzz serve` job in place (after an update put new code on disk). False without one."""
+    label = f"com.fuzz.u{core.user_id}.serve"
+    if not shutil.which("launchctl") or subprocess.run(["launchctl", "list", label], capture_output=True).returncode:
+        return False
+    return subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"],
+                          capture_output=True).returncode == 0
 
 
 def _reload(label, path, changed):

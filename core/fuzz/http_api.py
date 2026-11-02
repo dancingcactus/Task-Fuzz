@@ -89,6 +89,7 @@ class App:
         self.send_kicked = {}
         self.gather_kicked = {}
         self.discovering = {}   # (user, client) -> {"state": running | error, "error"}
+        self.boot = f"{os.getpid()}-{int(time.time() * 1000)}"
         self._mu = threading.Lock()
         self.changed = threading.Condition()
 
@@ -130,6 +131,11 @@ class App:
             ("PUT", r"/setup/folder", self.setup_folder),
             ("POST", r"/setup/folder/choose", self.setup_choose_folder),
             ("POST", r"/setup/done", self.setup_done),
+            ("GET", r"/onboarding", self.onboarding_get),
+            ("PUT", r"/onboarding", self.onboarding_put),
+            ("POST", r"/onboarding/setup/(lookup|folder|theme)", self.onboarding_setup),
+            ("GET", r"/hours", self.hours_get),
+            ("PUT", r"/hours", self.hours_put),
             ("GET", r"/groups", self.list_groups),
             ("POST", r"/groups/(\d+)/(rename|take_out|wrap)", self.group_action),
             ("GET", r"/cards", self.list_cards),
@@ -295,6 +301,29 @@ class App:
         from . import setup
         return setup.finish(core, body.get("done", True))
 
+    # ---- the onboarding: where you are in it, your working hours, the setup cards after it
+    def onboarding_get(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.view(core)
+
+    def onboarding_put(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.update(core, body)
+
+    def onboarding_setup(self, core, m, body, q):
+        """{answer: yes | not_now} on the setup card named in the path."""
+        from . import onboarding
+        return onboarding.answer_setup(core, m.group(1), body.get("answer"))
+
+    def hours_get(self, core, m, body, q):
+        from . import onboarding
+        return onboarding.hours(core)
+
+    def hours_put(self, core, m, body, q):
+        """{hours: [from, until] | null, weekends}: when Fuzz reads for new asks. null is no fixed hours."""
+        from . import onboarding
+        return onboarding.set_hours(core, body)
+
     def add_moment(self, core, m, body, q):
         """A described date you know yourself: {label, at, key?, cancelled?}."""
         from . import timeres
@@ -368,7 +397,8 @@ class App:
         return self.me_get(core, m, body, q)
 
     def engine_get(self, core, m, body, q):
-        return engine.get(core)
+        """?start=0 skips starting each client's MCP servers: quick, for the onboarding's app choice."""
+        return engine.get(core, check_start=q.get("start") != "0")
 
     def engine_check(self, core, m, body, q):
         return engine.get(core, refresh=True)
@@ -432,7 +462,8 @@ def make_handler(app):
             q = {k: v[-1] for k, v in parse_qs(url.query).items()}
             path = url.path.rstrip("/") or "/"
             if method == "GET" and path == "/health":
-                return self._send(200, {"ok": True})
+                # boot changes when the server restarts, so a page can tell an install restarted it
+                return self._send(200, {"ok": True, "boot": app.boot})
             if method == "GET" and path == "/events/stream":
                 return self._stream(q)
             for m, rx, h in routes:

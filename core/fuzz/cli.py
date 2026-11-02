@@ -81,6 +81,67 @@ def cmd_serve(a):
         pass
 
 
+def _healthy(port, timeout=1.0):
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
+            return json.loads(r.read() or b"{}").get("ok") is True
+    except (OSError, ValueError):
+        return False
+
+
+def cmd_start(a):
+    """The one-paste bootstrap's last step: make sure `fuzz serve` is running (a launchd job on a Mac, a
+    background process elsewhere), then open the browser already signed in. Safe to run again."""
+    import subprocess
+    import time
+    import webbrowser
+    from .http_api import ensure_token
+    home = a.home or default_home()
+    core = Core(home, a.user)
+    tok = ensure_token(home, core.user_id)
+    try:
+        _start(a, home, core, tok)
+    finally:
+        core.close()
+
+
+def _start(a, home, core, tok):
+    import subprocess
+    import time
+    import webbrowser
+    pidfile = os.path.join(home, "serve.pid")
+    if a.restart and _healthy(a.port):   # new code on disk: the running server stops, then starts on it
+        if not installer.restart_service(core) and os.path.exists(pidfile):
+            try:
+                os.kill(int(open(pidfile).read().strip()), 15)
+            except (OSError, ValueError):
+                pass
+        for _ in range(20):
+            if not _healthy(a.port, 0.3):
+                break
+            time.sleep(0.25)
+    up = _healthy(a.port)
+    if not up and not installer.start_service(core):
+        log = open(os.path.join(home, "serve.log"), "a")
+        env = dict(os.environ, FUZZ_HOME=home, PYTHONPATH=os.pathsep.join(
+            [os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.environ.get("PYTHONPATH", "")]))
+        p = subprocess.Popen([sys.executable, "-m", "fuzz", "serve", "--port", str(a.port)], env=env, stdout=log,
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        with open(pidfile, "w") as f:
+            f.write(str(p.pid))
+    deadline = time.time() + a.wait
+    while not up and time.time() < deadline:
+        time.sleep(0.5)
+        up = _healthy(a.port)
+    url = f"http://127.0.0.1:{a.port}/?token={tok}"
+    if not up:
+        raise FuzzError(f"Fuzz didn't start within {a.wait} seconds. What it said is in {home}", "serve", 503)
+    print(f"Fuzz is running. Opening {url}", flush=True)
+    if not a.no_open:
+        webbrowser.open(url)
+
+
 def cmd_mcp(a):
     from .mcp_server import serve
     serve(a.role, a.run, a.home, a.user, a.task)
@@ -389,6 +450,13 @@ def parser():
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--show-token", action="store_true")
     s.set_defaults(fn=cmd_serve)
+
+    s = sub.add_parser("start", help="keep fuzz serve running and open the browser, signed in")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--wait", type=int, default=30, help="seconds to wait for it to answer")
+    s.add_argument("--no-open", action="store_true", help="print the link instead of opening it")
+    s.add_argument("--restart", action="store_true", help="restart a running server, after an update")
+    s.set_defaults(fn=cmd_start)
 
     s = sub.add_parser("mcp", help="run the MCP server over stdio (started by an AI client)")
     s.add_argument("--role", required=True, choices=["executor", "extractor", "sender", "session"])
