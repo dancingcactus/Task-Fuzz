@@ -36,6 +36,8 @@
 
   V.mount = function (container) {
     root = container; listening = false; confirm = '';
+    /* The first New task screen teaches dictation; during the onboarding, Esc leads back to it */
+    var ob = Onboard.onCapture();
     /* Same shape as Triage: the full Fuzz on a perch with his speech bubble, then one card.
        He's for looking at; the capture confirmation reaches screen readers through Say.announce. */
     root.innerHTML = '<section class="capture" aria-labelledby="cap-h"><div class="stage cap-stage" id="stage">' +
@@ -47,7 +49,8 @@
           '<span class="droptxt"><b>Drop a document to add context</b><small>Optional. Fuzz reads it along with your task. With Fuzz running, it keeps a copy on this computer.</small></span><span class="droplink">Choose files</span></button>' +
           '<input type="file" id="file" multiple hidden></div>' +
         '<ul class="files" id="files" aria-label="Attached documents"></ul>' +
-        '<div class="field"><label for="cap-text">New task</label><textarea id="cap-text" rows="4" placeholder="For example: send Sam the slides from Tuesday"></textarea></div>' +
+        '<div class="field"><label for="cap-text">New task</label><textarea id="cap-text" rows="4" placeholder="For example: send Sam the slides from Tuesday"' + (ob && ob.tip ? ' aria-describedby="cap-tip"' : '') + '></textarea></div>' +
+        (ob && ob.tip && Dictate.supported ? '<p class="cap-tip" id="cap-tip">' + Fuzz.mini('good', { cls: 'tip-fz' }) + '<span>' + esc(ob.tip) + '</span></p>' : '') +
         '<div class="actions cap-actions"><button type="button" class="btn primary" id="cap-go" disabled><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Capture</button>' +
           '<button type="button" class="btn dictate" id="cap-mic" aria-pressed="false" aria-keyshortcuts="Alt+Space"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span id="mic-l">Dictate</span></button>' +
           '<span class="hint">Ctrl or Cmd + Enter to capture · Hold ' + Dictate.key + ' to dictate · Esc to go back</span></div>' +
@@ -63,7 +66,7 @@
     ta.value = draft;
     ta.addEventListener('input', function () { draft = ta.value; sync(); nudge(); if (confirm) { confirm = ''; paintSay(); } });
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } });
-    function paintSay() { Fuzz.say(confirm || IDLE_LINE, { type: false }); }
+    function paintSay() { Fuzz.say(confirm || (ob && ob.back ? 'One real thing on your plate. I’m listening.' : IDLE_LINE), { type: false }); }
     /* Mood for a moment, then back to idle (unless something else has changed it since). */
     function moodFor(m, ms) {
       clearTimeout(moodTimer); Fuzz.setMood(m);
@@ -103,7 +106,7 @@
       var text = ta.value.trim();
       if (!text && !attached.length) return;
       var picked = attached.slice(), docs = picked.map(function (f) { return f.name; });
-      Store.capture(text, docs, picked);
+      var it = Store.capture(text, docs, picked);
       Dictate.abort();
       ta.value = ''; draft = ''; attached = []; paintFiles();
       confirm = docs.length ? 'Captured. I’m reading your ' + (docs.length === 1 ? 'document' : 'documents') + ' now.' : 'Captured. It’s waiting in your triage queue.';
@@ -112,6 +115,8 @@
       /* Same little celebration as a triage win: a hop, a check on his screen, a bit of confetti. */
       Fuzz.pAnim('hop'); Fuzz.checkGlyph(1300); Fuzz.confetti(go);
       moodFor(docs.length ? 'thinking' : 'happy', docs.length ? 2600 : 1400);
+      /* The onboarding's first task goes on to the wait, where Fuzz says what he's doing with it */
+      Onboard.captured(it);
     }
     go.addEventListener('click', submit);
     Fuzz.mount(root, {});
@@ -123,7 +128,7 @@
       if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
       e.preventDefault();
       /* Escape stops listening first, keeping what was heard */
-      if (Dictate.active()) Dictate.stop(); else App.navigate('#/triage');
+      if (Dictate.active()) Dictate.stop(); else App.navigate(ob && ob.back && Onboard.active() ? ob.back : '#/triage');
     };
     document.addEventListener('keydown', escKey);
     ta.focus();

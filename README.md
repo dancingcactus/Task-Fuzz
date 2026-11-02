@@ -11,6 +11,20 @@ python3 -m http.server 8000
 Everything runs in the browser. Nothing is sent anywhere, and the data is invented. Only your theme,
 appearance and calm-mode choices are saved (in `localStorage`). **Settings > Reset demo data** starts over.
 
+## Use it for real
+
+One paste in Terminal, on a Mac:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dancingcactus/Task-Fuzz/main/install.sh | sh
+```
+
+It downloads Fuzz, installs the core in its own Python environment, starts `fuzz serve` and opens your
+browser, already signed in. Everything after that happens in the browser (see
+[`docs/onboarding.md`](docs/onboarding.md)): your name, the app Fuzz works through (Claude Code or
+Copilot, installed from the page), your working hours, then one real task. Run it again to update; your
+data stays. `FUZZ_REF=<branch>` installs a branch instead of `main`.
+
 ## What's in it
 
 | Screen | Source artifact | What to try |
@@ -104,6 +118,14 @@ and what Fuzz does shows up as it happens through the event stream. Settings > U
 the demo. The conversation tab and code previews are demo-only for now, since the core doesn't have them
 yet.
 
+**Onboarding.** The first time the core serves a browser, `js/onboarding.js` takes over (`#/welcome`):
+a short form, Fuzz's introduction, one real task captured with N, three tips while Fuzz looks into it, and
+that task's card with one lesson (Assign, or what Fuzz already did). Then a first read, and setup cards
+(a lookup source, an output folder, a colour theme) arrive later, one at a time, after real work. Later
+tips are each said once, when they fit. Closing the page at any step comes back to it. **Settings > Show
+me around again** runs the intro and tips again, in the demo too. Fuzz's lines follow
+[`docs/fuzz-tone.md`](docs/fuzz-tone.md).
+
 ## Layout of the code
 
 ```
@@ -118,10 +140,13 @@ js/schedule.js      the core's Schedule options, as the API sends them (the demo
 js/fuzz-svg.js      the full robot (generated from the prototype)
 js/fuzz.js          robot controller, plus the small Fuzz faces
 js/view-*.js        Triage, Lineup, New task
+js/onboarding.js    the first run, the later tips and the setup cards
+js/setup.js         the four-step guided setup, from Settings
 js/notify.js        Fuzz speaks: notices and Undo (no toasts)
 js/progress.js      the segmented triage progress bar
 js/app.js           router, header, theme popover
 assets/             Fuzz logo files
+install.sh          the one-paste install
 ```
 
 To change a theme, edit `js/themes.js`. To change what Fuzz says or does on a moment, edit the lists near

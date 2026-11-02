@@ -12,7 +12,7 @@
   var esc = UI.esc;
 
   var root, card, stack, stage, alive = false, busy = false, epoch = 0, unsub = null;
-  var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false;
+  var ciOpen = false, ciBusy = false, ciTimer = 0, ciSecs = 300, ciDemo = false, scOpen = false;
   /* Your answer and follow-up, kept by the core (Store.checkin; POST /checkin) once the check-in closes */
   var ciAnswer = null, ciFollow = null;
   var CI_ANSWER = { good: 'good', okay: 'okay', tired: 'tired', over: 'overloaded' };
@@ -69,7 +69,7 @@
   function release() { if (busy) lock(false); }
 
   V.mount = function (container) {
-    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; tab = null; streak = 0;
+    alive = true; busy = false; epoch++; ciOpen = false; ciBusy = false; scOpen = false; scState = null; scheduling = false; askingWho = false; tab = null; streak = 0;
     root = container;
     root.innerHTML = layout();
     card = $('#card'); stack = $('#stack'); stage = $('#stage');
@@ -103,7 +103,8 @@
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
-    lock(false); stats(); showNext();
+    lock(false); stats();
+    if (!scOpen) showNext();   /* a setup card stays until you answer it */
   };
 
   function greet() {
@@ -128,20 +129,20 @@
     if (e.type === 'handback') {
       stats(); updateStack(true);
       /* No announcement: the handback waits as its own card at the back of the queue. */
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'review') {
       /* A finished draft arrives as its own card at the back of the queue, with no announcement. */
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'attach') {
       var it = cur(); if (it && it.id === e.id && $('#rich')) { tab = 'sources'; $('#rich').innerHTML = richHTML(it); }
       if (it && it.id === e.id) paintRefs();
     } else if (e.type === 'capture') {
       stats(); updateStack(true);
-      if (card.style.display === 'none' && !ciOpen) showNext();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'work') {
       stats();
-      if (card.style.display === 'none' && !ciOpen) renderEmpty();
+      if (card.style.display === 'none' && !ciOpen && !scOpen) renderEmpty();
     } else if (e.type === 'wrapped') {
       /* The last task in a group finished, so the group is finished too. Worth a small party. */
       Fuzz.setMood('proud'); Fuzz.pAnim('hop'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
@@ -189,6 +190,7 @@
             '<div class="ci-break" id="ci-break" hidden><div class="breath" aria-hidden="true"></div><p class="ci-time" id="ci-time">5:00</p><p class="meta">Fuzz has the queue. Step away for a bit.</p><button class="btn primary" data-ci="back">I’m back</button></div>' +
             '<div class="ci-foot"><button type="button" class="linkbtn" data-ci="skip" id="ci-skip" aria-keyshortcuts="Escape">Skip' + kbd('Esc') + '</button></div>' +
           '</article>' +
+          '<article class="card setupcard" id="setupcard" hidden aria-labelledby="sc-h"></article>' +
         '</div>' +
       '</section>' +
       '<div class="triage-foot"><button type="button" class="linkbtn" id="dropbtn"></button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="parkbtn" aria-expanded="false" aria-controls="parkform" aria-keyshortcuts="T">Park a stray thought' + kbd('T') + '</button><span class="keys-sep" aria-hidden="true">·</span><button type="button" class="linkbtn keys-link" id="keysbtn" aria-keyshortcuts="?">Keys</button></div>' +
@@ -435,9 +437,11 @@
   function cardHTML(it) {
     if (it.state === 'review') return reviewHTML(it);
     var isTask = it.kind === 'task';
+    /* The onboarding's first card carries its one lesson (js/onboarding.js) */
+    var g = isTask && Onboard.guide(it);
     var parkrev = isTask && it.review, checkback = isTask && it.checkBack;
     var stale = isTask && !parkrev && !checkback && it.stage === 'stale' && !keptStale[it.id] && !scheduling;
-    var h = tagrow(it) + askHTML(it.ask) + titleHTML(it) + duePanel(it);
+    var h = (g ? g.html : '') + tagrow(it) + askHTML(it.ask) + titleHTML(it) + duePanel(it);
     /* What Fuzz found comes before what you tell him to do, so you edit with the answer in view */
     if (isTask && !stale && it.aiNote) h += findingHTML(it);
     if (it.handedBack && it.quick && it.quick.length) {
@@ -637,7 +641,7 @@
      reaction to it until he has finished with the last one (showNext(shown)). */
   function bringNext() {
     var t = Store.queue()[0];
-    if (!t || shouldCheckin(t)) return null;
+    if (!t || shouldCheckin(t) || (!scOpen && Onboard.setupCard(cleared(), true))) return null;
     enterCard(t);
     release();
     return t.id;
@@ -650,9 +654,16 @@
       var t = q[0];
       if (t.id !== shown) {
         if (shouldCheckin(t)) return showCheckin();
+        if (showSetup()) return;
         enterCard(t);
       }
-      if (t.handedBack) {
+      var g = t.kind === 'task' && Onboard.guide(t);
+      if (g) {
+        Fuzz.setMood('happy'); Fuzz.say(g.line, { type: false }); Say.announce(g.line);
+      } else laterTip(t);
+      if (g) {
+        /* the lesson is what he says on this card */
+      } else if (t.handedBack) {
         Fuzz.glitch(600); Fuzz.setMood('sheepish'); Fuzz.setArm('scratch'); Fuzz.pAnim('shrug');
         /* don't hold the busy lock while the line types out */
         Fuzz.say(t.askBack || 'I lost the signal on this one. Can you help me with it?').then(function () { if (alive) { Fuzz.setArm('none'); settleSheepish(); } });
@@ -667,6 +678,111 @@
         Fuzz.setMood('idle');
       }
     } catch (err) { if (err !== ABORT) console.error(err); }
+  }
+  /* ---------- Setup cards (js/onboarding.js): one at a time, after real work, Not now always there ---------- */
+  var scState = null;
+  function showSetup() {
+    if (ciOpen || scOpen || !alive) return false;
+    var c = Onboard.setupCard(cleared()); if (!c) return false;
+    scOpen = true; scState = { card: c, step: 'ask', theme: App.prefs().theme };
+    card.style.display = 'none'; $('#checkin').hidden = true; $('#dropbtn').hidden = true;
+    var oldE = stack.querySelector('.empty'); if (oldE) oldE.remove();
+    updateStack(false); stats();
+    var sc = $('#setupcard'); sc.hidden = false; sc.className = 'card setupcard enter';
+    paintSetup();
+    $('#sc-h').focus({ preventScroll: true });
+    Fuzz.setMood('eager'); Fuzz.say({ lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
+    return true;
+  }
+  function appName() { var e = scState.card.engine; return e === 'copilot' ? 'Copilot' : 'Claude Code'; }
+  function paintSetup() {
+    var c = scState.card, sc = $('#setupcard'), h = '<div class="tagrow"><span class="src">From Fuzz</span></div>', not = '<button type="button" class="btn" data-sc="later" aria-keyshortcuts="Escape">Not now' + kbd('Esc') + '</button>';
+    if (c.name === 'folder') {
+      h += '<h2 id="sc-h" tabindex="-1">Can I save files for you?</h2><p>Some tasks end in a document, a spreadsheet or a checklist. I’d keep them in <b>Documents › Fuzz</b>, one folder per task. Nothing in it is sent anywhere.</p>' +
+        '<div class="sc-actions"><button type="button" class="btn primary" data-sc="yes">Yes, use Documents › Fuzz' + kbd('↵') + '</button>' + not + '</div>';
+    } else if (c.name === 'theme') {
+      h += '<h2 id="sc-h" tabindex="-1">Want a different colour?</h2><p>Pick one and it changes straight away. This is the only time I’ll ask; Settings has the rest.</p>' +
+        '<div class="palettes sc-pals" role="group" aria-label="Theme">' + Themes.list.map(function (t) {
+          var p = Themes.palette(t.id, Themes.resolveMode(App.prefs().mode), App.prefs().contrast), on = t.id === App.prefs().theme;
+          return '<button type="button" class="pal" data-sc-theme="' + t.id + '" aria-pressed="' + on + '"><span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span><span class="pal-n">' + esc(t.name) + '</span></button>';
+        }).join('') + '</div><div class="sc-actions"><button type="button" class="btn primary" data-sc="yes">Keep this one' + kbd('↵') + '</button>' + not + '</div>';
+    } else {
+      var app = appName(), s = scState.step;
+      h += '<h2 id="sc-h" tabindex="-1">Want me to find your asks myself?</h2>' +
+        '<p>Right now I only know what you type. Connect your email, Slack or calendar in ' + esc(app) + ', and I can read for new asks and look things up while I work. I only read with them. Nothing goes out without your yes.</p>';
+      if (s === 'ask' || s === 'none') {
+        h += '<ol class="sc-steps"><li><b>In ' + esc(app) + ', connect what you use.</b> ' + (c.engine === 'copilot' ? 'In Copilot, type <code>/mcp</code> and add one.' : 'On claude.ai, open Settings, then Connectors. Or type <code>/mcp</code> in Claude Code.') + '</li>' +
+          '<li><b>Come back here</b> and press “I’ve connected one”. This card waits for you.</li></ol>' +
+          (s === 'none' ? '<p class="setup-hint" role="status">' + (scState.error ? 'I couldn’t ask ' + esc(app) + ': ' + esc(scState.error) + ' Try again in a moment.' : 'I didn’t find anything I can read with yet. Once one is connected, try again.') + '</p>' : '') +
+          '<div class="sc-actions"><button type="button" class="btn primary" data-sc="look">I’ve connected one' + kbd('↵') + '</button>' + not + '</div>';
+      } else if (s === 'looking') {
+        h += '<div class="setup-wait"><span class="spin" aria-hidden="true"></span><p><span role="status">Asking ' + esc(app) + ' what it can reach…</span><small>Usually about a minute. Nothing is read or changed while I ask.</small></p></div><div class="sc-actions">' + not + '</div>';
+      } else if (s === 'found') {
+        h += '<p><b>With these, I’d be able to:</b></p><ul class="sc-can">' + scState.tools.slice(0, 6).map(function (t) { return '<li>' + esc(t.does || t.allow) + '</li>'; }).join('') + (scState.tools.length > 6 ? '<li>…and ' + (scState.tools.length - 6) + ' more ways to look things up</li>' : '') + '</ul>' +
+          '<p class="meta">Only ways to read and look things up. Settings › Set up Fuzz lists each one.</p>' +
+          '<div class="sc-actions"><button type="button" class="btn primary" data-sc="allow">Allow these' + kbd('↵') + '</button>' + not + '</div>';
+      }
+    }
+    sc.innerHTML = h;
+  }
+  /* Ask the app what it can reach (one run of it), then offer the ways to read, in plain words */
+  function lookUp() {
+    var cl = scState.card.engine;
+    scState.step = 'looking'; paintSetup();
+    Live.discover(cl).then(function wait() {
+      return Live.setup(true).then(function (r) {
+        var v = r.tools.filter(function (x) { return x.client === cl; })[0];
+        if (v && v.discovery && v.discovery.state === 'running') return new Promise(function (res) { setTimeout(res, 3000); }).then(wait);
+        if (v && v.discovery && v.discovery.state === 'error') throw new Error(v.discovery.error);
+        return v;
+      });
+    }).then(function (v) {
+      if (!scOpen || !scState || scState.card.name !== 'lookup') return;
+      var look = (v ? v.tools : []).filter(function (x) { return x.kind === 'lookup' && x.suggested; });
+      scState.view = v; scState.tools = look; scState.step = look.length ? 'found' : 'none';
+      paintSetup(); $('#sc-h').focus({ preventScroll: true });
+    }, function (e) {
+      if (!scOpen) return;
+      scState.step = 'none'; scState.error = e.message.replace(/\.?$/, '.'); paintSetup(); $('#sc-h').focus({ preventScroll: true });
+    });
+  }
+  function closeSetup(line) {
+    var sc = $('#setupcard'); sc.hidden = true; sc.innerHTML = '';
+    scOpen = false; scState = null;
+    Fuzz.setMood('idle');
+    showNext();
+    /* after the next card's arrival, so the answer is what he's saying */
+    if (line) { Fuzz.say(line, { type: false }); Say.announce(line); }
+  }
+  function setupAnswer(what) {
+    var c = scState.card;
+    if (what === 'later') {
+      if (c.name === 'theme' && App.prefs().theme !== scState.theme) App.setTheme(scState.theme);
+      Onboard.answerSetup(c.name, 'not_now');
+      return closeSetup('Okay.');
+    }
+    if (what === 'look') { scState.error = null; return lookUp(); }
+    if (what === 'allow') {
+      var v = scState.view, picks = scState.tools.map(function (t) { return t.allow; });
+      Live.saveTools(v.client, v.read.concat(picks.filter(function (x) { return v.read.indexOf(x) < 0; })), v.send).then(function () {
+        return Onboard.answerSetup('lookup', 'yes');
+      }).then(function () { closeSetup('Done. I’ll use them from my next run.'); }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+      return;
+    }
+    Onboard.answerSetup(c.name, 'yes').then(function () {
+      closeSetup(c.name === 'folder' ? 'Done. Your files go in Documents › Fuzz.' : 'Lovely. It’s yours.');
+    }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+  }
+
+  /* The later tips (docs/onboarding.md), each said once, when it first fits, after Fuzz's own line */
+  function laterTip(t) {
+    var key = t.state === 'review' ? 'draft' : t.kind !== 'task' ? null : t.handedBack ? 'handover' :
+      t.stage === 'stale' && !t.review && !t.checkBack && !keptStale[t.id] ? 'stale' : cleared() >= 5 ? 'keys' : 'park';
+    if (!key || !Onboard.tip(key, true)) return;
+    setTimeout(function () {
+      if (!alive || cur() !== t || busy || ciOpen || scOpen) return;
+      var line = Onboard.tip(key); if (line) { Fuzz.say(line, { type: false }); Say.announce(line); }
+    }, t.handedBack ? 4200 : 2600);
   }
   function puzzledFor(t) {
     Fuzz.setMood('puzzled'); Fuzz.setArm('none');
@@ -702,6 +818,7 @@
     e.querySelector('h2').tabIndex = -1;
   }
   function zeroState(quiet) {
+    if (!quiet && showSetup()) return;
     stats(); updateStack(false);
     card.style.display = 'none'; $('#checkin').hidden = true; $('#dropbtn').hidden = true;
     renderEmpty();
@@ -761,7 +878,9 @@
     var ask = handled ? ['The urgent stuff is handled. How are you doing?', 'Urgent stuff, handled. Nice.'] : CI_ASK[longSession() ? 2 : Math.min(ciCount, 1)];
     $('#ci-h').textContent = ask[0];
     refocus($('#ci-h'));
-    Fuzz.say(ask[1], { type: false });
+    var ct = !demo && Onboard.tip('checkin');
+    Fuzz.say(ct || ask[1], { type: false });
+    if (ct) Say.announce(ct);
   }
   async function ciPick(kind) {
     if (ciBusy) return;
@@ -950,7 +1069,8 @@
     if (review && $('#draft')) edits[it.id + ':draft'] = $('#draft').value;
     scheduling = true; schedMore = false; renderCardKeep();
     refocus($('#sched-h'));
-    Fuzz.setMood('eager'); Fuzz.say(review || res ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?'); Fuzz.pAnim('hop');
+    var st_ = Onboard.tip('schedule');
+    Fuzz.setMood('eager'); Fuzz.say(st_ || (review || res ? 'No rush. When should I ask you about it again?' : 'Happy to! When should I bring it back?')); Fuzz.pAnim('hop');
     var pickedIdx = await new Promise(function (resolve) { schedResolve = resolve; });
     schedResolve = null;
     if (pickedIdx === -1) {
@@ -1180,6 +1300,7 @@
     Object.keys(docDrag).forEach(function (n) { window.addEventListener(n, docDrag[n]); });
     card.addEventListener('click', function (e) {
       if (e.target.closest('#adropbtn')) { $('#afile').click(); return; }
+      if (e.target.closest('[data-guide="skip"]')) { var gd = card.querySelector('.onb-guide'); if (gd) gd.remove(); Onboard.skipGuide(); refocus($('#ask')); return; }
       var ux = e.target.closest('[data-unref]'), ci = cur();
       if (ux && ci) {
         refs[ci.id] = (refs[ci.id] || []).filter(function (k) { return k !== ux.dataset.unref; });
@@ -1292,6 +1413,12 @@
       var mm = $('#moremenu');
       if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
+      /* A setup card: its buttons take Enter, and Escape is Not now */
+      if (scOpen) {
+        if (k === 'escape') { e.preventDefault(); setupAnswer('later'); }
+        else if (k === 'enter' && !(t && t.closest && t.closest('button, a, summary'))) { var pb = $('#setupcard .sc-actions .primary'); if (pb) { e.preventDefault(); pb.click(); } }
+        return;
+      }
       if (ciOpen) {
         var follow = $('#ci-follow').querySelectorAll('.btn');
         if (!$('#ci-break').hidden) return; /* "I'm back" has focus; Enter presses it */
@@ -1368,6 +1495,11 @@
       Store.parkThought(v); inp.value = ''; $('#parkform').hidden = true; $('#parkbtn').setAttribute('aria-expanded', 'false');
       if (!busy) { Fuzz.pAnim('hop'); Fuzz.say('Parked. Back to what you were doing.', { type: false }); }
       $('#parkbtn').focus();
+    });
+    $('#setupcard').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b || !scOpen) return;
+      if (b.dataset.scTheme) { App.setTheme(b.dataset.scTheme); $('#setupcard').querySelectorAll('[data-sc-theme]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); return; }
+      if (b.dataset.sc) setupAnswer(b.dataset.sc);
     });
     $('#checkin').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;

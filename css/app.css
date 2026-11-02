@@ -797,3 +797,80 @@ html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
   .ps-tasks > li { flex-wrap: wrap; }
   .ps-side { width: 100%; justify-content: space-between; }
 }
+
+/* ---------- Onboarding (js/onboarding.js): the form, the intro, the wait and its tips ---------- */
+.view--welcome { max-width: 640px; }
+.onb { display: flex; flex-direction: column; gap: 22px; padding-top: 4vh; }
+.onb h1 { font-family: var(--font-display); font-size: 27px; font-weight: 800; line-height: 1.2; margin: 0; }
+.onb h2 { font-family: var(--font-display); font-size: 20px; font-weight: 800; line-height: 1.25; margin: 0; }
+.onb p { margin: 0; line-height: 1.55; }
+.onb-top { display: flex; gap: 16px; align-items: center; }
+.onb-top .meta { margin-top: 6px; }
+.onb-fz { width: 64px; flex: none; }
+.onb-fz.big { width: 88px; }
+.onb-form { display: flex; flex-direction: column; gap: 24px; }
+.onb-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.onb-form legend { padding: 0; margin-bottom: 2px; font-weight: 600; font-size: 16px; }
+.onb-form .field label { font-size: 16px; font-weight: 600; letter-spacing: 0; color: var(--ink); }
+.onb-form input[type="text"], .onb select { font: inherit; font-size: 16px; padding: 10px 14px; min-height: 44px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); max-width: 100%; }
+.onb-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.onb-app { min-height: 0; }
+.onb-app[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.onb-app[data-missing] .acct-n { color: var(--muted); }
+.onb-app .pill { margin-top: 6px; }
+.onb-note { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--chip); font-size: 15px; }
+p.onb-note { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+.onb-note.warn { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
+.onb-note.ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); }
+.onb-times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.onb-times label { font-weight: 600; }
+.onb-hours .seg { min-height: 44px; }
+.onb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.onb-says { display: flex; flex-direction: column; gap: 12px; font-size: 17px; }
+.onb-promise { display: flex; gap: 10px; align-items: flex-start; padding: 14px 16px; border-radius: 16px; background: var(--field); border: var(--bw) solid var(--line); font-size: 16px; }
+.onb-promise svg { flex: none; margin-top: 2px; color: var(--ok); }
+.onb-ask { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 20px; border-radius: 20px; background: var(--surface); border: var(--bw2) solid var(--line); box-shadow: var(--shadow); }
+.onb-ask kbd { margin-left: 2px; margin-right: 2px; }
+.onb-ask .btn kbd { margin-left: 8px; }
+.onb-skip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; }
+.onb-skip .linkbtn { padding-left: 0; }
+.onb-status { display: flex; gap: 16px; align-items: flex-start; padding: 20px; border-radius: 20px; background: var(--surface); border: var(--bw2) solid var(--line); box-shadow: var(--shadow); }
+.onb-status > div { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; }
+.onb-status .meta { font-size: 14px; }
+.onb-status .meta .spin { display: inline-block; vertical-align: -4px; margin: 0 6px 0 0; }
+.onb-status.ready { border-color: var(--accent); }
+.onb-tips { display: flex; flex-direction: column; gap: 10px; }
+.onb-tips ol { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: tip; }
+.onb-tip { counter-increment: tip; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px 52px; position: relative; border-radius: 16px; background: var(--field); }
+.onb-tip::before { content: counter(tip); position: absolute; left: 14px; top: 13px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); font-weight: 800; font-family: var(--font-display); }
+.tip-line { font-weight: 600; }
+.onb-tip details summary { cursor: pointer; color: var(--link); font-size: 14px; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.onb-tip details p { margin-top: 6px; color: var(--muted); font-size: 15px; }
+.onb-cal { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.onb-cal label { font-size: 14px; }
+.onb-cal select { min-height: 36px; padding: 6px 10px; font-size: 14px; }
+
+/* The first card's lesson, on Triage */
+.onb-guide { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border: var(--bw2) solid color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.onb-guide > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.onb-guide h3 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 17px; }
+.onb-guide p { margin: 0; line-height: 1.5; }
+.onb-guide kbd { margin: 0 2px; }
+.onb-guide .linkbtn { align-self: flex-start; padding: 6px 0; min-height: 36px; }
+.guide-fz { width: 40px; flex: none; }
+
+/* The dictation tip on the first New task screen */
+.cap-tip { display: flex; gap: 10px; align-items: center; margin: -4px 0 0; padding: 10px 14px; border-radius: 14px; background: var(--chip); font-size: 15px; }
+.tip-fz { width: 32px; flex: none; }
+
+/* Setup cards, after the onboarding */
+.setupcard { display: flex; flex-direction: column; gap: 14px; }
+.setupcard[hidden] { display: none; }
+.setupcard h2 { font-family: var(--font-display); font-size: 22px; font-weight: 800; line-height: 1.25; margin: 0; }
+.setupcard h2:focus { outline: none; }
+.setupcard p { margin: 0; line-height: 1.55; }
+.sc-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sc-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; line-height: 1.5; }
+.sc-can { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.sc-pals { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+@media (prefers-reduced-motion: reduce) { .onb .spin { animation-duration: 2.4s; } }

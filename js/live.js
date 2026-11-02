@@ -596,6 +596,21 @@
     chooseFolder: function (start) { return api('POST', '/setup/folder/choose', { start: start || null }); },
     saveFolder: function (folder) { return api('PUT', '/setup/folder', { folder: folder || null }); },
     setupDone: function () { return api('POST', '/setup/done', {}); },
+    /* The onboarding (js/onboarding.js): where you are in it, your hours, the app Fuzz works through,
+       the setup cards after it, and the first read */
+    onboarding: function () { return api('GET', '/onboarding'); },
+    saveOnboarding: function (body) { return api('PUT', '/onboarding', body); },
+    answerSetup: function (name, answer) { return api('POST', '/onboarding/setup/' + name, { answer: answer }); },
+    me: function () { return api('GET', '/me'); },
+    hours: function () { return api('GET', '/hours'); },
+    saveHours: function (body) { return api('PUT', '/hours', body); },
+    engine: function () { return api('GET', '/engine?start=0'); },
+    checkEngine: function () { return api('POST', '/engine/check', {}); },
+    chooseEngine: function (client) { return api('PUT', '/engine', { client: client }); },
+    clientAction: function (client, what) { return api('POST', '/engine/clients/' + client + '/' + what, {}); },
+    firstRead: function () { return api('POST', '/engine/run', { role: 'extractor' }); },
+    /* Which server answered: the id changes when it restarts (installing a client restarts it) */
+    serverId: function () { return fetch('/health', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (h) { return h.ok ? h.boot || 'up' : null; }, function () { return null; }); },
     /* The Artifacts tab: what Fuzz wrote in your output folder, and a call whenever the core's events move */
     artifacts: function () { return api('GET', '/artifacts'); },
     /* Finished work older than Lineup shows, by words in its title or summary, newest first */

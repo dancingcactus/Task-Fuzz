@@ -27,7 +27,7 @@
         '<form class="acct-key" hidden>' +
           '<div class="field"><label for="acct-tok">The link <code>fuzz serve</code> printed</label>' +
           '<input id="acct-tok" type="text" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:8765/?token=…"></div>' +
-          '<p class="meta acct-help">It’s in <code>~/Library/Application Support/Fuzz/com.fuzz.u1.serve.log</code>. This browser remembers it.</p>' +
+          '<p class="meta acct-help">Easier: run <code>fuzz start</code>, or the install command again. Either opens Fuzz here, signed in. This browser remembers it.</p>' +
           '<p class="acct-err" role="alert"></p>' +
           '<button type="submit" class="btn primary">Continue</button>' +
         '</form>' +

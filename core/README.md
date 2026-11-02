@@ -11,7 +11,14 @@ Python 3.11+, SQLite, the official MCP Python SDK (v2) and `jsonschema`. Nothing
 pip install -e core            # gives you the `fuzz` command (or: python3 -m fuzz, with core/ on PYTHONPATH)
 fuzz init --me-name Justin --me-email you@example.com --me-slack W123
 fuzz serve                     # the API, the event stream and the UI; open the ?token= link it prints
+fuzz start                     # or: keep serve running (launchd on a Mac) and open the browser signed in
 ```
+
+`install.sh` at the repo root does all of this in one paste, then the browser takes over (see
+[`docs/onboarding.md`](../docs/onboarding.md)). `fuzz start --restart` restarts a running server after an
+update. On a Mac, `fuzz start` writes the `fuzz serve` launchd job on its own; installing a client from the
+browser adds the role jobs and reloads them, which restarts the server (`GET /health` carries a `boot` id
+that changes when it does).
 
 The store lives in `~/Library/Application Support/Fuzz/` on a Mac (`~/.local/share/fuzz` elsewhere).
 Set `FUZZ_HOME` or pass `--home` to use another folder.
@@ -57,7 +64,11 @@ fuzz setup --step tools --client copilot --discover   # list the client's tools 
 fuzz setup --step folder --folder ~/Documents/Fuzz    # or - for none
 ```
 
-The UI walks through the same steps the first time you connect, and from Settings > Set up Fuzz.
+The UI offers the same steps from Settings > Set up Fuzz. The first time you connect, the onboarding
+asks only for your name, the app and your working hours, and the rest arrives later as setup cards:
+`GET /onboarding` gives the step you're on and the one setup card that may show
+(`lookup`, then `folder`, then `theme`, each at most twice), `POST /onboarding/setup/{name} {answer: yes |
+not_now}` answers it, and `PUT /hours {hours: [from, until] | null, weekends}` sets when Fuzz reads.
 Each step can be skipped and done again later.
 
 1. **Who you are**: your other email addresses, names and Slack IDs, so a connector signed in to any
@@ -133,7 +144,10 @@ GET  /undo                     POST /undo {group?}       (each command undoes on
 POST /checkin {answer, follow_up?}
 GET  /events?after=N           GET  /events/stream       (server-sent events; ?token= for EventSource)
 POST /signals/at_desk          POST /tick
-GET  /engine                   PUT  /engine {client, model}
+GET  /onboarding               PUT  /onboarding {step?, task_id?, name?, app?, tips?, done?, skipped?, again?}
+POST /onboarding/setup/{lookup|folder|theme} {answer: yes|not_now}
+GET  /hours                    PUT  /hours {hours: [from, until] | null, weekends}
+GET  /engine?start=0           PUT  /engine {client, model}
 POST /engine/check             POST /engine/run {role: executor|extractor|sender, task_id?, scripted?}
 POST /engine/clients/{client}/install|update|repair|uninstall
 ```

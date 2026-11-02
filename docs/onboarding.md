@@ -1,7 +1,9 @@
 # Onboarding: requirements
 
-Status: agreed direction, not built. The code facts below were checked against `claude/ask-me-later` at
-`895ecd3`.
+Status: built, steps 1 to 6 of the order of work, in `js/onboarding.js`, `core/fuzz/onboarding.py`,
+`install.sh` and `docs/fuzz-tone.md`. Step 7, trying it with someone who has ADHD, hasn't happened, and the
+tip wording hasn't been reviewed by someone qualified in ADHD yet. The code facts below were checked
+against `claude/ask-me-later` at `895ecd3`.
 
 ## Goal
 
@@ -196,3 +198,35 @@ that would be handling the request. The page has to survive that and reconnect.
 5. Build the calendar file.
 6. Build setup cards and later tips.
 7. Try the flow with someone who has ADHD.
+
+## As built
+
+- **Where it lives.** The flow is a page, `#/welcome` (`js/onboarding.js`), with the header and Settings
+  still there. Progress is kept by the core in `onboarding-u<user>.json` (`GET/PUT /onboarding`), not as
+  events, so Undo never reverses a step. People with tasks already, or the old guided setup finished, skip
+  it.
+- **The form** highlights the app it finds and sets Fuzz up in it when picked, or when you go on with the
+  default. Install and repair go through `POST /engine/clients/{client}/install|repair`, then the page
+  waits for the server's `boot` id in `GET /health` to change (or a few quiet seconds where nothing
+  restarts), checks the client and picks it with `PUT /engine`. A client that isn't there gets a link to
+  get it, "I've installed it" to look again, and Try the demo, which runs the same intro on demo data.
+- **The wait** shows the task, what Fuzz is doing, how long it's been and that leaving is fine, with the
+  three tips below it. The calendar file is a 20-minute event each weekday (or each day, for weekends and
+  no fixed hours), at a time inside your hours, with a link back to Triage.
+- **The first card** is picked to the front of Triage and carries the lesson above its question. Acting on
+  it in any way ends the onboarding: the Undo tip, the one line on what's next, and a first read (Run now).
+- **The intro is calm**: Calm mode is on from the form to the first card, whatever the setting.
+- **Setup cards** are drawn by Triage, like check-ins, with the core keeping the answers. One shows per
+  visit, after a card is cleared, never on the visit the onboarding ended. Not now always works (Escape),
+  and a second Not now retires the card. The lookup card asks the app what it can reach (the guided setup's
+  discovery run) and offers only its suggested ways to read, in the tools' own plain words.
+- **Later tips** are said by Fuzz, once each, a moment after the card they belong to arrives, and only if
+  you're still on it.
+
+Not built yet:
+
+- **Send tools when the first draft is approved.** Approving still works as before; the sender hands a
+  draft back when no send tools are allowed. The guided setup in Settings picks them.
+- **Identity from a connector.** Other emails and Slack IDs are no longer asked up front, but nothing reads
+  them from a connector yet, so they still come from Settings > Set up Fuzz or `fuzz me add`.
+- **Step 7.** No one with ADHD has tried the flow, and the tips haven't had the qualified review.

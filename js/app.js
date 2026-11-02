@@ -5,11 +5,12 @@
     triage: { view: window.TriageView, title: 'Triage' },
     tasks: { view: window.TasksView, title: 'Lineup' },
     artifacts: { view: window.ArtifactsView, title: 'Artifacts' },
-    capture: { view: window.CaptureView, title: 'New task' }
+    capture: { view: window.CaptureView, title: 'New task' },
+    welcome: { view: window.Onboard.view, title: 'Welcome' }
   };
   var PREF_KEY = 'fuzz.prefs.v1';
   var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
-  var current = null, currentName = null;
+  var current = null, currentName = null, tempCalm = false, reduce = false;
 
   function load() {
     try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) prefs = Object.assign(prefs, p); } catch (e) { /* storage can be blocked */ }
@@ -25,8 +26,11 @@
     setContrast: function (c) { prefs.contrast = c; paint(); },
     setCodeFont: function (id) { prefs.codeFont = id; paint(); },
     setCalm: function (v) {
-      prefs.calm = !!v; Fuzz.setCalm(prefs.calm); save(); paintPopover();
+      prefs.calm = !!v; Fuzz.setCalm(prefs.calm || tempCalm); save(); paintPopover();
     },
+    /* The onboarding's intro is always calm, whatever the setting; the setting comes back after it */
+    tempCalm: function (on) { tempCalm = !!on; Fuzz.setCalm(prefs.calm || tempCalm || reduce); },
+    prefs: function () { return prefs; },
     navigate: function (hash) { location.hash = hash; },
     refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
     resetDemo: function () {
@@ -81,8 +85,9 @@
     }, true);
     document.getElementById('themepop').addEventListener('click', function (e) {
       e.stopPropagation(); /* the popover re-renders itself, so don't let the outside-click handler see a detached target */
-      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup]'); if (!t) return;
+      var t = e.target.closest('[data-theme-id],[data-mode],[data-contrast],[data-reset],[data-disconnect],[data-calm],[data-setup],[data-again]'); if (!t) return;
       if (t.dataset.disconnect) { Live.switchAccount(); return; }
+      if (t.dataset.again) { togglePopover(false); Onboard.again(); return; }
       if (t.dataset.setup) { togglePopover(false); Setup.open(); return; }
       if (t.dataset.themeId) App.setTheme(t.dataset.themeId);
       else if (t.dataset.mode) App.setMode(t.dataset.mode);
@@ -136,8 +141,8 @@
       '<h2>Code font</h2><div class="selectrow"><label for="codefont" class="sr">Code font</label><select id="codefont">' + Themes.codeFonts.map(function (f) { return '<option value="' + f.id + '"' + (f.id === prefs.codeFont ? ' selected' : '') + '>' + esc(f.name) + ' · ' + esc(f.note) + '</option>'; }).join('') + '</select></div>' +
       '<h2>Motion</h2><label class="check"><input type="checkbox" id="calmbox"' + (prefs.calm ? ' checked' : '') + '> <span>Calm mode<small>Fades only. No flashes, confetti or gags.</small></span></label>' +
       (Live.on()
-        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
-        : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
+        ? '<h2>Fuzz core</h2><p class="meta">Connected. This is your real queue.</p><div class="segrow"><button type="button" class="btn small" data-setup="1">Set up Fuzz</button><button type="button" class="btn small" data-again="1">Show me around again</button><button type="button" class="btn small" data-reset="1">Refresh now</button><button type="button" class="btn small" data-disconnect="1">Switch account</button></div>'
+        : '<h2>Demo</h2><div class="segrow"><button type="button" class="btn small" data-reset="1">Reset demo data</button><button type="button" class="btn small" data-again="1">Show me around again</button>' + (Live.canSwitch() ? '<button type="button" class="btn small" data-disconnect="1">Switch account</button>' : '') + '</div>');
     if (focused) { var el = pop.querySelector('[data-theme-id="' + focused + '"],[data-mode="' + focused + '"],[data-contrast="' + focused + '"]'); if (el) el.focus(); }
   }
 
@@ -184,6 +189,7 @@
     if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
     var t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.tagName === 'SELECT')) return;
     if (document.querySelector('dialog[open]')) return;
+    if (Onboard.blocksCapture()) return;   /* on the onboarding's form, N would skip past what Fuzz needs */
     e.preventDefault(); App.navigate('#/capture');
   });
 
@@ -191,17 +197,20 @@
   load();
   Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont);
   Themes.onSystemChange(function () { if (prefs.mode === 'auto') { Themes.apply(prefs.theme, prefs.mode, prefs.contrast, prefs.codeFont); paintPopover(); } });
-  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   Fuzz.setCalm(prefs.calm || reduce);
   if (reduce && !prefs.calm) prefs.calm = true;
   /* Me shows your real queue from `fuzz serve` (js/live.js), Demo the invented data; js/account.js asks which */
   Live.boot(function () {
     if (!Live.on()) { Store.reset(); Store.startWork(); }
     buildHeader();
-    window.addEventListener('hashchange', function () { route(false); });
     setInterval(updateCount, 1000);
     updateCount();
-    route(true);
-    Setup.maybeOpen();
+    /* The onboarding resumes where you left off; the old guided setup stays in Settings */
+    Onboard.start().then(function (hash) {
+      if (hash && location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
+      window.addEventListener('hashchange', function () { route(false); });
+      route(true);
+    });
   });
 })();
