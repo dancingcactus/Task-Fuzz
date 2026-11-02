@@ -13,7 +13,7 @@
   var prefs = { theme: 'terracotta', mode: 'auto', contrast: 'standard', codeFont: 'jetbrains', calm: false };
   var current = null, currentName = null, tempCalm = false, reduce = false;
   /* The theme on screen: your pick, or with Random, the one picked when this page loaded */
-  var shown = 'terracotta';
+  var shown = 'terracotta', backFrom = null;
 
   function load() {
     try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) prefs = Object.assign(prefs, p); } catch (e) { /* storage can be blocked */ }
@@ -39,6 +39,8 @@
     tempCalm: function (on) { tempCalm = !!on; Fuzz.setCalm(prefs.calm || tempCalm || reduce); },
     prefs: function () { return prefs; },
     navigate: function (hash) { location.hash = hash; },
+    /* Leave Settings for whatever you were doing before it */
+    leaveSettings: function () { App.navigate(backFrom && backFrom !== '#/settings' ? backFrom : '#/triage'); },
     refresh: function () { if (currentName === 'triage' && TriageView) TriageView.refresh(); else if (current && ROUTES[currentName]) route(true); },
     resetDemo: function () {
       if (Live.on()) { Live.sync().then(function () { Say.tell('Up to date with Fuzz.'); }); return; }
@@ -196,7 +198,12 @@
     document.body.classList.add('onb-wait');
     Onboard.start().then(function (hash) {
       if (hash && location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
-      window.addEventListener('hashchange', function () { route(false); });
+      window.addEventListener('hashchange', function (e) {
+        /* Remember where Settings was opened from, so leaving it goes back there */
+        var from = (e.oldURL || '').split('#')[1];
+        if (from && from.indexOf('/settings') !== 0) backFrom = '#' + from;
+        route(false);
+      });
       route(true);
     });
   });

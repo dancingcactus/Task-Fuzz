@@ -18,21 +18,32 @@
   function list(v) { return v.split(',').map(function (x) { return x.trim(); }).filter(Boolean); }
   function clock(h) { return Onboard.clock(h); }
 
+  /* Escape goes back to what you were doing. In a text box it only leaves the box first, so nothing you
+     typed is lost to a stray key; a dialog, an open menu or Dictate get Escape before this does. */
+  function onEsc(e) {
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' && t.type === 'text' || t.tagName === 'TEXTAREA')) { e.preventDefault(); t.blur(); var h = root && root.querySelector('h1'); if (h) h.focus({ preventScroll: true }); return; }
+    e.preventDefault(); App.leaveSettings();
+  }
+  function backHTML() { return '<button type="button" class="linkbtn set-back" data-back="1" aria-keyshortcuts="Escape"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back<kbd aria-hidden="true">Esc</kbd></button>'; }
+
   V.mount = function (container) {
     root = container;
+    document.addEventListener('keydown', onEsc);
     root.addEventListener('click', onClick);
     root.addEventListener('change', onChange);
     root.addEventListener('submit', onSubmit);
     root.addEventListener('toggle', function (e) { if (e.target.dataset && e.target.dataset.open) open[e.target.dataset.open] = e.target.open; }, true);
     if (!Live.on()) {
-      root.innerHTML = '<section class="settings"><h1>Settings</h1><p class="meta">You’re using the demo, so only the look is yours to change. The rest is for your real queue, from the Fuzz core on your Mac.</p>' +
+      root.innerHTML = '<section class="settings">' + backHTML() + '<h1>Settings</h1><p class="meta">You’re using the demo, so only the look is yours to change. The rest is for your real queue, from the Fuzz core on your Mac.</p>' +
         lookHTML() + queueHTML() + againHTML() + '</section>';
       return;
     }
-    root.innerHTML = '<section class="settings"><h1>Settings</h1><p class="meta" role="status">One moment…</p></section>';
+    root.innerHTML = '<section class="settings">' + backHTML() + '<h1>Settings</h1><p class="meta" role="status">One moment…</p></section>';
     load().then(paint, function (e) { if (root) root.querySelector('.meta').textContent = 'I couldn’t load your settings: ' + e.message; });
   };
-  V.unmount = function () { clearTimeout(poll); root = null; picks = null; };
+  V.unmount = function () { document.removeEventListener('keydown', onEsc); clearTimeout(poll); root = null; picks = null; };
 
   function load() {
     return Promise.all([Live.me(), Live.engine(), Live.hours(), Live.setup(true)]).then(function (r) {
@@ -49,7 +60,7 @@
   function paint() {
     if (!root) return;
     var y = window.scrollY;
-    root.innerHTML = '<section class="settings" aria-labelledby="set-h"><h1 id="set-h">Settings</h1>' +
+    root.innerHTML = '<section class="settings" aria-labelledby="set-h">' + backHTML() + '<h1 id="set-h">Settings</h1>' +
       '<p class="meta">What Fuzz knows about you, what he may do, and how he looks. Each part saves on its own.</p>' +
       meHTML() + appHTML() + hoursHTML() + sourcesHTML() + folderHTML() + lookHTML() + queueHTML() + againHTML() + '</section>';
     window.scrollTo(0, y);
@@ -310,6 +321,7 @@
     if (b.dataset.hmode) { hoursEdit.mode = b.dataset.hmode; repaint('hours'); return; }
     if (b.dataset.list) return listAgain();
     if (b.dataset.choose) return chooseFolder();
+    if (b.dataset.back) return App.leaveSettings();
     if (b.dataset.again) return Onboard.again();
     if (b.dataset.queue === 'reset') return App.resetDemo();
     if (b.dataset.queue === 'switch') return Live.switchAccount();
