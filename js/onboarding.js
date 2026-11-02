@@ -72,7 +72,8 @@
     paint();
   };
   V.unmount = function () {
-    clearInterval(ticker); ticker = 0;
+    clearInterval(ticker); ticker = 0; spotlight(false);
+    var ptr = document.getElementById('onb-pointer'); if (ptr) ptr.remove();
     if (unsub) unsub(); unsub = null;
     root = null;
   };
@@ -83,8 +84,10 @@
     if (!active()) { App.navigate('#/triage'); return; }
     calm(true);
     var s = st.step;
+    chrome(s);
+    if (s === 'intro') return paintIntro();
     if (s === 'form') return paintForm();
-    if (s === 'intro' || s === 'capture') return paintIntro();
+    if (s === 'capture') return paintAsk();
     if (s === 'wait') return paintWait(true);
     if (s === 'card') { App.navigate('#/triage'); return; }
     App.navigate('#/triage');
@@ -246,27 +249,80 @@
       return names.indexOf(name) > -1 ? null : Live.saveMe({ names: [name].concat(names) });
     });
     Promise.all([saveName, Live.saveHours(readHours())]).then(function () {
-      return save({ step: 'intro', name: name || null, app: chosen });
+      return save({ step: 'capture', name: name || null, app: chosen });
     }).then(paint, function (e) { if (go) go.disabled = false; Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
   }
 
-  /* ---------- 3 and 4. Fuzz introduces himself, then asks for one real task ---------- */
+  /* ---------- The app's own controls stay out of the way until Fuzz shows them ---------- */
+  /* bare: the header is hidden (the intro and the questions); reveal: it fades in, New task pointed out */
+  function chrome(step) {
+    var bare = active() && (step === 'intro' || step === 'form');
+    var was = document.body.classList.contains('onb-bare');
+    document.body.classList.remove('onb-wait');
+    document.body.classList.toggle('onb-bare', bare);
+    if (was && !bare) {
+      var bar = document.getElementById('appbar');
+      if (bar) bar.animate([{ opacity: 0, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'ease-out' });
+    }
+  }
+  /* The questions come only when there's something to set: a live core, with no app or hours yet */
+  function needsForm() { return Live.on() && !(st.app && st.hours_set); }
+
+  /* ---------- 1. Fuzz introduces himself ---------- */
   function paintIntro() {
+    root.innerHTML = '<section class="onb onb-intro" aria-labelledby="onb-h">' +
+      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">Hi. I’m Fuzz.</h1></div></div>' +
+      '<div class="onb-says">' +
+        '<p>I take things off your plate. You tell me what’s on your mind, and I look into it, draft it or do it, then bring you one decision at a time.</p>' +
+        '<p>I work in the background, while you get on with your day.</p>' +
+        '<p class="onb-promise"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg><span><b>Nothing goes out without your yes, and everything has Undo.</b></span></p>' +
+      '</div>' +
+      '<div class="onb-actions"><button type="button" class="btn primary" data-onb="hello">' + (needsForm() ? 'Nice to meet you' : 'Show me') + '<kbd aria-hidden="true">↵</kbd></button></div>' +
+      skipLink() + '</section>';
+    heading(true);
+  }
+
+  /* ---------- 4. One real task: the header appears, and Fuzz points at New task ---------- */
+  function paintAsk() {
     var name = st.name ? ', ' + st.name : '';
     var app = st.app && client(st.app) ? client(st.app).label : { 'claude-code': 'Claude Code', copilot: 'GitHub Copilot' }[st.app];
     root.innerHTML = '<section class="onb onb-intro" aria-labelledby="onb-h">' +
-      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">Hi' + esc(name) + '. I’m Fuzz.</h1></div></div>' +
-      '<div class="onb-says">' +
-        '<p>I take things off your plate. You tell me what’s on your mind, and I look into it, draft it or do it, then bring you one decision at a time.</p>' +
-        '<p>I work ' + (app ? 'through ' + esc(app) + ', ' : '') + 'in the background, while you get on with your day.</p>' +
-        '<p class="onb-promise"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg><span><b>Nothing goes out without your yes, and everything has Undo.</b> Right now I only know what you type here.</span></p>' +
-      '</div>' +
+      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz big' }) + '<div><h1 id="onb-h">All set' + esc(name) + '.</h1>' +
+        (app ? '<p class="meta">I’m working through ' + esc(app) + '. Right now I only know what you type here.</p>' : '<p class="meta">Right now I only know what you type here.</p>') + '</div></div>' +
       '<div class="onb-ask"><h2>Let’s try it on something real</h2>' +
-        '<p>Press <kbd>N</kbd> and tell me one thing on your plate. Something I can write or think through works best for now, like a reply to draft or a plan to sketch, since I can’t look things up yet.</p>' +
-        '<a class="btn primary linklike" href="#/capture" aria-keyshortcuts="N">New task<kbd aria-hidden="true">N</kbd></a></div>' +
-      skipLink() + '</section>';
+        '<p>Tell me one thing on your plate. Something I can write or think through works best for now, like a reply to draft or a plan to sketch, since I can’t look things up yet.</p>' +
+        '<p>Press the <b>New task</b> button, or <kbd>N</kbd> from anywhere. It’s always there.</p></div>' +
+      skipLink() + '</section>' +
+      '<div class="onb-pointer" id="onb-pointer" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>New task</span></div>';
     heading(true);
-    if (st.step !== 'intro') save({ step: 'intro' });
+    spotlight(true);
+  }
+  /* Ring the header's New task button (the floating one on a phone) and hang the pointer under it */
+  var placeTimer = 0;
+  function newTaskButton() {
+    var cands = [document.querySelector('.nav-cta'), document.getElementById('fab')];
+    return cands.filter(function (b) { if (!b || b.hidden) return false; var r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0] || null;
+  }
+  function spotlight(on) {
+    document.querySelectorAll('.onb-spot').forEach(function (b) { b.classList.remove('onb-spot'); });
+    window.removeEventListener('resize', place); clearTimeout(placeTimer);
+    if (!on) return;
+    var fab = document.getElementById('fab');
+    if (fab && window.matchMedia && matchMedia('(max-width: 760px)').matches) fab.hidden = false;
+    var b = newTaskButton(); if (b) b.classList.add('onb-spot');
+    window.addEventListener('resize', place);
+    place(); placeTimer = setTimeout(place, 450);   /* again once the header has faded in */
+  }
+  function place() {
+    var ptr = document.getElementById('onb-pointer'), b = newTaskButton();
+    if (!ptr) return window.removeEventListener('resize', place);
+    if (!b) { ptr.hidden = true; return; }
+    var r = b.getBoundingClientRect(), up = r.top < innerHeight / 2;
+    ptr.hidden = false; ptr.classList.toggle('below', !up);
+    var w = ptr.offsetWidth, left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+    ptr.style.left = left + 'px';
+    ptr.style.top = up ? (r.bottom + 10) + 'px' : (r.top - ptr.offsetHeight - 10) + 'px';
+    ptr.style.setProperty('--ax', (r.left + r.width / 2 - left) + 'px');
   }
 
   /* ---------- 5. Tips during the wait ---------- */
@@ -411,7 +467,7 @@
       Live.firstRead().catch(function () {});
     }
     save(patch).then(function () {
-      finishing = false; calm(false);
+      finishing = false; calm(false); chrome('done');
       var next = 'For now I only know what you type. Connect a source and I’ll find asks myself.';
       setupShown = true;   /* the onboarding ends on that line; setup cards wait for another visit */
       quietUntil = Date.now() + 12000;   /* and no later tip talks over it */
@@ -484,9 +540,10 @@
     var a = b.dataset.onb; if (!a) return;
     if (a === 'retry') return setUp(chosen, true);
     if (a === 'recheck') { apps = null; appState = {}; return loadApps(); }
-    if (a === 'demo') { Live.useDemo(); location.hash = '#/welcome'; try { localStorage.setItem(LOCAL, JSON.stringify(Object.assign(blank(), { step: 'intro' }))); } catch (x) {} location.reload(); return; }
+    if (a === 'demo') { Live.useDemo(); location.hash = '#/welcome'; try { localStorage.setItem(LOCAL, JSON.stringify(Object.assign(blank(), { step: 'capture' }))); } catch (x) {} location.reload(); return; }
     if (a === 'skip') return finish('skip');
-    if (a === 'show') return showCard();
+    if (a === 'hello') return save({ step: needsForm() ? 'form' : 'capture' }).then(paint);
+    if (a === 'show' || b.id === 'onb-show') return showCard();
     if (a === 'ics') return downloadIcs();
   }
   function onSubmit(e) { if (e.target.id === 'onb-form') { e.preventDefault(); submitForm(); } }
@@ -498,9 +555,10 @@
   }
   /* Enter on the ready screen from anywhere on the page */
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter' || !root || !root.querySelector('#onb-show') || e.defaultPrevented) return;
+    if (e.key !== 'Enter' || !root || e.defaultPrevented) return;
+    var go = root.querySelector('#onb-show, [data-onb="hello"]'); if (!go) return;
     var t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT|BUTTON|A|SUMMARY)$/.test(t.tagName)) return;
-    e.preventDefault(); showCard();
+    e.preventDefault(); go.click();
   });
 
   /* ---------- Hooks for the rest of the app ---------- */
@@ -510,25 +568,25 @@
     start: function () {
       return load().then(function () {
         Store.on(watchCard);
-        if (!active()) return null;
-        calm(true);
+        if (!active()) { chrome('done'); return null; }
+        calm(true); chrome(st.step);
         if (st.step === 'card') { var it = taskItem(); if (it && Store.inQueue(it.id)) { Store.pick(it.id); return '#/triage'; } st.step = 'wait'; }
         return '#/welcome';
-      }, function () { return null; });
+      }, function () { chrome('done'); return null; });
     },
     active: active,
     /* N is the way into New task, except on the form, where it would skip what Fuzz needs */
-    blocksCapture: function () { return active() && st.step === 'form'; },
+    blocksCapture: function () { return active() && (st.step === 'intro' || st.step === 'form'); },
     /* On New task during the onboarding: the dictation tip, and Esc leads back here */
     onCapture: function () {
       var can = window.Dictate && Dictate.supported;   /* a tip for something this browser can't do isn't said */
-      if (active() && (st.step === 'intro' || st.step === 'capture')) { save({ step: 'capture' }); return { tip: can ? tip('dictate') || tipLine('dictate') : null, back: '#/welcome' }; }
+      if (active() && st.step === 'capture') { return { tip: can ? tip('dictate') || tipLine('dictate') : null, back: '#/welcome' }; }
       var t = can && tip('dictate');
       return t ? { tip: t } : null;
     },
     /* The task you captured during the onboarding goes to the wait */
     captured: function (it) {
-      if (!active() || (st.step !== 'capture' && st.step !== 'intro')) return false;
+      if (!active() || st.step !== 'capture') return false;
       pendingItem = it;
       save({ step: 'wait', task_id: it.coreId || null });
       App.navigate('#/welcome');
@@ -542,7 +600,7 @@
     /* Settings > Show me around again: the intro and the tips, from the start */
     again: function () {
       setupShown = true;
-      return save({ again: true }).then(function () { st.needed = true; calm(true); App.navigate('#/welcome'); if (location.hash === '#/welcome' && root) paint(); });
+      return save({ again: true }).then(function () { st.needed = true; calm(true); chrome('intro'); App.navigate('#/welcome'); if (location.hash === '#/welcome' && root) paint(); });
     },
     /* For tests */
     _ics: icsText

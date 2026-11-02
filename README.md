@@ -119,7 +119,7 @@ the demo. The conversation tab and code previews are demo-only for now, since th
 yet.
 
 **Onboarding.** The first time the core serves a browser, `js/onboarding.js` takes over (`#/welcome`):
-a short form, Fuzz's introduction, one real task captured with N, three tips while Fuzz looks into it, and
+Fuzz's introduction, a short form, the header appearing with New task pointed out, one real task, three tips while Fuzz looks into it, and
 that task's card with one lesson (Assign, or what Fuzz already did). Then a first read, and setup cards
 (a lookup source, an output folder, a colour theme) arrive later, one at a time, after real work. Later
 tips are each said once, when they fit. Closing the page at any step comes back to it. **Settings > Show

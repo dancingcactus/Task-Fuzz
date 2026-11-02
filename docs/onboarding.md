@@ -201,8 +201,12 @@ that would be handling the request. The page has to survive that and reconnect.
 
 ## As built
 
-- **Where it lives.** The flow is a page, `#/welcome` (`js/onboarding.js`), with the header and Settings
-  still there. Progress is kept by the core in `onboarding-u<user>.json` (`GET/PUT /onboarding`), not as
+- **The order.** Fuzz introduces himself first, then asks the three questions, then the app's header
+  appears and Fuzz points at the New task button (the floating one on a phone). Until then the header,
+  Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
+  reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
+  mode, but high contrast can't be switched on until the header appears.
+- **Where it lives.** The flow is a page, `#/welcome` (`js/onboarding.js`). Progress is kept by the core in `onboarding-u<user>.json` (`GET/PUT /onboarding`), not as
   events, so Undo never reverses a step. People with tasks already, or the old guided setup finished, skip
   it.
 - **The form** highlights the app it finds and sets Fuzz up in it when picked, or when you go on with the

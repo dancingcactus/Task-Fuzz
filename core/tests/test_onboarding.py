@@ -12,10 +12,10 @@ from fuzz.db import FuzzError
 
 
 class Progress(CoreCase):
-    def test_a_new_store_needs_it_and_starts_at_the_form(self):
+    def test_a_new_store_needs_it_and_starts_with_fuzz_saying_hello(self):
         v = onboarding.view(self.core)
         self.assertTrue(v["needed"])
-        self.assertEqual(v["step"], "form")
+        self.assertEqual(v["step"], "intro")
         self.assertIsNone(v["setup_card"])
 
     def test_people_who_set_up_before_never_see_it(self):
@@ -34,10 +34,10 @@ class Progress(CoreCase):
         self.assertEqual((v["step"], v["task_id"]), ("wait", tid))
 
     def test_coming_back_resumes_at_the_same_step(self):
-        onboarding.update(self.core, {"step": "intro", "name": "Justin"})
+        onboarding.update(self.core, {"step": "form", "name": "Justin"})
         again = self.make_core()
         v = onboarding.view(again)
-        self.assertEqual((v["step"], v["name"]), ("intro", "Justin"))
+        self.assertEqual((v["step"], v["name"]), ("form", "Justin"))
 
     def test_bad_steps_and_tips_are_refused(self):
         with self.assertRaises(FuzzError):
@@ -67,7 +67,7 @@ class Progress(CoreCase):
     def test_a_damaged_file_starts_over(self):
         with open(os.path.join(self.home, "onboarding-u1.json"), "w") as f:
             f.write("{nope")
-        self.assertEqual(onboarding.view(self.core)["step"], "form")
+        self.assertEqual(onboarding.view(self.core)["step"], "intro")
 
 
 class Hours(CoreCase):
@@ -155,7 +155,7 @@ class SetupCards(CoreCase):
 class Routes(Server):
     def test_onboarding_hours_and_setup_cards_over_http(self):
         status, v = self.req("GET", "/onboarding")
-        self.assertEqual((status, v["step"], v["needed"]), (200, "form", True))
+        self.assertEqual((status, v["step"], v["needed"]), (200, "intro", True))
         self.assertEqual(self.req("PUT", "/onboarding", {"step": "intro", "name": "Justin"})[1]["step"], "intro")
         self.assertEqual(self.req("PUT", "/onboarding", {"step": "nope"})[0], 400)
         self.assertEqual(self.req("PUT", "/hours", {"hours": [8, 16], "weekends": True})[1],

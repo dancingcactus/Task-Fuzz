@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from . import outputs, setup
 from .db import FuzzError
 
-STEPS = ("form", "intro", "capture", "wait", "card", "done")
+STEPS = ("intro", "form", "capture", "wait", "card", "done")   # Fuzz says hello, then asks
 SETUP_CARDS = ("lookup", "folder", "theme")
 THEME_AFTER_DAYS = 3        # the colour theme card is a light one, a few days in
 LATER_AGAIN_DAYS = 1        # a card you said Not now to can come back once, a day later at the soonest
@@ -27,7 +27,7 @@ def _path(core):
 
 
 def _blank():
-    return {"step": "form", "done": False, "skipped": False, "started_at": None, "finished_at": None,
+    return {"step": "intro", "done": False, "skipped": False, "started_at": None, "finished_at": None,
             "task_id": None, "name": None, "app": None, "hours_set": False, "first_read": None,
             "tips": [], "setup": {}}
 

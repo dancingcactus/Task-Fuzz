@@ -206,7 +206,9 @@
     buildHeader();
     setInterval(updateCount, 1000);
     updateCount();
-    /* The onboarding resumes where you left off; the old guided setup stays in Settings */
+    /* The onboarding resumes where you left off; the old guided setup stays in Settings. The header
+       waits out of sight until it knows, so the intro never flashes it. */
+    document.body.classList.add('onb-wait');
     Onboard.start().then(function (hash) {
       if (hash && location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
       window.addEventListener('hashchange', function () { route(false); });

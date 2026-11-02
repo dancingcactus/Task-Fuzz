@@ -874,3 +874,19 @@ p.onb-note { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px
 .sc-can { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
 .sc-pals { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 @media (prefers-reduced-motion: reduce) { .onb .spin { animation-duration: 2.4s; } }
+
+/* The onboarding keeps the app's own controls out of sight until Fuzz shows them */
+body.onb-bare #appbar, body.onb-wait #appbar { display: none; }
+body.onb-bare .onb { padding-top: 10vh; }
+/* New task, pointed out: a ring that breathes (still in Calm mode), and a pointer under it */
+.onb-spot { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent); animation: onbspot 1.8s ease-in-out infinite; }
+@keyframes onbspot { 50% { box-shadow: 0 0 0 3px var(--bg), 0 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent); } }
+.calm .onb-spot { animation: none; }
+@media (prefers-reduced-motion: reduce) { .onb-spot { animation: none; } }
+.onb-pointer { position: fixed; z-index: 30; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px 8px 10px; border-radius: 999px;
+  background: var(--ink); color: var(--bg); font-weight: 600; font-size: 14px; white-space: nowrap; box-shadow: var(--shadow); pointer-events: none; animation: onbfade .4s ease-out .3s both; }
+.onb-pointer[hidden] { display: none; }
+.onb-pointer::before { content: ""; position: absolute; top: -6px; left: calc(var(--ax, 50%) - 6px); width: 12px; height: 12px; background: var(--ink); transform: rotate(45deg); }
+.onb-pointer.below::before { top: auto; bottom: -6px; }
+.onb-pointer.below svg { transform: rotate(180deg); }
+@keyframes onbfade { from { opacity: 0; transform: translateY(6px); } }
