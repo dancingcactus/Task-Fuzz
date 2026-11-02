@@ -545,6 +545,8 @@
   function gathering(it) {
     var st = Store.get();
     it.state = 'ai-queued'; it.gathering = true;
+    /* It never reached you, so it doesn't count as a card you cleared; it counts when it lands */
+    if (st.queue.indexOf(it.id) > -1) st.totalEver = Math.max(0, st.totalEver - 1);
     st.queue = st.queue.filter(function (q) { return q !== it.id; });
   }
   /* The files you captured it with, one at a time, each filling the name the task was captured with.

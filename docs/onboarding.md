@@ -214,8 +214,9 @@ that would be handling the request. The page has to survive that and reconnect.
   waits for the server's `boot` id in `GET /health` to change (or a few quiet seconds where nothing
   restarts), checks the client and picks it with `PUT /engine`. A client that isn't there gets a link to
   get it, "I've installed it" to look again, and Try the demo, which runs the same intro on demo data.
-- **The wait** shows the task, what Fuzz is doing, how long it's been and that leaving is fine, with the
-  three tips below it. The calendar file is a 20-minute event each weekday (or each day, for weekends and
+- **The wait** teaches the next habit: keep an eye on Triage, where Fuzz brings tasks he has looked into
+  and any questions he has. The Triage tab is ringed and pointed at. Going there early is fine: Fuzz is
+  shown reading up on the task, and when it lands the lesson is on its card. The three tips sit below. The calendar file is a 20-minute event each weekday (or each day, for weekends and
   no fixed hours), at a time inside your hours, with a link back to Triage.
 - **The first card** is picked to the front of Triage and carries the lesson above its question. Acting on
   it in any way ends the onboarding: the Undo tip, the one line on what's next, and a first read (Run now).

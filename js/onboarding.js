@@ -293,22 +293,25 @@
         '<p>Tell me one thing on your plate. Something I can write or think through works best for now, like a reply to draft or a plan to sketch, since I can’t look things up yet.</p>' +
         '<p>Press the <b>New task</b> button, or <kbd>N</kbd> from anywhere. It’s always there.</p></div>' +
       skipLink() + '</section>' +
-      '<div class="onb-pointer" id="onb-pointer" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>New task</span></div>';
+      pointerHTML('New task');
     heading(true);
-    spotlight(true);
+    spotlight('new');
   }
   /* Ring the header's New task button (the floating one on a phone) and hang the pointer under it */
-  var placeTimer = 0;
+  var placeTimer = 0, spotOn = null;
+  function pointerHTML(label) { return '<div class="onb-pointer" id="onb-pointer" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>' + esc(label) + '</span></div>'; }
+  /* What the pointer is on: New task (the header's, or the floating one on a phone), or the Triage tab */
   function newTaskButton() {
-    var cands = [document.querySelector('.nav-cta'), document.getElementById('fab')];
+    var cands = spotOn === 'triage' ? [document.querySelector('.mainnav [data-nav="triage"]')] : [document.querySelector('.nav-cta'), document.getElementById('fab')];
     return cands.filter(function (b) { if (!b || b.hidden) return false; var r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })[0] || null;
   }
   function spotlight(on) {
     document.querySelectorAll('.onb-spot').forEach(function (b) { b.classList.remove('onb-spot'); });
     window.removeEventListener('resize', place); clearTimeout(placeTimer);
+    spotOn = on || null;
     if (!on) return;
     var fab = document.getElementById('fab');
-    if (fab && window.matchMedia && matchMedia('(max-width: 760px)').matches) fab.hidden = false;
+    if (on === 'new' && fab && window.matchMedia && matchMedia('(max-width: 760px)').matches) fab.hidden = false;
     var b = newTaskButton(); if (b) b.classList.add('onb-spot');
     window.addEventListener('resize', place);
     place(); placeTimer = setTimeout(place, 450);   /* again once the header has faded in */
@@ -352,23 +355,27 @@
     var it = taskItem(), s = status(it);
     if (s === 'moved' || s === 'lost') { if (first) return finish(it ? 'moved' : 'lost'); return; }
     var top = root.querySelector('#onb-status');
+    /* The next habit: Triage is where Fuzz brings things to decide, this task and any question he has */
     var html = s === 'ready'
-      ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">' + (it.result ? 'I already did this one.' : 'It’s ready.') + '</h1><p>“' + esc(it.title) + '” is waiting for you. Take your time; it’ll keep.</p>' +
-        '<button type="button" class="btn primary" data-onb="show" id="onb-show">Show me<kbd aria-hidden="true">↵</kbd></button></div></div>'
-      : '<div class="onb-status">' + Fuzz.mini('think', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">I’m looking into it.</h1><p>“' + esc(it.title) + '” came to me first, so I can read up on it before you decide anything.</p>' +
-        '<p class="meta" role="status"><span class="spin" aria-hidden="true"></span> Usually a minute or two. <span id="onb-el"></span> You can leave this page; this is where you’ll find it.</p></div></div>';
+      ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">' + (it.result ? 'Done. It’s in Triage.' : 'It’s in Triage.') + '</h1><p>“' + esc(it.title) + '” is waiting there for you' + (it.result ? ', already done' : '') + '. Take your time; it’ll keep.</p>' +
+        '<button type="button" class="btn primary" data-onb="show" id="onb-show">Open Triage<kbd aria-hidden="true">↵</kbd></button></div></div>'
+      : '<div class="onb-status">' + Fuzz.mini('think', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">Next, keep an eye on Triage.</h1>' +
+        '<p>That’s where I bring you things to decide: your tasks once I’ve looked into them, and any questions I have. “' + esc(it.title) + '” lands there when I’m done reading up on it.</p>' +
+        '<p class="meta" role="status"><span class="spin" aria-hidden="true"></span> Usually a minute or two. <span id="onb-el"></span> The dot on Triage means something’s waiting.</p></div></div>';
     if (top && top.dataset.s === s && !first) return;
     if (!top || first) {
-      root.innerHTML = '<section class="onb onb-wait" aria-labelledby="onb-h"><div id="onb-status" data-s="' + s + '">' + html + '</div>' +
-        '<section class="onb-tips" aria-labelledby="tips-h"><h2 id="tips-h">While you wait: three things that help a lot of people</h2><p class="meta">Read them or don’t. None of them is required.</p><ol>' +
+      root.innerHTML = '<section class="onb onb-wait" aria-labelledby="onb-h"><div id="onb-status" data-s="' + s + '">' + html + '</div>' + pointerHTML('Triage') +
+        '<section class="onb-tips" aria-labelledby="tips-h"><h2 id="tips-h">Meanwhile: three things that help a lot of people</h2><p class="meta">Read them or don’t. None of them is required.</p><ol>' +
         TIPS.map(function (t, i) {
           return '<li class="onb-tip"><p class="tip-line">' + esc(t.line) + '</p>' + (i === 0 ? calendarHTML() : '') + '<details><summary>Why this helps</summary><p>' + esc(t.why) + '</p></details></li>';
         }).join('') + '</ol></section>' + skipLink() + '</section>';
       heading(true);
+      spotlight('triage');
     } else {
       top.dataset.s = s; top.innerHTML = html;
       var b = root.querySelector('#onb-show'); if (b) b.focus({ preventScroll: true });
-      Say.announce(it.result ? 'Ready. I already did this one.' : 'It’s ready.');
+      Say.announce('It’s in Triage.');
+      place();
     }
     clearInterval(ticker);
     if (s === 'gathering') {
@@ -432,10 +439,11 @@
   }
   /* Triage asks for the lesson on the card in front: one action, the one that fits */
   function guide(it) {
-    if (!st || st.done || st.step !== 'card' || !it) return null;
+    if (!st || st.done || (st.step !== 'card' && st.step !== 'wait') || !it) return null;
     var mine = taskItem();
     if (!mine || mine.id !== it.id) return null;
     guidedId = it.id;
+    if (st.step === 'wait') save({ step: 'card' });   /* you went to Triage yourself, which is the habit */
     if (it.result) {
       return { line: 'This one’s already done. Have a look.',
         html: '<aside class="onb-guide" aria-labelledby="guide-h">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3 id="guide-h">I already did this one</h3>' +
