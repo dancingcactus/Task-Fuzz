@@ -138,15 +138,19 @@
   function themePicks(attr) {
     var mode = Themes.resolveMode(prefs.mode);
     function sw(p) { return '<span class="pal-sw" style="background:' + p.bg + ';border-color:' + p.line + '"><i style="background:' + p.accent + '"></i><i style="background:' + p.link + '"></i><i style="background:' + p.ink + '"></i></span>'; }
-    var picks = Themes.list.map(function (t) {
+    function pick(t) {
       var on = t.id === prefs.theme;
-      return '<button type="button" class="pal' + (t.retro ? ' pal-retro' : '') + '" ' + attr + '="' + t.id + '" aria-pressed="' + on + '">' + sw(Themes.palette(t.id, mode, prefs.contrast)) + '<span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
-    });
+      return '<button type="button" class="pal" ' + attr + '="' + t.id + '" aria-pressed="' + on + '">' + sw(Themes.palette(t.id, mode, prefs.contrast)) + '<span class="pal-n">' + esc(t.name) + '</span><span class="pal-f">' + esc(t.note) + '</span></button>';
+    }
+    var picks = Themes.list.filter(function (t) { return !t.special; }).map(pick);
     var rnd = prefs.theme === 'random', today = rnd && Themes.byId(shown);
     var mix = ['honey', 'lagoon', 'plum'].map(function (id) { return Themes.palette(id, mode, prefs.contrast).accent; });
     picks.push('<button type="button" class="pal" ' + attr + '="random" aria-pressed="' + rnd + '"><span class="pal-sw pal-rnd" style="background:' + Themes.palette('terracotta', mode, prefs.contrast).bg + ';border-color:' + Themes.palette('terracotta', mode, prefs.contrast).line + '">' +
       mix.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('') + '</span><span class="pal-n">Random</span><span class="pal-f">' +
       (today ? 'Today: ' + esc(today.name) : 'A new one each time you open Fuzz') + '</span></button>');
+    /* The special ones on a line of their own, after a divider: Random never picks them */
+    var special = Themes.list.filter(function (t) { return t.special; });
+    if (special.length) picks.push('<div class="pal-divider" role="separator"><span>Specials</span><small>Random skips these</small></div>' + special.map(pick).join(''));
     return picks.join('');
   }
   function paintPopover() {

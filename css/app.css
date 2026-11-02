@@ -967,3 +967,7 @@ html[data-theme="technicolor"][data-mode="dark"] body::after {
 html[data-theme="technicolor"][data-contrast="high"] body::after { display: none; }
 /* Fuzz in rich, saturated colour */
 html[data-theme="technicolor"] .pwrap, html[data-theme="technicolor"] .fzmini { filter: saturate(1.35) contrast(1.06); }
+
+/* The special themes sit on their own line, after a labelled divider */
+.pal-divider { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: var(--bw) solid var(--line); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.pal-divider small { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
