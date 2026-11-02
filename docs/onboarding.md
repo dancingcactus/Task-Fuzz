@@ -252,7 +252,9 @@ that would be handling the request. The page has to survive that and reconnect.
   emails, Slack IDs); App (status, set up, repair, switch, check again); Working hours (the same choices
   as Fuzz's question); What Fuzz can read and send (one row per source in plain words, with Reading and
   Sending switches, List again, and each tool by name under Details, with its token cost); Where Fuzz
-  saves files; and Show me around again. Theme, contrast and Calm mode stay in the quick settings.
+  saves files; Look and feel (theme, appearance, contrast, code font, Calm mode, applied at once and kept
+  in this browser, the same as the header's quick settings); and Show me around again. In the demo the
+  page has only Look and feel and the tour.
 
 Not built yet:
 

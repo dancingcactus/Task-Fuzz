@@ -923,3 +923,6 @@ body.onb-bare .onb { padding-top: 10vh; }
 .set-switches { display: flex; gap: 18px; }
 .set-details summary { cursor: pointer; color: var(--link); font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; }
 .set-details code { font-size: 13px; overflow-wrap: anywhere; }
+
+.set-pals { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.set-sec .selectrow select { min-width: 0; width: 100%; max-width: 420px; }
