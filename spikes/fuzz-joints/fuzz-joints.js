@@ -66,7 +66,7 @@
       lrot: num(o.lrot, 0), rrot: num(o.rrot, 0), lw: o.lrot == null ? 0 : 1, rw: o.rrot == null ? 0 : 1,
       br: num(o.br, 1), sit: num(o.sit, 0), dg: num(o.dg, 0),
       tp: num(o.tp, 0), th: num(o.th, 0), tr: num(o.tr, 0), tf: num(o.tf, 1), ex: num(o.ex, 0), ey: num(o.ey, 0),
-      pp: num(o.pp, 0), pg: num(o.pg, 0), pm: num(o.pm, 0)
+      pp: num(o.pp, 0), pg: num(o.pg, 0), pm: num(o.pm, 0), pr: num(o.pr, 0)
     };
   }
   function num(v, d) { return v == null ? d : v; }
@@ -74,7 +74,7 @@
   /* The order things move in, as a fraction of the beat: hips and feet first, the claws last. */
   var GROUPS = [
     { keys: ['x', 'y', 'rot', 'lfx', 'lfy', 'rfx', 'rfy', 'lfr', 'rfr', 'llb', 'rlb', 'br', 'sit', 'dg', 'tp', 'ex', 'ey'], start: 0 },
-    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th', 'pp', 'pg', 'pm'], start: .08, arm: true },
+    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th', 'pp', 'pg', 'pm', 'pr'], start: .08, arm: true },
     { keys: ['head'], start: .18 },
     { keys: ['lgap', 'rgap', 'lrot', 'rrot', 'lw', 'rw', 'tr', 'tf'], start: .26 }
   ];
@@ -221,6 +221,23 @@
       { d: 70, tight: 1, ease: OUT, rh: [118, 153], lh: [82, 153], y: 1.5 },
       { d: 90, hold: 260, tight: 1, ease: OUT }
     ]) };
+  /* A single sheet feeds out of the chest slot in jerks, like an old printer: pr is how far out it is, and
+     solo hides the other two sheets. The claw takes it from the slot, Fuzz reads it, and it goes behind
+     the back with the rest. */
+  function feed(n, y) { return { d: 110, hold: 150, tight: 1, ease: OUT, pp: 1, pr: n, y: y, head: 5, ey: 3 }; }
+  function fedOut(o) { return mix({ pp: 1, pr: 1, head: 5, ey: 3, rh: [118, 148], rrot: 180, rgap: 9 }, o); }
+  function reading(o) { return mix({ pp: 1, pr: 1, pg: 1, rh: [166, 124], rL: 60, rgap: 9, head: 7, ex: 4 }, o); }
+  R.printout = { label: 'Working: printout', say: 'Printing your day…', s: { mood: 'working', solo: true },
+    loop: [
+      { d: 300, hold: 500, ease: IO },
+      feed(.25, .6), feed(.5, 0), feed(.75, .6), feed(1, 0),
+      fedOut({ d: 320, ease: IO, rgap: 34 }),
+      fedOut({ d: 110, hold: 120, ease: OUT }),
+      fedOut({ d: 150, ease: 'in(2)', pg: 1, rh: [118, 152] }),
+      reading({ d: 460, ease: IO, ey: 0 }),
+      reading({ d: 300, hold: 700, ease: IO, ey: -1 }),
+      reading({ d: 300, hold: 800, ease: IO, ey: 2, head: 9 })
+    ].concat(PUT_AWAY) };
   /* A run cycle: down on the planted foot, up through the push-off, then the same with the feet swapped.
      The fists pump opposite the feet, chest to hip, staying on the side of the shoulder that keeps the
      elbows low and out. Past it they'd flip over at every swing. */
@@ -413,6 +430,8 @@
 
   var SHEETHOLD = 18, SHEETGRIP = 14;   // left hand to stack centre (right hand is the same, across it), and hand to stack when the right claw has it all
   var SPINE = 7;   // how thick the tape is, seen from the side
+  var SLOT = 133;   // where the printout comes through the chest
+  var clips = 0;
   var JOINT = '<g class="joint %"><circle r="4.5"/><circle class="pin" r="1.5"/></g>';
 
   var TAPE = '<g class="vhs"><g class="vface"><rect class="vb" x="-17" y="-10" width="34" height="20" rx="1.8"/>' +
@@ -447,9 +466,11 @@
 
   function Rig(host, opts) {
     this.host = host; this.opts = opts || {};
+    var clipId = this.clip = 'fuzz-slot-' + (++clips);
     this.body = this.opts.body !== false;
     host.innerHTML =
       '<svg class="rig" viewBox="0 0 200 222" role="img" aria-label="Fuzz with a body">' +
+        '<clipPath id="' + clipId + '"><rect x="0" y="' + SLOT + '" width="200" height="100"/></clipPath>' +
         '<ellipse class="bshadow" cx="100" cy="' + (GROUND + .5) + '" rx="34" ry="3.6"/>' +
         '<g class="legs">' + legSvg('l') + legSvg('r') +
           '<g class="foot lfoot">' + FOOT + '</g><g class="foot rfoot">' + FOOT + '</g></g>' +
@@ -481,7 +502,7 @@
       larm: q('.larm'), rarm: q('.rarm'), lshcap: q('.lshcap'), rshcap: q('.rshcap'), aunder: q('.aunder'), aback: q('.aback'), afront: q('.afront') };
     this.layerOf = { l: 'afront', r: 'afront' };
     this.p = expand({}, {});
-    this.breath = { v: -1 }; this.swing = { v: -1 }; this.pz = 0;
+    this.breath = { v: -1 }; this.swing = { v: -1 }; this.pz = 0; this.solo = false;
     this.setBody(this.body);
     this.setHinges(!!this.opts.hinges);
     var self = this;
@@ -516,7 +537,7 @@
     this.layer('l', v('llay', 'afront')); this.layer('r', v('rlay', 'afront'));
     var pz = this.el[v('pl', 'front') === 'back' ? 'pback' : 'pfront'];
     if (this.el.paper.parentNode !== pz) pz.appendChild(this.el.paper);
-    this.pz = v('pz', 0);
+    this.pz = v('pz', 0); this.solo = !!v('solo', false);
     this.stack().forEach(function (k) { this.el.paper.appendChild(this.el.sheets[k]); }, this);
     if (b.fx) b.fx(this);
   };
@@ -573,8 +594,8 @@
     var seated = this.p.sit > .5, stay = r.once && seated;
     var s = stay ? mix(SEAT, r.s) : r.s || {}, from = {}, k, t = 0;
     var sitting = !r.once && !seated && s.sit;
-    var holding = this.p.pp > .5, needs = s.pp > .5;
-    var lead = (holding && !needs ? PUT_AWAY : []).concat(r.once ? [] : seated && !s.sit ? GET_UP : sitting ? SIT_DOWN : [], !holding && needs ? TAKE_OUT : []), leadS = { mood: sitting ? 'idle' : s.mood };
+    var holding = this.p.pp > .5, needs = s.pp > .5, keep = holding && needs && !this.solo;
+    var lead = (holding && !keep ? PUT_AWAY : []).concat(r.once ? [] : seated && !s.sit ? GET_UP : sitting ? SIT_DOWN : [], needs && !keep ? TAKE_OUT : []), leadS = { mood: sitting ? 'idle' : s.mood, solo: this.solo };
     for (k in this.p) from[k] = this.p[k];
     var tl = A.createTimeline({ onComplete: function () {
       if (self.tl !== tl) return;
@@ -679,15 +700,18 @@
     var n = Math.ceil(this.pz / 2) % 3;
     return [0, 1, 2].map(function (i) { return (i - n + 3) % 3; });
   };
-  /* The stack sits on the left claw, or out past the right one once it has them all to itself. */
+  /* The stack sits on the left claw, or out past the right one once it has them all to itself. A printout
+     starts in the chest slot instead, cut off at the slot until the claw takes it. */
   Rig.prototype.paper = function (l, p, a) {
     var c = this.p, g = this.el.paper, on = c.pp > .5, r = a * Math.PI / 180, i;
     g.style.display = on ? 'inline' : 'none';
     if (!on) return;
-    var cx = l[0] + SHEETHOLD, cy = l[1], order = this.stack(), lifted = order[this.pz % 2 ? 0 : 2];
+    var cx = this.solo ? 100 : l[0] + SHEETHOLD, cy = this.solo ? SLOT - 14 + c.pr * 28 : l[1], order = this.stack(), lifted = order[this.pz % 2 ? 0 : 2];
+    if (this.solo && c.pg < .01) this.el.pfront.setAttribute('clip-path', 'url(#' + this.clip + ')'); else this.el.pfront.removeAttribute('clip-path');
     g.setAttribute('transform', 'translate(' + f(cx + (p[0] + Math.cos(r) * SHEETGRIP - cx) * c.pg) + ' ' + f(cy + (p[1] + Math.sin(r) * SHEETGRIP - cy) * c.pg) + ') rotate(' + f(c.pg * 10) + ')');
     for (i = 0; i < 3; i++) {
-      var side = i - 1, x = side * 1.3, y = Math.abs(side) * .8, t = side * 2;
+      var side = i - 1, x = this.solo ? 0 : side * 1.3, y = this.solo ? 0 : Math.abs(side) * .8, t = this.solo ? 0 : side * 2;
+      this.el.sheets[order[i]].style.display = this.solo && i !== 2 ? 'none' : 'inline';
       if (order[i] === lifted) { x += (p[0] - SHEETHOLD - cx - x) * c.pm; y += (p[1] - cy - y) * c.pm; t += c.pm * 8; }
       this.el.sheets[order[i]].setAttribute('transform', 'translate(' + f(x) + ' ' + f(y) + ') rotate(' + f(t) + ')');
     }

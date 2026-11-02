@@ -28,6 +28,8 @@ anime.js copy from that folder, so keep the two spikes together.
 - **Working**: on this rig, Fuzz holds a stack of papers and moves the front sheet to the back, three times, then taps
   them even. Take out papers and Put papers away are transitions, like Sit down and Get up: they run on the way in and
   out of Working, and the studio lists them with the other transitions.
+- **Working: printout**: a second working reaction. A sheet feeds out of the chest slot in jerks, Fuzz takes it, reads
+  it, and puts it behind its back the same way as the papers.
 - **Rushing**: the fists pump opposite the feet, chest to hip, on the side of the shoulder that keeps the elbows low.
 - **Sit & doze and Power off**: Fuzz sits down awake and swings its legs before dropping off. Sit & doze lets one z
   float up with each nod.

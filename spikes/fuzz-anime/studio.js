@@ -20,10 +20,10 @@
     ['Legs', { lf: 'L foot', rf: 'R foot', llb: 'L knee', rlb: 'R knee', lfr: 'L foot tilt', rfr: 'R foot tilt', dg: 'Leg swing' }],
     ['Face', { mood: 'Mood', urgency: 'Urgency', cool: 'Shades', ex: 'Eyes x', ey: 'Eyes y' }],
     ['Tape', { tp: 'Tape out', th: 'Tape to claw', tr: 'Tape tilt', tf: 'Tape turn' }],
-    ['Papers', { pp: 'Papers out', pg: 'Papers in R claw', pm: 'Sheet in R claw', pz: 'Sheet order', pl: 'Papers layer' }]
+    ['Papers', { pp: 'Papers out', pg: 'Papers in R claw', pm: 'Sheet in R claw', pz: 'Sheet order', pl: 'Papers layer', pr: 'Sheet printed', solo: 'One sheet' }]
   ];
   var LABEL = {}; FIELDS.forEach(function (g) { for (var k in g[1]) LABEL[k] = g[1][k]; });
-  var FALLBACK = { lL: 50, rL: 50, llb: .75, rlb: .75, br: 1, lgap: FA.gaps.open, rgap: FA.gaps.open, mood: 'idle', lhand: 'open', rhand: 'open', llay: 'afront', rlay: 'afront', cool: true, tf: 1, pl: 'front' };
+  var FALLBACK = { lL: 50, rL: 50, llb: .75, rlb: .75, br: 1, lgap: FA.gaps.open, rgap: FA.gaps.open, mood: 'idle', lhand: 'open', rhand: 'open', llay: 'afront', rlay: 'afront', cool: true, tf: 1, pl: 'front', solo: true };
   var FEEL0 = copy(FEEL), LEADS0 = GROUPS.map(function (g) { return g.start; });
 
   function $(id) { return document.getElementById(id); }
@@ -189,12 +189,12 @@
       else if (CHOICE[k]) kids.push(h('select', { 'aria-label': LABEL[k], onchange: function (e) { set(e.target.value); } }, CHOICE[k].map(function (c) {
         var o = h('option', { text: c, value: c }); o.selected = c === v; return o;
       })));
-      else if (k === 'cool') kids.push(input('', '', function (e) { set(e.target.checked); }, { type: 'checkbox', 'aria-label': LABEL[k] }));
+      else if (k === 'cool' || k === 'solo') kids.push(input('', '', function (e) { set(e.target.checked); }, { type: 'checkbox', 'aria-label': LABEL[k] }));
       else kids.push(input('n', v, function (e) {
         var x = num(e.target.value);
         if (x !== null || k === 'lrot' || k === 'rrot') set(x);  // an empty wrist goes back to following the arm
       }, { type: 'number', step: Math.abs(v) < 3 ? .1 : 1, 'aria-label': LABEL[k] }));
-      if (k === 'cool') kids[1].checked = !!v;
+      if (k === 'cool' || k === 'solo') kids[1].checked = !!v;
       kids.push(h('button', { class: 'x', type: 'button', text: '×', 'aria-label': 'Remove ' + LABEL[k], onclick: function () { delete obj[k]; ctx.edit(); draw(); } }));
       return h('span', { class: 'f', title: k }, kids);
     }
