@@ -6,21 +6,24 @@
   var FA = window.FuzzJoints, A = window.anime, R = FA.reactions, FEEL = FA.feel, GROUPS = FA.groups;
   var KEY = 'fuzz-studio-v1', FRAME = 1000 / 60;
   var T = {
-    sitDown: { label: 'Sit down', list: FA.transitions.sitDown, from: 'idle', target: 'sleepy' },
-    getUp: { label: 'Get up', list: FA.transitions.getUp, from: 'sleepy', target: 'idle' }
+    sitDown: { label: 'Sit down', list: FA.transitions.sitDown, code: 'SIT_DOWN', from: 'idle', target: 'sleepy', mood: 'idle', when: 'whenever Fuzz has to get onto the card.' },
+    getUp: { label: 'Get up', list: FA.transitions.getUp, code: 'GET_UP', from: 'sleepy', target: 'idle', when: 'whenever Fuzz has to get off the edge of the card.' },
+    takeOut: { label: 'Take out papers', list: FA.transitions.takeOut, code: 'TAKE_OUT', from: 'idle', target: 'working', when: 'whenever Fuzz needs the papers in hand.' },
+    putAway: { label: 'Put papers away', list: FA.transitions.putAway, code: 'PUT_AWAY', from: 'working', target: 'idle', when: 'whenever Fuzz leaves the papers for anything else.' }
   };
   var MOODS = ['idle', 'happy', 'eager', 'proud', 'grateful', 'caring', 'thinking', 'puzzled', 'working', 'rushed', 'worried', 'sheepish', 'stare', 'bored', 'sleepy', 'chill', 'boop'];
   var EASES = ['linear', 'inOutSine', 'in(2)', 'in(2.4)', 'out(2)', 'out(3)', 'inOut(2)', 'inOut(3)', 'outBack(1.2)', 'outBack(1.6)', 'outBack(2)', 'outElastic(1,.45)'];
-  var CHOICE = { mood: MOODS, lhand: ['open', 'fist', 'point', 'shut'], rhand: ['open', 'fist', 'point', 'shut'], llay: ['afront', 'aback', 'aunder'], rlay: ['afront', 'aback', 'aunder'] };
+  var CHOICE = { mood: MOODS, lhand: ['open', 'fist', 'point', 'shut'], rhand: ['open', 'fist', 'point', 'shut'], llay: ['afront', 'aback', 'aunder'], rlay: ['afront', 'aback', 'aunder'], pl: ['front', 'back'] };
   var FIELDS = [
     ['Body', { y: 'Body y', x: 'Hips x', rot: 'Lean', head: 'Head tilt', br: 'Breath', sit: 'Seated' }],
     ['Arms', { lh: 'L hand', rh: 'R hand', lL: 'L arm length', rL: 'R arm length', lst: 'L straight path', rst: 'R straight path', lrot: 'L wrist', rrot: 'R wrist', lgap: 'L claw gap', rgap: 'R claw gap', lhand: 'L claw', rhand: 'R claw', llay: 'L arm layer', rlay: 'R arm layer' }],
     ['Legs', { lf: 'L foot', rf: 'R foot', llb: 'L knee', rlb: 'R knee', lfr: 'L foot tilt', rfr: 'R foot tilt', dg: 'Leg swing' }],
     ['Face', { mood: 'Mood', urgency: 'Urgency', cool: 'Shades', ex: 'Eyes x', ey: 'Eyes y' }],
-    ['Tape', { tp: 'Tape out', th: 'Tape to claw', tr: 'Tape tilt', tf: 'Tape turn' }]
+    ['Tape', { tp: 'Tape out', th: 'Tape to claw', tr: 'Tape tilt', tf: 'Tape turn' }],
+    ['Papers', { pp: 'Papers out', pg: 'Papers in R claw', pm: 'Sheet in R claw', pz: 'Sheet order', pl: 'Papers layer' }]
   ];
   var LABEL = {}; FIELDS.forEach(function (g) { for (var k in g[1]) LABEL[k] = g[1][k]; });
-  var FALLBACK = { lL: 50, rL: 50, llb: .75, rlb: .75, br: 1, lgap: FA.gaps.open, rgap: FA.gaps.open, mood: 'idle', lhand: 'open', rhand: 'open', llay: 'afront', rlay: 'afront', cool: true, tf: 1 };
+  var FALLBACK = { lL: 50, rL: 50, llb: .75, rlb: .75, br: 1, lgap: FA.gaps.open, rgap: FA.gaps.open, mood: 'idle', lhand: 'open', rhand: 'open', llay: 'afront', rlay: 'afront', cool: true, tf: 1, pl: 'front' };
   var FEEL0 = copy(FEEL), LEADS0 = GROUPS.map(function (g) { return g.start; });
 
   function $(id) { return document.getElementById(id); }
@@ -80,7 +83,7 @@
       if (!is && !note) return;
       out.push('// ' + (T[id] ? T[id].label : R[id].label) + (note ? ': ' + note : ''));
       if (!is) return;
-      if (T[id]) listDiff(out, id === 'sitDown' ? 'SIT_DOWN' : 'GET_UP', T[id].list, revive(JSON.parse(base[id])));
+      if (T[id]) listDiff(out, T[id].code, T[id].list, revive(JSON.parse(base[id])));
       else {
         var was = JSON.parse(base[id]), r = R[id], p = 'R.' + id;
         if (r.say !== was.say) out.push(p + '.say = ' + lit(r.say) + ';');
@@ -106,7 +109,7 @@
   function clearTimers() { timers.forEach(clearTimeout); timers = []; }
   function say(msg) { $('status').textContent = msg || ''; }
 
-  function stanceOf() { return T[edit] ? { mood: (R[target].s || {}).mood } : R[edit].s; }
+  function stanceOf() { return T[edit] ? { mood: T[edit].mood || (R[target].s || {}).mood } : R[edit].s; }
   function run() {
     var from = $('from').value;
     clearTimers(); held = null; paused = false; marks(); say('');
@@ -281,7 +284,7 @@
       touch();
     }, { placeholder: 'Notes for later, such as “the arm feels late”. These go out with Copy changes.', 'aria-label': 'Notes' });
     if (T[edit]) {
-      box.appendChild(h('p', { class: 'hint', text: 'Plays before ' + R[T[edit].target].label + ' whenever Fuzz has to ' + (edit === 'sitDown' ? 'get onto the card.' : 'get off the edge of the card.') }));
+      box.appendChild(h('p', { class: 'hint', text: 'Plays before ' + R[T[edit].target].label + ' ' + T[edit].when }));
       box.appendChild(note);
       return;
     }

@@ -65,7 +65,8 @@
       lgap: num(o.lgap, GAP[o.lhand || 'open']), rgap: num(o.rgap, GAP[o.rhand || 'open']),
       lrot: num(o.lrot, 0), rrot: num(o.rrot, 0), lw: o.lrot == null ? 0 : 1, rw: o.rrot == null ? 0 : 1,
       br: num(o.br, 1), sit: num(o.sit, 0), dg: num(o.dg, 0),
-      tp: num(o.tp, 0), th: num(o.th, 0), tr: num(o.tr, 0), tf: num(o.tf, 1), ex: num(o.ex, 0), ey: num(o.ey, 0)
+      tp: num(o.tp, 0), th: num(o.th, 0), tr: num(o.tr, 0), tf: num(o.tf, 1), ex: num(o.ex, 0), ey: num(o.ey, 0),
+      pp: num(o.pp, 0), pg: num(o.pg, 0), pm: num(o.pm, 0)
     };
   }
   function num(v, d) { return v == null ? d : v; }
@@ -73,7 +74,7 @@
   /* The order things move in, as a fraction of the beat: hips and feet first, the claws last. */
   var GROUPS = [
     { keys: ['x', 'y', 'rot', 'lfx', 'lfy', 'rfx', 'rfy', 'lfr', 'rfr', 'llb', 'rlb', 'br', 'sit', 'dg', 'tp', 'ex', 'ey'], start: 0 },
-    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th'], start: .08, arm: true },
+    { keys: ['lA', 'lR', 'rA', 'rR', 'lL', 'rL', 'lX', 'lY', 'rX', 'rY', 'lst', 'rst', 'th', 'pp', 'pg', 'pm'], start: .08, arm: true },
     { keys: ['head'], start: .18 },
     { keys: ['lgap', 'rgap', 'lrot', 'rrot', 'lw', 'rw', 'tr', 'tf'], start: .26 }
   ];
@@ -98,13 +99,13 @@
     return o;
   }
   R.wave = { label: 'Wave hello', say: 'Oh hey, you’re back!', s: { mood: 'happy', rlay: 'aback', rL: WAVE_ARM, rot: -2, x: -1.5, head: -5 },
-    enter: [{ d: 170, ease: IO, rh: [142, 168], y: 1.5, rot: 1 }],
+    enter: [{ d: 170, ease: IO, rh: [142, 168], y: 1.5, rot: 1 }, wave(-78, -74, { d: 300, hold: 60, ease: OUT, aease: 'outBack(1.4)' })],
     loop: [
-      wave(-78, -74, { d: 300, hold: 650, ease: OUT, aease: 'outBack(1.4)' }),
       wave(-56, -42, { d: 190, ease: SINE }),
       wave(-90, -98, { d: 230, ease: SINE, head: -7 }),
       wave(-56, -42, { d: 230, ease: SINE }),
-      wave(-90, -98, { d: 230, ease: SINE, head: -7 })
+      wave(-90, -98, { d: 230, ease: SINE, head: -7 }),
+      wave(-78, -74, { d: 170, hold: 650, ease: SINE })
     ] };
   R.cheer = { label: 'Cheer', say: 'Inbox zero! Look at you go!', s: { mood: 'happy', llay: 'aback', rlay: 'aback', lL: 58, rL: 58, br: 0 }, loop: [
     { d: 210, ease: 'out(2.2)', aease: 'inOut(1.6)', y: 9, head: 3, lh: [62, 158], rh: [138, 158], lf: [86, 204], rf: [114, 204], lgap: 14, rgap: 14 },
@@ -171,11 +172,13 @@
   R.point = { label: 'Point at a task', say: 'This one’s due tomorrow — want to start it?', s: { mood: 'eager', lf: [86, 204], rf: [116, 204], lh: [64, 172], rhand: 'point' },
     enter: [{ d: 190, ease: IO, rh: [136, 150], rot: 3, head: 3 }],
     loop: [
-      { d: 260, hold: 1500, ease: OUT, aease: 'outBack(1.6)', rh: [176, 128], rot: -4, head: -6 },
-      { d: 130, ease: IO, rh: [168, 127], rot: -3, head: -5 },
-      { d: 170, hold: 1100, ease: 'outBack(1.8)', rh: [178, 128], rot: -5, head: -7 }
+      { d: 260, hold: 1300, ease: OUT, aease: 'outBack(1.6)', rh: [176, 128], rot: -4, head: -6 },
+      { d: 70, tight: 1, ease: OUT, rh: [167, 123], rot: -3, head: -6 },
+      { d: 110, hold: 50, tight: 1, ease: 'outBack(1.8)', rh: [176, 128], rot: -4, head: -6 },
+      { d: 70, tight: 1, ease: OUT, rh: [167, 123], rot: -3, head: -6 },
+      { d: 110, tight: 1, ease: 'outBack(1.8)', rh: [176, 128], rot: -4, head: -6 }
     ] };
-  R.thinking = { label: 'Thinking', say: 'Hmm, which of these is really urgent…', s: { mood: 'thinking', rh: [106, 117], rhand: 'fist', lh: [112, 152], lhand: 'fist', head: 7 }, loop: [
+  R.thinking = { label: 'Thinking', say: 'Hmm, which of these is really urgent…', s: { mood: 'thinking', rh: [92, 122], rL: 60, rhand: 'fist', lh: [100, 152], lhand: 'fist', head: 7 }, loop: [
     { d: 420, hold: 1100, ease: IO },
     { d: 110, ease: OUT, rf: [113, 200], rfr: -14 },
     { d: 120, ease: 'in(2)', rf: [113, 204] },
@@ -183,23 +186,49 @@
     { d: 120, hold: 300, ease: 'in(2)', rf: [113, 204] },
     { d: 600, hold: 1300, ease: IO, head: 10, rot: 1 }
   ] };
-  R.working = { label: 'Working', say: 'Sorting your inbox…', s: { mood: 'working', lh: [90, 152], rh: [110, 152], lhand: 'fist', rhand: 'fist', head: 4 }, loop: [
-    { d: 300, hold: 90, ease: IO },
-    { d: 60, tight: 1, ease: OUT, lh: [90, 148] },
-    { d: 70, tight: 1, ease: OUT, rh: [110, 148] },
-    { d: 60, tight: 1, ease: OUT, lh: [90, 148] },
-    { d: 90, hold: 180, tight: 1, ease: OUT },
-    { d: 60, tight: 1, ease: OUT, rh: [110, 148] },
-    { d: 60, tight: 1, ease: OUT, lh: [90, 148] },
-    { d: 90, hold: 520, tight: 1, ease: OUT },
-    { d: 260, hold: 420, ease: IO, head: 7, y: .5 }
-  ] };
-  /* A run cycle: down on the planted foot, up through the push-off, then the same with the feet swapped. */
+  /* The papers live behind Fuzz. pp says they're out, pg hands them from the left claw to the right one,
+     and pl says which side of the torso they're on. They appear and vanish behind the torso, and only
+     change sides out past its edge, the same as an arm. The wrist stays in line with the forearm on the
+     way, so the stack hangs from the claw. A stance with pp set needs them in hand, and
+     play takes them out or puts them away as a transition, like sitting down.
+     Working lifts the front sheet off with the right claw (pm) and slides it in behind the rest. pz counts
+     half steps of that: even while the sheet is at the front, odd once it has gone to the back. */
+  var BEHIND = { rh: [112, 140], rlay: 'aunder', pl: 'back', pg: 1, rot: 3, head: 2 };
+  var BESIDE = { rh: [150, 158], rgap: 9, pp: 1, pg: 1, head: 2 };
+  var TAKE_OUT = [
+    mix(BEHIND, { d: 380, ease: IO, pp: 0, rgap: 34 }),
+    mix(BEHIND, { d: 130, hold: 110, ease: OUT, pp: 1, rgap: 9 }),
+    mix(BESIDE, { d: 300, ease: IO, rlay: 'aunder', pl: 'back' }),
+    mix(BESIDE, { d: 280, ease: IO, rh: [130, 146], lh: [82, 148], lrot: 0, lgap: 9, head: 5 })
+  ];
+  var PUT_AWAY = [
+    mix(BESIDE, { d: 300, ease: IO }),
+    mix(BEHIND, { d: 300, ease: IO, pp: 1, rgap: 9 }),
+    mix(BEHIND, { d: 130, hold: 90, ease: OUT, pp: 0, rgap: 34 }),
+    { d: 320, ease: IO, rlay: 'aunder', pl: 'back' }
+  ];
+  function toBack(n) {
+    return [
+      { d: 240, ease: IO, pz: n * 2, pm: 1, rh: [146, 156], rot: 1, head: 5 },
+      { d: 130, ease: IO, pz: n * 2 + 1, pm: 1, rh: [144, 150], rot: 1, head: 5 },
+      { d: 240, hold: 200, ease: IO, pz: n * 2 + 1 }
+    ];
+  }
+  R.working = { label: 'Working', say: 'Sorting your inbox…', s: { mood: 'working', pp: 1, rh: [118, 148], lh: [82, 148], rrot: 180, lrot: 0, rgap: 9, lgap: 9, rst: 1, head: 6 },
+    loop: [{ d: 200, hold: 320, ease: IO }].concat(toBack(0), toBack(1), toBack(2), [
+      { d: 70, tight: 1, ease: OUT, rh: [118, 153], lh: [82, 153], y: 1.5 },
+      { d: 90, tight: 1, ease: OUT },
+      { d: 70, tight: 1, ease: OUT, rh: [118, 153], lh: [82, 153], y: 1.5 },
+      { d: 90, hold: 260, tight: 1, ease: OUT }
+    ]) };
+  /* A run cycle: down on the planted foot, up through the push-off, then the same with the feet swapped.
+     The fists pump opposite the feet, chest to hip, staying on the side of the shoulder that keeps the
+     elbows low and out. Past it they'd flip over at every swing. */
   R.rushed = { label: 'Rushing', say: 'Due in 20 minutes! Go go go!', s: { mood: 'rushed', urgency: 3, lhand: 'fist', rhand: 'fist', rot: 4, br: 0 }, loop: [
-    { d: 90, tight: 1, ease: SINE, y: 3, lf: [94, 204], rf: [108, 192], lfr: -6, rfr: 10, lh: [58, 164], rh: [146, 136], head: 1 },
-    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 203], rf: [112, 198], lfr: 12, rfr: -8, lh: [60, 156], rh: [142, 146], head: -1 },
-    { d: 90, tight: 1, ease: SINE, y: 3, lf: [92, 192], rf: [106, 204], lfr: 10, rfr: -6, lh: [64, 136], rh: [138, 164], head: 1 },
-    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 198], rf: [112, 203], lfr: -8, rfr: 12, lh: [62, 146], rh: [140, 156], head: -1 }
+    { d: 90, tight: 1, ease: SINE, y: 3, lf: [94, 204], rf: [108, 192], lfr: -6, rfr: 10, lh: [92, 146], rh: [136, 166], head: 1 },
+    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 203], rf: [112, 198], lfr: 12, rfr: -8, lh: [76, 158], rh: [124, 158], head: -1 },
+    { d: 90, tight: 1, ease: SINE, y: 3, lf: [92, 192], rf: [106, 204], lfr: 10, rfr: -6, lh: [64, 166], rh: [108, 146], head: 1 },
+    { d: 90, tight: 1, ease: SINE, y: -5, lf: [88, 198], rf: [112, 203], lfr: -8, rfr: 12, lh: [76, 158], rh: [124, 158], head: -1 }
   ] };
   R.worried = { label: 'Worried', say: 'Uh oh. That deadline slipped past.', s: { mood: 'worried', lh: [95, 136], rh: [105, 136], lhand: 'fist', rhand: 'fist', llb: -1, rlb: -1, lf: [84, 204], rf: [116, 204], head: -3 }, loop: [
     { d: 340, hold: 520, ease: IO, y: 2 },
@@ -243,28 +272,36 @@
     atSlot({ d: 150, hold: 180, ease: OUT, rh: [116, 142], rgap: 34, tp: 0, y: 1.5, head: 6 }),
     { d: 560, ease: IO }
   ] };
-  R.grateful = { label: 'Grateful', say: 'Aw, thanks for checking in with me.', s: { mood: 'grateful', lh: [103, 140], rh: [109, 146] }, loop: [
+  /* One claw over the heart, the other at Fuzz's side, and a small bow. */
+  R.grateful = { label: 'Grateful', say: 'Aw, thanks for checking in with me.', s: { mood: 'grateful', rh: [112, 146], rrot: 180, rhand: 'fist' }, loop: [
     { d: 460, hold: 300, ease: IO },
     { d: 620, hold: 420, ease: IO, rot: 2, y: 4, head: 10 },
     { d: 720, hold: 700, ease: IO, rot: -1, y: 0, head: -3 }
   ] };
-  R.sulk = { label: 'Arms crossed', say: 'You snoozed it again. Fine.', s: { mood: 'stare', lh: [114, 147], rh: [86, 149], lhand: 'fist', rhand: 'fist', head: -7, rot: 2, lf: [86, 204], rf: [114, 204] }, loop: [
+  R.sulk = { label: 'Arms crossed', say: 'You snoozed it again. Fine.', s: { mood: 'stare', lh: [106, 147], rh: [91, 149], lhand: 'fist', rhand: 'fist', head: -7, rot: 2, lf: [86, 204], rf: [114, 204] }, loop: [
     { d: 340, hold: 2200, ease: IO, aease: OUT },
     { d: 150, ease: OUT, y: -2.5, head: -10 },
     { d: 620, hold: 1700, ease: 'inOut(3)', y: .5, head: -8 }
   ] };
-  /* Sinking into a doze and catching itself is one slow move and one fast one. The legs hang still. */
+  /* Fuzz sits down awake, legs swinging, and only then gets drowsy. Sinking into a doze and catching itself
+     is one slow move and one fast one, and a single z floats off on the way down. */
   R.sleepy = { label: 'Sit & doze', say: 'Nothing due today… zzz', s: mix(SEAT, { mood: 'sleepy', br: 1.5, dg: 0 }),
-    enter: [{ d: 700, ease: 'inOut(2.4)', head: 6 }],
+    enter: [{ d: 400, hold: 900, ease: IO, mood: 'idle', head: -1, br: 1, dg: .7 }, { d: 900, ease: 'inOut(2.4)', head: 6 }],
     loop: [
       { d: 400, hold: 500, ease: IO, head: 7 },
-      { d: 2300, hold: 240, ease: 'in(2.2)', head: 19 },
+      { d: 2300, hold: 240, ease: 'in(2.2)', head: 19, fx: snooze },
       { d: 180, ease: OUT, head: 3 },
       { d: 700, ease: 'outBack(1.2)', head: 7 }
     ] };
-  /* The head goes first, then the legs sway to a stop on their own. */
+  /* Fuzz sits down awake and swings its legs a moment. Then the set goes off, the head drops first, and
+     the legs sway to a stop on their own. */
   R.chill = { label: 'Power off', say: 'Off for the night. See you tomorrow.', s: mix(SEAT, { mood: 'chill', head: 12, br: 0, dg: 0 }),
-    enter: [{ d: 520, ease: 'inOut(2.4)', head: 2, dg: .8 }, { d: 620, ease: 'outBack(1.15)', dg: .5 }, { d: 1900, ease: 'out(2)' }] };
+    enter: [{ d: 400, hold: 900, ease: IO, mood: 'idle', head: -1, br: 1, dg: .8 }, { d: 520, ease: 'inOut(2.4)', head: 2, dg: .8 }, { d: 620, ease: 'outBack(1.15)', dg: .5 }, { d: 1900, ease: 'out(2)' }] };
+  function snooze(rig) {
+    var b = rig.bot;
+    b.classList.remove('snooze'); void b.getBBox(); b.classList.add('snooze');
+    b.querySelector('.zzz').addEventListener('animationend', function () { b.classList.remove('snooze'); }, { once: true });
+  }
   /* Boop and flick play once, then go back to what Fuzz was doing. */
   R.boop = { label: 'Boop!', once: true, say: 'Hey! That tickles.', s: { mood: 'boop' }, enter: [
     { d: 120, tight: 1, ease: 'out(2)', y: -11, lh: [40, 113], rh: [160, 113], lf: [84, 197], rf: [116, 197], head: 6 },
@@ -374,6 +411,7 @@
   var HAND = '<rect class="wrist" x="-1.5" y="-2.6" width="5" height="5.2" rx="1.2"/><path class="claw"/>';
   var FOOT = '<path class="fo" d="M-5.5 -3H5.5L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/><path class="fs" d="M-9.6 7H9.6L9.5 7.5Q10 10 7.5 10H-7.5Q-10 10 -9.5 7.5Z"/>';
 
+  var SHEETHOLD = 18, SHEETGRIP = 14;   // left hand to stack centre (right hand is the same, across it), and hand to stack when the right claw has it all
   var SPINE = 7;   // how thick the tape is, seen from the side
   var JOINT = '<g class="joint %"><circle r="4.5"/><circle class="pin" r="1.5"/></g>';
 
@@ -382,6 +420,13 @@
       '<rect class="vw" x="-11" y="-.4" width="22" height="7.6" rx="1.2"/><circle class="vs" cx="-5.5" cy="3.4" r="2.5"/><circle class="vs" cx="5.5" cy="3.4" r="2.5"/></g>' +
     '<g class="vback"><rect class="vl" x="-13" y="-6.5" width="26" height="13" rx=".8"/><text class="vt" y="-1.2" text-anchor="middle" font-size="3.9">BE KIND,</text><text class="vt" y="3.6" text-anchor="middle" font-size="3.9">REWIND</text></g></g>' +
     '<g class="vside"><rect class="vb" x="-3.5" y="-10" width="7" height="20" rx="1"/><rect class="vl" x="-2" y="-7.5" width="4" height="15" rx=".6"/></g></g>';
+
+  function sheet(ink) { return '<g class="sheet"><rect class="sh" x="-11" y="-14" width="22" height="28" rx="1"/>' + ink + '</g>'; }
+  var PAPER = '<g class="paper">' +
+    sheet('<path class="ln" d="M-7 -8.5H7M-7 -4H7M-7 .5H7M-7 5H2"/>') +
+    sheet('<rect class="mk" x="-7" y="-10" width="14" height="5"/><path class="ln" d="M-7 -1H7M-7 3.5H7M-7 8H0"/>') +
+    sheet('<circle class="ok" cx="-5" cy="-7" r="2.6"/><path class="ln" d="M-.5 -8H7M-.5 -5.5H5M-7 -.5H7M-7 4H7"/>') +
+    '</g>';
 
   function armSvg(s) {
     return '<g class="arm ' + s + 'arm"><path class="limb-o ' + s + 'a"/><path class="ring-b ' + s + 'ab"/><path class="limb-i ' + s + 'a"/>' +
@@ -410,6 +455,7 @@
           '<g class="foot lfoot">' + FOOT + '</g><g class="foot rfoot">' + FOOT + '</g></g>' +
         '<g class="bodyg">' +
           '<g class="neck"><rect x="91" y="108" width="18" height="14" rx="3"/><path d="M91 116H109M91 119.5H109"/></g>' +
+          '<g class="pback"></g>' +
           '<g class="arms aunder"></g>' +
           '<g class="torso">' +
             '<rect x="76" y="118" width="48" height="52" rx="14" fill="var(--cab)"/>' +
@@ -423,6 +469,7 @@
           '<g class="arms aback"></g>' +
           '<g class="headg">' + window.FUZZ_SVG + '</g>' +
           TAPE +
+          '<g class="pfront">' + PAPER + '</g>' +
           '<g class="arms afront">' + armSvg('l') + armSvg('r') + '</g>' +
         '</g>' +
       '</svg>';
@@ -430,11 +477,11 @@
     this.svg = q('svg.rig'); this.bot = q('#bot');
     this.bot.setAttribute('x', 30); this.bot.setAttribute('y', 0); this.bot.setAttribute('width', 140); this.bot.setAttribute('height', 126);
     this.el = { ll: qa('.ll'), rl: qa('.rl'), llb: q('.llb'), rlb: q('.rlb'), lll: q('.lll'), rll: q('.rll'), la: qa('.la'), ra: qa('.ra'), lab: q('.lab'), rab: q('.rab'), lal: q('.lal'), ral: q('.ral'), lhand: q('.lhand'), rhand: q('.rhand'),
-      vhs: q('.vhs'), vface: q('.vface'), vside: q('.vside'), vfront: q('.vfront'), vback: q('.vback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
+      vhs: q('.vhs'), vface: q('.vface'), vside: q('.vside'), vfront: q('.vfront'), vback: q('.vback'), paper: q('.paper'), sheets: qa('.sheet'), pfront: q('.pfront'), pback: q('.pback'), eyes: q('#eyes'), lelbow: q('.lelbow'), relbow: q('.relbow'), lknee: q('.lknee'), rknee: q('.rknee'), lfoot: q('.lfoot'), rfoot: q('.rfoot'), bodyg: q('.bodyg'), headg: q('.headg'), shadow: q('.bshadow'),
       larm: q('.larm'), rarm: q('.rarm'), lshcap: q('.lshcap'), rshcap: q('.rshcap'), aunder: q('.aunder'), aback: q('.aback'), afront: q('.afront') };
     this.layerOf = { l: 'afront', r: 'afront' };
     this.p = expand({}, {});
-    this.breath = { v: -1 }; this.swing = { v: -1 };
+    this.breath = { v: -1 }; this.swing = { v: -1 }; this.pz = 0;
     this.setBody(this.body);
     this.setHinges(!!this.opts.hinges);
     var self = this;
@@ -467,6 +514,10 @@
     if (mood === 'bored') bot.dataset.ch = '0';
     bot.classList.toggle('cool', !!v('cool', false));
     this.layer('l', v('llay', 'afront')); this.layer('r', v('rlay', 'afront'));
+    var pz = this.el[v('pl', 'front') === 'back' ? 'pback' : 'pfront'];
+    if (this.el.paper.parentNode !== pz) pz.appendChild(this.el.paper);
+    this.pz = v('pz', 0);
+    this.stack().forEach(function (k) { this.el.paper.appendChild(this.el.sheets[k]); }, this);
     if (b.fx) b.fx(this);
   };
 
@@ -521,7 +572,9 @@
     if (this.opts.onPlay) this.opts.onPlay(name, r);
     var seated = this.p.sit > .5, stay = r.once && seated;
     var s = stay ? mix(SEAT, r.s) : r.s || {}, from = {}, k, t = 0;
-    var lead = r.once ? [] : seated && !s.sit ? GET_UP : !seated && s.sit ? SIT_DOWN : [], leadS = { mood: s.mood };
+    var sitting = !r.once && !seated && s.sit;
+    var holding = this.p.pp > .5, needs = s.pp > .5;
+    var lead = (holding && !needs ? PUT_AWAY : []).concat(r.once ? [] : seated && !s.sit ? GET_UP : sitting ? SIT_DOWN : [], !holding && needs ? TAKE_OUT : []), leadS = { mood: sitting ? 'idle' : s.mood };
     for (k in this.p) from[k] = this.p[k];
     var tl = A.createTimeline({ onComplete: function () {
       if (self.tl !== tl) return;
@@ -592,7 +645,9 @@
     e.lab.setAttribute('d', lr.bump); e.lal.setAttribute('d', lr.line);
     e.rab.setAttribute('d', rrg.bump); e.ral.setAttribute('d', rrg.line);
     this.hand('l', e.lhand, lh, la.ang, c.lrot, c.lw, c.lgap);
-    this.tape(rh, this.hand('r', e.rhand, rh, ra.ang, c.rrot, c.rw, c.rgap, c.tf));
+    var rang = this.hand('r', e.rhand, rh, ra.ang, c.rrot, c.rw, c.rgap, c.tf);
+    this.tape(rh, rang);
+    this.paper(lh, rh, rang);
     this.look();
   };
   /* The wrist follows the arm until a pose gives it its own angle; lw and rw blend between the two. */
@@ -619,6 +674,24 @@
     this.el.vside.setAttribute('transform', 'translate(' + f(c.tf * 17) + ' 0) scale(' + f(side) + ' 1)');
     g.setAttribute('transform', 'translate(' + f(x) + ' ' + f(y) + ') rotate(' + f(c.tr * c.th) + ') scale(' + f(size) + ' ' + f(size * sy) + ')');
   };
+  /* The sheets from back to front, after however many have gone from the front to the back. */
+  Rig.prototype.stack = function () {
+    var n = Math.ceil(this.pz / 2) % 3;
+    return [0, 1, 2].map(function (i) { return (i - n + 3) % 3; });
+  };
+  /* The stack sits on the left claw, or out past the right one once it has them all to itself. */
+  Rig.prototype.paper = function (l, p, a) {
+    var c = this.p, g = this.el.paper, on = c.pp > .5, r = a * Math.PI / 180, i;
+    g.style.display = on ? 'inline' : 'none';
+    if (!on) return;
+    var cx = l[0] + SHEETHOLD, cy = l[1], order = this.stack(), lifted = order[this.pz % 2 ? 0 : 2];
+    g.setAttribute('transform', 'translate(' + f(cx + (p[0] + Math.cos(r) * SHEETGRIP - cx) * c.pg) + ' ' + f(cy + (p[1] + Math.sin(r) * SHEETGRIP - cy) * c.pg) + ') rotate(' + f(c.pg * 10) + ')');
+    for (i = 0; i < 3; i++) {
+      var side = i - 1, x = side * 1.3, y = Math.abs(side) * .8, t = side * 2;
+      if (order[i] === lifted) { x += (p[0] - SHEETHOLD - cx - x) * c.pm; y += (p[1] - cy - y) * c.pm; t += c.pm * 8; }
+      this.el.sheets[order[i]].setAttribute('transform', 'translate(' + f(x) + ' ' + f(y) + ') rotate(' + f(t) + ')');
+    }
+  };
   /* The bored mood's eyes wander on a CSS animation, so aiming them means switching that off. */
   Rig.prototype.look = function () {
     var c = this.p, s = this.el.eyes.style;
@@ -630,7 +703,7 @@
   var rigs = [];
   window.FuzzJoints = {
     reactions: R,
-    transitions: { sitDown: SIT_DOWN, getUp: GET_UP },
+    transitions: { sitDown: SIT_DOWN, getUp: GET_UP, takeOut: TAKE_OUT, putAway: PUT_AWAY },
     feel: FEEL, groups: GROUPS, stand: STAND, gaps: GAP,
     rig: function (host, opts) { var r = new Rig(host, opts); rigs.push(r); return r; },
     all: function () { return rigs; },

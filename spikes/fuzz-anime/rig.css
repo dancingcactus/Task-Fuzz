@@ -2,7 +2,7 @@
 .rig { display: block; width: 100%; height: auto; overflow: visible; }
 .rig #bot { width: 140px; height: 126px; display: inline; overflow: visible; }
 .rig:not(.nobody) #bot > ellipse { display: none; }
-.rig.nobody .legs, .rig.nobody .arms, .rig.nobody .torso, .rig.nobody .neck, .rig.nobody .bshadow, .rig.nobody .vhs { display: none; }
+.rig.nobody .legs, .rig.nobody .arms, .rig.nobody .torso, .rig.nobody .neck, .rig.nobody .bshadow, .rig.nobody .vhs, .rig.nobody .paper { display: none; }
 .rig { --limb: color-mix(in srgb, var(--trim) 45%, #9c8f84); --limb-o: var(--bezel); }
 .limb-o { fill: none; stroke: var(--limb-o); stroke-width: 6.6; stroke-linecap: round; stroke-linejoin: round; }
 .limb-i { fill: none; stroke: var(--limb); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
@@ -26,3 +26,11 @@
 .vt { fill: #3a2c25; font-family: var(--font-display); font-weight: 700; }
 .vw { fill: #151311; }
 .vs { fill: #e4dccb; }
+.paper .sh { fill: #f8f2e4; stroke: var(--limb-o); stroke-width: .9; }
+.paper .ln { fill: none; stroke: #3a2c25; stroke-width: 1.1; opacity: .5; }
+.paper .mk { fill: var(--amber); }
+.paper .ok { fill: var(--ok); }
+/* One z, once, as Fuzz nods off. The zzz stays hidden the rest of the time. */
+#bot.snooze .zzz { display: block; }
+#bot.snooze .zzz text { display: none; }
+#bot.snooze .zzz text:nth-child(2) { display: inline; animation: zfloat 2.4s ease-in 1; }

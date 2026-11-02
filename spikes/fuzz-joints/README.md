@@ -25,6 +25,12 @@ anime.js copy from that folder, so keep the two spikes together.
 - **Disco**: a new reaction, on this rig only. The classic point, four counts on each arm, in shades.
 - **Straight hand paths**: hands swing round the shoulder by default. A pose can set `lst` or `rst` to blend toward a
   straight line, from 0 for the full arc to 1 for dead straight. Disco uses 1, and the studio calls this Straight path.
+- **Working**: on this rig, Fuzz holds a stack of papers and moves the front sheet to the back, three times, then taps
+  them even. Take out papers and Put papers away are transitions, like Sit down and Get up: they run on the way in and
+  out of Working, and the studio lists them with the other transitions.
+- **Rushing**: the fists pump opposite the feet, chest to hip, on the side of the shoulder that keeps the elbows low.
+- **Sit & doze and Power off**: Fuzz sits down awake and swings its legs before dropping off. Sit & doze lets one z
+  float up with each nod.
 - **Same timing**: the reactions are the ones from the anime.js spike. A few poses changed: Thinking and Shrug lost
   their shortened arms because the elbow now folds, Cheer lost an exaggerated leg bend, Sit & doze and Power off rest
   their hands on the knees, and the arm in Flick antenna stretches less.
