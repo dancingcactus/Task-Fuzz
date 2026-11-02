@@ -691,13 +691,14 @@
     var sc = $('#setupcard'); sc.hidden = false; sc.className = 'card setupcard enter';
     paintSetup();
     $('#sc-h').focus({ preventScroll: true });
-    Fuzz.setMood('eager'); Fuzz.say({ lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
+    Fuzz.setMood('eager'); Fuzz.say({ hours: 'A quick one while I read up on your task.', lookup: 'One thing that would help me help you.', folder: 'Quick one, while I think of it.', theme: 'Fancy a change of scenery?' }[c.name], { type: false });
     return true;
   }
   function appName() { var e = scState.card.engine; return e === 'copilot' ? 'Copilot' : 'Claude Code'; }
   function paintSetup() {
     var c = scState.card, sc = $('#setupcard'), h = '<div class="tagrow"><span class="src">From Fuzz</span></div>', not = '<button type="button" class="btn" data-sc="later" aria-keyshortcuts="Escape">Not now' + kbd('Esc') + '</button>';
-    if (c.name === 'folder') {
+    if (c.name === 'hours') h = hoursHTML(c);
+    else if (c.name === 'folder') {
       h += '<h2 id="sc-h" tabindex="-1">Can I save files for you?</h2><p>Some tasks end in a document, a spreadsheet or a checklist. I’d keep them in <b>Documents › Fuzz</b>, one folder per task. Nothing in it is sent anywhere.</p>' +
         '<div class="sc-actions"><button type="button" class="btn primary" data-sc="yes">Yes, use Documents › Fuzz' + kbd('↵') + '</button>' + not + '</div>';
     } else if (c.name === 'theme') {
@@ -725,6 +726,40 @@
     }
     sc.innerHTML = h;
   }
+  /* Fuzz's first question during the onboarding: when you work. The usual hours are the first answer, so
+     one key does it; Different hours opens a picker. Esc keeps the usual hours for now. */
+  function span(h) { return Onboard.clock(h[0]) + ' to ' + Onboard.clock(h[1]); }
+  function hoursHTML(c) {
+    var cur = (c.hours && c.hours.hours) || [8, 18.5], usual = span(cur);
+    var h = '<aside class="onb-guide" aria-label="How Triage works">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3>This is Triage</h3><p>I bring you one card at a time, each with one decision. Here’s an easy one to start.</p></div></aside>' +
+      '<div class="tagrow"><span class="src">A question from Fuzz</span></div>' +
+      '<h2 id="sc-h" tabindex="-1">When do you work?</h2><p>I read for new asks during these hours, and stay quiet outside them. Pick the closest; you can change it any time.</p>';
+    if (scState.step === 'other') {
+      var opts = function (v, from) { return Onboard.hourSteps.filter(function (x) { return from ? x < 24 : x > 0; }).map(function (x) { return '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + esc(Onboard.clock(x)) + '</option>'; }).join(''); };
+      h += '<div class="onb-times"><label for="sc-from">From</label><select id="sc-from">' + opts(cur[0], true) + '</select><label for="sc-until">until</label><select id="sc-until">' + opts(cur[1], false) + '</select></div>' +
+        '<label class="check"><input type="checkbox" id="sc-wkd"' + (c.hours && c.hours.weekends ? ' checked' : '') + '> <span>Weekends too</span></label>' +
+        '<div class="sc-actions"><button type="button" class="btn primary" data-sc="save">Save' + kbd('↵') + '</button><button type="button" class="btn" data-sc="back">Back</button></div>';
+      return h;
+    }
+    var choices = [['weekdays', 'Weekdays, ' + usual], ['everyday', 'Every day, ' + usual], ['none', 'No fixed hours'], ['other', 'Different hours…']];
+    return h + '<div class="sc-choices" role="group" aria-label="When do you work?">' + choices.map(function (o, i) {
+      return '<button type="button" class="btn' + (i === 0 ? ' primary' : '') + '" data-sc="' + o[0] + '" data-hq aria-keyshortcuts="' + (i + 1) + '">' + esc(o[1]) + kbd(i + 1) + '</button>';
+    }).join('') + '</div><div class="sc-actions"><button type="button" class="btn linkbtn" data-sc="later" aria-keyshortcuts="Escape">Skip for now' + kbd('Esc') + '</button></div>';
+  }
+  function hoursAnswer(what) {
+    var cur = (scState.card.hours && scState.card.hours.hours) || [8, 18.5], body;
+    if (what === 'later') { Onboard.skipHours(); return closeSetup('Okay. Weekdays, ' + span(cur) + ', for now.'); }
+    if (what === 'other' || what === 'back') { scState.step = what === 'other' ? 'other' : 'ask'; paintSetup(); var f = $(what === 'other' ? '#sc-from' : '#sc-h'); if (f) f.focus({ preventScroll: true }); return; }
+    if (what === 'save') {
+      var a = parseFloat($('#sc-from').value), b = parseFloat($('#sc-until').value);
+      if (b <= a) { Fuzz.say('That ends before it starts. Pick an end time after the start.', { type: false }); return; }
+      body = { hours: [a, b], weekends: $('#sc-wkd').checked };
+    } else body = what === 'none' ? { hours: null, weekends: true } : { hours: cur, weekends: what === 'everyday' };
+    Onboard.answerHours(body).then(function () {
+      closeSetup(body.hours ? 'Got it. I’ll read for new asks then, and stay quiet the rest of the time.' : 'Got it. I’ll read for new asks whenever they come.');
+    }, function (e) { Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
+  }
+
   /* Ask the app what it can reach (one run of it), then offer the ways to read, in plain words */
   function lookUp() {
     var cl = scState.card.engine;
@@ -756,6 +791,7 @@
   }
   function setupAnswer(what) {
     var c = scState.card;
+    if (c.name === 'hours') return hoursAnswer(what);
     if (what === 'later') {
       if (c.name === 'theme' && App.prefs().theme !== scState.theme) App.setTheme(scState.theme);
       Onboard.answerSetup(c.name, 'not_now');
@@ -1402,6 +1438,8 @@
       if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
       /* Escape folds the stray-thought box away, keeping what you typed */
       if (e.key === 'Escape' && t && t.id === 'parktext') { e.preventDefault(); $('#parkbtn').click(); return; }
+      /* Escape on a setup or question card, even from its time pickers: back out, or Not now */
+      if (e.key === 'Escape' && scOpen && t && $('#setupcard').contains(t)) { e.preventDefault(); setupAnswer(scState && scState.step === 'other' ? 'back' : 'later'); return; }
       if (e.key === 'Escape' && t && t.id === 'wait-who') { e.preventDefault(); card.querySelector('[data-act="wait-cancel"]').click(); return; }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
@@ -1415,8 +1453,9 @@
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
       /* A setup card: its buttons take Enter, and Escape is Not now */
       if (scOpen) {
-        if (k === 'escape') { e.preventDefault(); setupAnswer('later'); }
-        else if (k === 'enter' && !(t && t.closest && t.closest('button, a, summary'))) { var pb = $('#setupcard .sc-actions .primary'); if (pb) { e.preventDefault(); pb.click(); } }
+        if (k === 'escape') { e.preventDefault(); setupAnswer(scState && scState.step === 'other' ? 'back' : 'later'); }
+        else if (n > -1 && !(t && t.tagName === 'SELECT')) { var hq = $('#setupcard').querySelectorAll('[data-hq]')[n]; if (hq) { e.preventDefault(); hq.click(); } }
+        else if (k === 'enter' && !(t && t.closest && t.closest('button, a, summary'))) { var pb = $('#setupcard .primary'); if (pb) { e.preventDefault(); pb.click(); } }
         return;
       }
       if (ciOpen) {

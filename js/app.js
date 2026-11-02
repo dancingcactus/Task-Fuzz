@@ -170,7 +170,7 @@
   }
 
   function updateCount() {
-    var has = Store.get().queue.length > 0, el = document.getElementById('navcount');
+    var has = Store.get().queue.length > 0 || Onboard.hasQuestion(), el = document.getElementById('navcount');
     if (!el) return;
     var glyph = has ? '' : '✓';
     if (el.textContent !== glyph) el.textContent = glyph;

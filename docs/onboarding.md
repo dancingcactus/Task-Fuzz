@@ -201,7 +201,7 @@ that would be handling the request. The page has to survive that and reconnect.
 
 ## As built
 
-- **The order.** Fuzz introduces himself first, then asks the three questions, then the app's header
+- **The order.** Fuzz introduces himself first, then asks two questions (name and app), then the app's header
   appears and Fuzz points at the New task button (the floating one on a phone). Until then the header,
   Settings included, is hidden, so the first screens are only Fuzz. This trades away the "Settings stays
   reachable" rule above for the intro and the questions. A system set to reduce motion still gets Calm
@@ -214,6 +214,11 @@ that would be handling the request. The page has to survive that and reconnect.
   waits for the server's `boot` id in `GET /health` to change (or a few quiet seconds where nothing
   restarts), checks the client and picks it with `PUT /engine`. A client that isn't there gets a link to
   get it, "I've installed it" to look again, and Try the demo, which runs the same intro on demo data.
+- **Working hours are Fuzz's first question**, not part of the form. While he reads up on your task,
+  a question card waits in Triage ("When do you work?", introduced as "This is Triage… here's an easy
+  one to start"), so the first thing you find there is an easy decision. One key answers it: your usual
+  hours on weekdays, every day, no fixed hours, or Different hours for a picker. Esc keeps the usual
+  hours for now. The Triage tab shows its dot while the question waits.
 - **The wait** teaches the next habit: keep an eye on Triage, where Fuzz brings tasks he has looked into
   and any questions he has. The Triage tab is ringed and pointed at. Going there early is fine: Fuzz is
   shown reading up on the task, and when it lands the lesson is on its card. The three tips sit below. The calendar file is a 20-minute event each weekday (or each day, for weekends and

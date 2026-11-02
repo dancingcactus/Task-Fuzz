@@ -17,7 +17,7 @@
   var esc = UI.esc;
   var LOCAL = 'fuzz.onboarding.v1';
   var st = null, root = null, ticker = 0, unsub = null, finishing = false, pendingItem = null, guidedId = null;
-  var apps = null, hours = null, appState = {}, chosen = null, formName = '', hoursMode = 'weekdays', hFrom = 8, hUntil = 18.5;
+  var apps = null, hours = null, appState = {}, chosen = null, formName = '';
   var setupShown = false, quietUntil = 0;
 
   var GET_APP = {
@@ -102,13 +102,12 @@
   function paintForm() {
     var a = apps ? apps.clients : [];
     root.innerHTML = '<section class="onb" aria-labelledby="onb-h">' +
-      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">Three things before I start</h1><p class="meta">That’s all I’ll ask for now. Everything else can wait until it’s useful.</p></div></div>' +
+      '<div class="onb-top">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">Two things before I start</h1><p class="meta">That’s all I’ll ask for now. Everything else can wait until it’s useful.</p></div></div>' +
       '<form class="onb-form" id="onb-form" novalidate>' +
         '<div class="field"><label for="onb-name">What should I call you?</label><input id="onb-name" type="text" autocomplete="given-name" spellcheck="false" value="' + esc(formName) + '" placeholder="Your first name"></div>' +
         '<fieldset class="onb-apps"><legend>Which app should I work through?</legend><p class="meta">I do my work inside it, with what you’ve connected there.</p>' +
           (apps ? '<div class="onb-picks">' + a.map(appHTML).join('') + '</div><div id="onb-appnote">' + appNote() + '</div>' : '<p class="meta" role="status"><span class="spin" aria-hidden="true"></span> Looking for Claude Code and Copilot on this Mac…</p>') +
         '</fieldset>' +
-        '<fieldset class="onb-hours"><legend>When do you work?</legend><p class="meta">I read for new asks during these hours, and stay quiet outside them.</p>' + hoursHTML() + '</fieldset>' +
         '<div class="onb-actions"><button type="submit" class="btn primary" id="onb-go"' + (canGo() ? '' : ' disabled') + '>' + goLabel() + '</button><span class="meta" id="onb-gonote" role="status">' + goNote() + '</span></div>' +
       '</form></section>';
     heading();
@@ -141,13 +140,6 @@
     var d = new Date(2000, 0, 1, Math.floor(h), (h % 1) * 60);
     return h === 24 ? 'Midnight' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
-  function hoursHTML() {
-    var modes = [['weekdays', 'Weekdays'], ['everyday', 'Every day'], ['none', 'No fixed hours']];
-    function sel(id, v, from) { return '<select id="' + id + '">' + HOURS.filter(function (x) { return from ? x < 24 : x > 0; }).map(function (x) { return '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + esc(clock(x)) + '</option>'; }).join('') + '</select>'; }
-    return '<div class="segrow" role="radiogroup" aria-label="Which days">' + modes.map(function (m) { return '<button type="button" class="seg" role="radio" data-hours="' + m[0] + '" aria-checked="' + (hoursMode === m[0]) + '" aria-pressed="' + (hoursMode === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>' +
-      (hoursMode === 'none' ? '<p class="meta">Then I read around the clock.</p>' :
-        '<div class="onb-times"><label for="onb-from">From</label>' + sel('onb-from', hFrom, true) + '<label for="onb-until">until</label>' + sel('onb-until', hUntil, false) + '</div>');
-  }
   /* Accepting the defaults works: the highlighted app is set up when you go on */
   function canGo() { var s = (appState[chosen] || {}).state, c = chosen && client(chosen); return !!(c && c.found && s !== 'problem'); }
   function goLabel() { return (appState[chosen] || {}).state === 'working' && waitingToGo ? 'Finishing setup…' : 'That’s everything'; }
@@ -173,8 +165,6 @@
     Promise.all([Live.engine(), Live.hours(), Live.me().catch(function () { return { names: [] }; })]).then(function (r) {
       apps = r[0]; hours = r[1];
       if (!formName) formName = st.name || (r[2].names || [])[0] || '';
-      if (hours.hours === null) hoursMode = 'none';
-      else { hFrom = hours.hours[0]; hUntil = hours.hours[1]; hoursMode = hours.weekends ? 'everyday' : 'weekdays'; }
       apps.clients.forEach(function (c) { if (c.summary === 'ready' && c.is_engine) appState[c.client] = { state: 'ready' }; });
       /* The app Fuzz finds is highlighted: the one already working, else the one on this Mac */
       var best = st.app && client(st.app) ? client(st.app) : apps.clients.filter(function (c) { return c.summary === 'ready'; })[0] || apps.clients.filter(function (c) { return c.installed; })[0] || apps.clients.filter(function (c) { return c.found; })[0];
@@ -232,10 +222,6 @@
     });
   }
 
-  function readHours() {
-    if (hoursMode === 'none') return { hours: null, weekends: true };
-    return { hours: [hFrom, Math.max(hUntil, hFrom + 0.5)], weekends: hoursMode === 'everyday' };
-  }
   function submitForm() {
     if (!chosen) return;
     var s = (appState[chosen] || {}).state;
@@ -248,7 +234,7 @@
       var names = me.names || [];
       return names.indexOf(name) > -1 ? null : Live.saveMe({ names: [name].concat(names) });
     });
-    Promise.all([saveName, Live.saveHours(readHours())]).then(function () {
+    Promise.all([saveName]).then(function () {
       return save({ step: 'capture', name: name || null, app: chosen });
     }).then(paint, function (e) { if (go) go.disabled = false; Say.tell('I couldn’t save that: ' + e.message, { stay: true }); });
   }
@@ -266,7 +252,7 @@
     }
   }
   /* The questions come only when there's something to set: a live core, with no app or hours yet */
-  function needsForm() { return Live.on() && !(st.app && st.hours_set); }
+  function needsForm() { return Live.on() && !st.app; }
 
   /* ---------- 1. Fuzz introduces himself ---------- */
   function paintIntro() {
@@ -354,11 +340,16 @@
     if (!root || st.step !== 'wait') return;
     var it = taskItem(), s = status(it);
     if (s === 'moved' || s === 'lost') { if (first) return finish(it ? 'moved' : 'lost'); return; }
+    if (s === 'gathering' && hoursQuestion()) s = 'question';
     var top = root.querySelector('#onb-status');
     /* The next habit: Triage is where Fuzz brings things to decide, this task and any question he has */
     var html = s === 'ready'
       ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">' + (it.result ? 'Done. It’s in Triage.' : 'It’s in Triage.') + '</h1><p>“' + esc(it.title) + '” is waiting there for you' + (it.result ? ', already done' : '') + '. Take your time; it’ll keep.</p>' +
         '<button type="button" class="btn primary" data-onb="show" id="onb-show">Open Triage<kbd aria-hidden="true">↵</kbd></button></div></div>'
+      : s === 'question'
+      ? '<div class="onb-status ready">' + Fuzz.mini('good', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">I’ve got a question for you in Triage.</h1>' +
+        '<p>An easy one, while I read up on “' + esc(it.title) + '”. Triage is where I bring you things to decide: your tasks once I’ve looked into them, and any questions I have.</p>' +
+        '<button type="button" class="btn primary" data-onb="triage" id="onb-show">Open Triage<kbd aria-hidden="true">↵</kbd></button></div></div>'
       : '<div class="onb-status">' + Fuzz.mini('think', { cls: 'onb-fz' }) + '<div><h1 id="onb-h">Next, keep an eye on Triage.</h1>' +
         '<p>That’s where I bring you things to decide: your tasks once I’ve looked into them, and any questions I have. “' + esc(it.title) + '” lands there when I’m done reading up on it.</p>' +
         '<p class="meta" role="status"><span class="spin" aria-hidden="true"></span> Usually a minute or two. <span id="onb-el"></span> The dot on Triage means something’s waiting.</p></div></div>';
@@ -451,9 +442,9 @@
           '<p class="meta">Not quite? Say what to change in the box and press <kbd>A</kbd> to send it back to me.</p>' +
           '<button type="button" class="linkbtn" data-guide="skip">Skip this</button></div></aside>' };
     }
-    return { line: 'Here it is. One decision.',
-      html: '<aside class="onb-guide" aria-labelledby="guide-h">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3 id="guide-h">Every card is one decision</h3>' +
-        '<p>Press <kbd>A</kbd>, or <b>Assign to Fuzz</b>, and I’ll start on it. I’ll come back with something for you to look at before anything goes anywhere.</p>' +
+    return { line: 'Your task is back. One decision.',
+      html: '<aside class="onb-guide" aria-labelledby="guide-h">' + Fuzz.mini('good', { cls: 'guide-fz' }) + '<div><h3 id="guide-h">Hand it to me</h3>' +
+        '<p>This one’s yours from earlier. Press <kbd>A</kbd>, or <b>Assign to Fuzz</b>, and I’ll start on it. I’ll come back with something for you to look at before anything goes anywhere.</p>' +
         '<p class="meta">The box has the instructions I’d follow. Change anything first, if you like.</p>' +
         '<button type="button" class="linkbtn" data-guide="skip">Skip this</button></div></aside>' };
   }
@@ -518,8 +509,19 @@
   }
 
   /* ---------- Setup cards, after the onboarding, one at a time, after real work ---------- */
+  /* Fuzz's first question, waiting in Triage while he reads up on your task: when you work. One key
+     answers it, which makes it an easy first card. Skipping keeps the usual hours. */
+  var hoursSkipped = false;
+  function hoursQuestion() {
+    return !!(st && Live.on() && active() && (st.step === 'wait' || st.step === 'card') && !st.hours_set && !hoursSkipped);
+  }
+  function answerHours(body) {
+    return Live.saveHours(body).then(function (h) { hours = h; st.hours = h; st.hours_set = true; return h; });
+  }
+
   /* peek: whether one would show, without using up this visit's one */
   function setupCard(cleared, peek) {
+    if (hoursQuestion()) return { name: 'hours', hours: hours || st.hours || { hours: [8, 18.5], weekends: false } };
     if (setupShown || !st || !st.done || cleared < 1) return null;
     var c = st.setup_card;
     if (!c) return null;
@@ -539,32 +541,25 @@
   function onClick(e) {
     var b = e.target.closest('button, a'); if (!b || !root) return;
     if (b.dataset.app) { pickApp(b.dataset.app); return; }
-    if (b.dataset.hours) {
-      hoursMode = b.dataset.hours;
-      root.querySelector('.onb-hours').innerHTML = '<legend>When do you work?</legend><p class="meta">I read for new asks during these hours, and stay quiet outside them.</p>' + hoursHTML();
-      var on = root.querySelector('[data-hours="' + hoursMode + '"]'); if (on) on.focus();
-      return;
-    }
     var a = b.dataset.onb; if (!a) return;
     if (a === 'retry') return setUp(chosen, true);
     if (a === 'recheck') { apps = null; appState = {}; return loadApps(); }
     if (a === 'demo') { Live.useDemo(); location.hash = '#/welcome'; try { localStorage.setItem(LOCAL, JSON.stringify(Object.assign(blank(), { step: 'capture' }))); } catch (x) {} location.reload(); return; }
     if (a === 'skip') return finish('skip');
     if (a === 'hello') return save({ step: needsForm() ? 'form' : 'capture' }).then(paint);
-    if (a === 'show' || b.id === 'onb-show') return showCard();
+    if (a === 'triage') return App.navigate('#/triage');
+    if (a === 'show') return showCard();
     if (a === 'ics') return downloadIcs();
   }
   function onSubmit(e) { if (e.target.id === 'onb-form') { e.preventDefault(); submitForm(); } }
   function onChange(e) {
     var t = e.target;
-    if (t.id === 'onb-from') hFrom = parseFloat(t.value);
-    if (t.id === 'onb-until') hUntil = parseFloat(t.value);
     if (t.id === 'onb-name') formName = t.value;
   }
   /* Enter on the ready screen from anywhere on the page */
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' || !root || e.defaultPrevented) return;
-    var go = root.querySelector('#onb-show, [data-onb="hello"]'); if (!go) return;
+    var go = root.querySelector('#onb-show, [data-onb="hello"]'); if (!go) return;   /* Open Triage, Show me, Nice to meet you */
     var t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT|BUTTON|A|SUMMARY)$/.test(t.tagName)) return;
     e.preventDefault(); go.click();
   });
@@ -604,6 +599,12 @@
     skipGuide: function () { finish('skip'); },
     tip: tip,
     setupCard: setupCard,
+    /* The hours question: whether it's waiting (Triage shows its dot), answering and skipping it */
+    hasQuestion: hoursQuestion,
+    answerHours: answerHours,
+    skipHours: function () { hoursSkipped = true; },
+    clock: clock,
+    hourSteps: HOURS,
     answerSetup: answerSetup,
     /* Settings > Show me around again: the intro and the tips, from the start */
     again: function () {

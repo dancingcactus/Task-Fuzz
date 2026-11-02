@@ -890,3 +890,9 @@ body.onb-bare .onb { padding-top: 10vh; }
 .onb-pointer.below::before { top: auto; bottom: -6px; }
 .onb-pointer.below svg { transform: rotate(180deg); }
 @keyframes onbfade { from { opacity: 0; transform: translateY(6px); } }
+
+/* Fuzz's first question: answers stacked, one key each */
+.sc-choices { display: flex; flex-direction: column; gap: 8px; }
+.sc-choices .btn { justify-content: space-between; text-align: left; }
+.setupcard .onb-times select { font: inherit; font-size: 16px; padding: 8px 12px; min-height: 44px; border: var(--bw) solid var(--line); border-radius: 14px; background: var(--field); color: var(--ink); }
+.setupcard .sc-actions .linkbtn { padding-left: 0; }
