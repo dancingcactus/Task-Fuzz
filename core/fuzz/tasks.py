@@ -162,6 +162,9 @@ def capture(core, text, docs=None, actor="human", due=None, gather=False, upload
             core.q("INSERT INTO sources (user_id, task_id, role, title) VALUES (?,?,?,?)",
                    (core.user_id, tid, "attachment", d))
         cards.sync(core, tid)
+    if not gather and actor == "human":   # with gathering, it's matched once Fuzz has looked it up
+        from .matching import dupes
+        dupes.check_captured(core, tid)
     return tid
 
 

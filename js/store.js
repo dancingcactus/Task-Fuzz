@@ -261,6 +261,13 @@
       var t = it.kind === 'dup' && S.item(it.dupOf);
       if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
     },
+    /* "Same as…" in task detail: this task is the one you picked, so it merges into it (the core matches;
+       live mode only). other is the picked task's title, for the log. */
+    sameAs: function (id, otherCoreId, otherTitle) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'resolved'; it.resolution = 'primary';
+      S.log(it, 'status', 'You said this is the same as “' + (otherTitle || 'another task') + '”, so it merged into it.');
+    },
 
     /* ---- groups ----
        The tasks that came from the same email thread, meeting or run of Slack messages. The core makes

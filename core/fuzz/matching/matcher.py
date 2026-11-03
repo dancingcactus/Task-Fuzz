@@ -10,6 +10,7 @@ The thresholds and floors are the spike's.
 
 import json
 import math
+import re
 from datetime import timedelta
 
 from .. import cards, events, groups, states, tasks
@@ -186,11 +187,16 @@ def eligible_tasks(ctx):
 
 
 def _sibling_tasks(ctx, cand):
-    """Tasks born from the same signal: separate asks in one message never match each other."""
+    """Tasks born from the same signal: separate asks in one message never match each other. An ask Fuzz
+    split off never matches the task it came from either."""
     rows = ctx.core.q(
         "SELECT s.task_id FROM sources s JOIN candidates c ON c.id=s.candidate_id "
         "WHERE c.user_id=? AND c.signal_key=? AND s.role='origin'", (_uid(ctx), cand["signal_key"])).fetchall()
-    return {r["task_id"] for r in rows}
+    out = {r["task_id"] for r in rows}
+    m = re.match(r"^fuzz:task(\d+):", candidate_signal(ctx, cand).get("anchor") or "")
+    if m and cand["signal_key"].startswith("fuzz:"):
+        out.add(int(m.group(1)))
+    return out
 
 
 def stage1_anchor(ctx, cand, eligible):
@@ -303,7 +309,8 @@ def _decide(ctx, cand, eligible, hits, fam):
     if ctx.embed_ok:
         short = {t for t in short if escore[t] >= STRONG_ENTITY or sem.get(t, 0) >= SEM_MIN_ENTITY[fam]}
         if not short and not hits:
-            open_ids = [t for t, r in eligible.items() if r["state"] in states.LIVE]
+            siblings = _sibling_tasks(ctx, cand)
+            open_ids = [t for t, r in eligible.items() if r["state"] in states.LIVE and t not in siblings]
             sem_all = stage3_semantic(ctx, cand, open_ids) or {}
             short = {t for t, s in sem_all.items() if s >= SEM_FLOOR[fam]}
             sem.update(sem_all)
@@ -333,8 +340,10 @@ def _judgment_item(ctx, cand, keep, hits, escore, shared, sem):
             "title_history": t.get("title_history") or [],
             "recent_history": [x["text"] for x in events.task_log(ctx.core, tid, 5)],
         })
+    frozen = ctx.core.one("SELECT COALESCE(MAX(id), 0) m FROM decisions WHERE user_id=?", (_uid(ctx),))["m"]
     return {
         "candidate_id": cand["id"], "ask": cand["ask"], "owner": cand["owner"], "due": cand["due"],
+        "frozen_after": frozen,   # tasks matching makes after this aren't on the shortlist (see dupes.same_run)
         "source": s["source"], "from": (s.get("from") or {}).get("name"), "ts": s.get("ts"),
         "link": s.get("link"), "quote": s.get("quote"),
         "needs_new_ask_test": any(x["state"] in states.CLOSED for x in short),
@@ -585,8 +594,15 @@ def apply_verdicts(ctx, verdicts):
             outcome = "context" if other else "related"
         else:
             outcome, tid = ("discarded", None) if other else ("new", None)
+        reason = v.get("reason")
+        if outcome == "new":   # asks judged in one run never saw each other's tasks
+            from . import dupes
+            item = json.loads(cand["pending_item"]) if cand["pending_item"] else {}
+            mate = dupes.same_run(ctx, cand, item.get("frozen_after"))
+            if mate:
+                outcome, tid, reason = "possible_duplicate", mate[0], mate[1]
         res = record(ctx, cand, "judge", outcome, tid, verdict=verdict, confidence=conf,
-                     reason=v.get("reason"), scores={"judge": conf}, new_title=v.get("new_title"))
+                     reason=reason, scores={"judge": conf}, new_title=v.get("new_title"))
         stats[res["outcome"]] = stats.get(res["outcome"], 0) + 1
     return stats
 

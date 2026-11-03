@@ -137,6 +137,7 @@ brief for tasks with no draft), `summary` (a sentence or two on what Fuzz did or
 GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, docs?, due?}
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
+GET  /tasks/{id}/same_as       POST /tasks/{id}/same_as {other_id}   (merges it into that task; Undo splits it)
 POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
 GET  /files/{source_id}        GET  /artifacts           GET  /artifacts/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
@@ -264,6 +265,18 @@ executor can't draft, hand back, ask for permission or split the task.
 
 If no run gets to it within `gather.minutes` (10), or a run fails on it `budget.max_attempts` times,
 it comes to triage as captured. Turn it off with `fuzz config set gather.enabled false`.
+
+### Catching duplicates of what you capture
+
+Once Fuzz has looked a captured task up (or straight away with gathering off), it gets a matching
+record like an extracted ask: a `capture:task<id>` signal and candidate from its ask and the links
+Fuzz found, kept as a hidden source (role `ignored`). That gives it entities and a vector, so later
+signals can find it, and it's checked now against the open tasks that came from email, Slack, meetings
+or Fuzz (two things you typed yourself are yours to tell apart). A shared ticket key or document link,
+or an ask very close in meaning, raises a `duplicate` card, which comes before the task's own card.
+A link on more than three live tasks doesn't count. The judge's `new` verdicts get the same check
+against the tasks made in the same run after their shortlist froze (`frozen_after` on the pending
+item), since those were never on it. The code is `fuzz/matching/dupes.py`.
 
 ### Looking into a task you scheduled
 

@@ -127,8 +127,10 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
         if not core.config["gather"]["finish_results"]:
             raise FuzzError("Finishing tasks while gathering is turned off: call finish_gathering without result",
                             "result")
-        return hand_back(core, t["id"], None, options, actor=actor, result=True, hold=held,
-                         log=(log or "Finished while gathering. The result is in the brief.") + back)
+        hand_back(core, t["id"], None, options, actor=actor, result=True, hold=held,
+                  log=(log or "Finished while gathering. The result is in the brief.") + back)
+        _match_captured(core, t)
+        return t["id"]
     with core.tx(actor):
         ch = events.Changes()
         if held:
@@ -139,7 +141,17 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
                     log=("status", (log or ("Fuzz gathered what it could find." if t.get("context_md")
                                             else "Fuzz found nothing more to add.")) + back))
         cards.sync(core, t["id"])
+    _match_captured(core, t)
     return t["id"]
+
+
+def _match_captured(core, t):
+    """A task you captured goes through matching once Fuzz has looked it up, with the links it found. Only
+    the first look: a parked task back for review was matched when it was captured."""
+    if "review" in (t.get("variant_tags") or []):
+        return
+    from .matching import dupes
+    dupes.check_captured(core, t["id"])
 
 
 def _done_planning(core, t, actor, log=None):

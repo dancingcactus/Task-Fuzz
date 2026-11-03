@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, people, scheduler, sessions, tasks
+from . import answers, cards, config, engine, events, groups, matching, people, scheduler, sessions, states, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -67,7 +67,8 @@ def task_view(core, t, full=False):
                                   "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg, s.path IS NOT NULL has_file FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
-                                  "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
+                                  "WHERE s.task_id=? AND s.user_id=? AND COALESCE(s.signal_key, '') NOT LIKE 'capture:%' "
+                                  "ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
         out["people"] = people.for_task(core, t)
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
@@ -117,6 +118,8 @@ class App:
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
+            ("GET", r"/tasks/(\d+)/same_as", self.same_as_choices),
+            ("POST", r"/tasks/(\d+)/same_as", self.same_as),
             ("POST", r"/tasks/(\d+)/open", self.open_session),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
@@ -362,6 +365,23 @@ class App:
                   "key": body.get("key") or timeres.moment_key(body["label"]), "cancelled": bool(body.get("cancelled"))}
         label = scheduler.suggest_schedule(core, tid, anchor, body.get("reason"), actor="human")
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
+
+    def same_as_choices(self, core, m, body, q):
+        """The open tasks this one is most likely the same as, for "Same as…" in task detail."""
+        from .matching import dupes
+        return {"choices": dupes.same_as_choices(core, int(m.group(1)))}
+
+    def same_as(self, core, m, body, q):
+        """{other_id}: this task is the same as that one, so it merges into it. Undo splits it back out."""
+        if not isinstance(body.get("other_id"), int):
+            raise FuzzError("other_id is the task this one is the same as", "other_id")
+        tid = int(m.group(1))
+        if tasks.require(core, tid)["state"] not in states.LIVE:
+            raise FuzzError("Only an open task can be merged", "task_id", 409)
+        dup = next((c for c in cards.open_cards(core, tid) if c["kind"] == "duplicate" and c["other_id"] == body["other_id"]),
+                   None)
+        mid = matching.merge(core, tid, body["other_id"], card=dup)
+        return {"task_id": tid, "into": tasks.live(core, tid)["id"], "merge_id": mid}
 
     def list_groups(self, core, m, body, q):
         return {"groups": groups.list_groups(core, None if q.get("all") == "1" else tasks.finished_cutoff(core))}

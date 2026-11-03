@@ -5,6 +5,8 @@
   var esc = UI.esc;
   var root, openId = null, dlg = null, unsub = null, timer = 0;
   var finQ = '', finHits = null, finAsk = 0, finTimer = 0;
+  /* "Same as…" in the dialog: closed, loading, or the core's likely matches. Kept here, since Fuzz's work re-renders the dialog. */
+  var same = { id: null, state: 'closed', choices: [] };
 
   var TABS = {
     current: { label: 'Current', cols: ['Status', 'Age', 'Now'], states: ['review', 'ai', 'ai-queued', 'sending', 'mine', 'session', 'scheduled'], blurb: 'In motion: running with Fuzz, waiting for your OK, being sent, with you, open in Claude or Copilot, or coming back later. Fuzz works on a few at once.' },
@@ -257,14 +259,39 @@
     if (it.log.length) h += '<section><h3>Done so far</h3>' + UI.logHTML(it.log) + '</section>';
     if (it.people && it.people.length) h += '<section><h3>People</h3>' + UI.peopleHTML(it.people) + '</section>';
     if (it.sources.length) h += '<section><h3>Sources</h3>' + UI.sourcesHTML(it.sources) + '</section>';
+    h += sameAsHTML(it, tab);
     if (!draft) h += actionsRow(acts, false);
     return h + UI.idTag(it);
+  }
+  /* The same task twice (one you captured, one from Slack): say so, and this one merges into the one you pick */
+  function sameAsHTML(it, tab) {
+    if (!Live.on() || !it.coreId || ['current', 'parked', 'waiting'].indexOf(tab) < 0) return '';
+    var s = same.id === it.id ? same : { state: 'closed', choices: [] };
+    var h = '<section class="sameas">';
+    if (s.state === 'closed') return h + '<button type="button" class="btn small" data-sameas aria-expanded="false" aria-controls="dlg-sameas">Same as another task…</button></section>';
+    h += '<h3 id="dlg-sameas-h">Same as…</h3><div id="dlg-sameas">';
+    if (s.state === 'loading') h += '<p class="meta">Fuzz is looking for the likely ones…</p>';
+    else if (s.state === 'error') h += '<p class="meta">' + esc(s.error) + '</p>';
+    else if (!s.choices.length) h += '<p class="meta">Fuzz didn’t find an open task like this one.</p>';
+    else h += '<ul class="ps-tasks" aria-labelledby="dlg-sameas-h">' + s.choices.map(function (c) {
+      return '<li><span class="ps-main"><span class="ps-name">' + esc(c.title) + '</span><span class="ps-dw">' + esc(c.why) + '</span></span>' +
+        '<span class="ps-side"><button type="button" class="btn small" data-sameas-pick="' + c.task_id + '" aria-label="Merge into “' + esc(c.title) + '”">This one</button></span></li>';
+    }).join('') + '</ul>';
+    return h + '</div><button type="button" class="btn small" data-sameas-close>Never mind</button></section>';
+  }
+  function loadSameAs(it) {
+    same = { id: it.id, state: 'loading', choices: [] }; renderDialog();
+    Live.sameAsChoices(it.coreId).then(function (cs) {
+      if (same.id === it.id) { same.state = 'open'; same.choices = cs; renderDialog(); }
+    }, function (e) {
+      if (same.id === it.id) { same.state = 'error'; same.error = 'That didn’t work: ' + e.message; renderDialog(); }
+    });
   }
   /* Each change undoes on its own, or says why it can't (the core's model) */
   function undoer(ch) { return function () { var why = ch.undo(); if (!why && root) render(); return why; }; }
   function open(id, trigger) {
     var it = Store.item(id); if (!it) return;
-    openId = id;
+    openId = id; same = { id: null, state: 'closed', choices: [] };
     var d = document.createElement('dialog');
     d.className = 'dlg'; d.setAttribute('aria-labelledby', 'dlg-title');
     d.innerHTML = '<div class="dlg-in" id="dlg-in"></div>';
@@ -278,6 +305,19 @@
       var dm = d.querySelector('#dlg-menu'), mb = e.target.closest('[data-dmore]');
       if (mb) { dm.hidden = !dm.hidden; mb.setAttribute('aria-expanded', String(!dm.hidden)); if (!dm.hidden) dm.querySelector('button').focus(); return; }
       if (dm && !dm.hidden && !e.target.closest('#dlg-menu')) { dm.hidden = true; d.querySelector('[data-dmore]').setAttribute('aria-expanded', 'false'); }
+      if (e.target.closest('[data-sameas]')) { loadSameAs(Store.item(openId)); return; }
+      if (e.target.closest('[data-sameas-close]')) { same = { id: null, state: 'closed', choices: [] }; renderDialog(); return; }
+      var sp = e.target.closest('[data-sameas-pick]');
+      if (sp) {
+        var me = Store.item(openId), other = +sp.dataset.sameasPick;
+        var pick = same.choices.filter(function (c) { return c.task_id === other; })[0] || {};
+        var sch = Store.track([me.id], function () { Store.sameAs(me.id, other, pick.title); });
+        same = { id: null, state: 'closed', choices: [] };
+        d.close();
+        Say.tell('Merged into “' + (pick.title || 'that task') + '”.', { label: 'Merged “' + me.title + '” into another task.', undo: undoer(sch), blocked: sch.blocked });
+        render();
+        return;
+      }
       var rv = e.target.closest('[data-revise]');
       if (rv) { var f = d.querySelector('#dlg-revise'); f.hidden = !f.hidden; rv.setAttribute('aria-expanded', String(!f.hidden)); if (!f.hidden) d.querySelector('#dlg-revise-text').focus(); return; }
       var b = e.target.closest('[data-do]'); if (!b) return;

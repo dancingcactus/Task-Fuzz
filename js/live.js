@@ -482,6 +482,11 @@
     wrap('renameGroup', function (id, title) { return groupCall(S.group(id), 'rename', { title: (title || '').trim() }); });
     wrap('takeOut', function (id) { var it = S.item(id); return groupCall(S.groupOf(it), 'take_out', { task_id: it && it.coreId }); });
     wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
+    /* "Same as…": this task merges into the one you picked; Undo splits it back out */
+    wrap('sameAs', function (id, otherCoreId) {
+      var tid = (S.item(id) || {}).coreId;
+      return tid && otherCoreId ? function () { return api('POST', '/tasks/' + tid + '/same_as', { other_id: otherCoreId }); } : null;
+    });
     /* The demo's resolve acts out its own duplicates; here the card just leaves and the core decides */
     S.resolve = function (id, which) {
       var it = S.item(id), q = it.kickoffAsk ? KICKOFF_ASK : QUESTION[it.cardKind];
@@ -632,6 +637,8 @@
     searchFinished: function (q) {
       return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
     },
+    /* The open tasks one is most likely the same as, for "Same as…" in task detail: [{task_id, title, state, why}] */
+    sameAsChoices: function (coreId) { return api('GET', '/tasks/' + coreId + '/same_as').then(function (r) { return r.choices || []; }); },
     /* One of those, whole, so its dialog shows the log and sources */
     loadFinished: function (coreId) { return api('GET', '/tasks/' + coreId).then(function (t) { return Store.keepAside(toItem(t, null, null)); }); },
     onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
