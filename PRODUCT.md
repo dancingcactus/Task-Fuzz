@@ -23,7 +23,7 @@ Fuzz is an execution partner, not a list. "Assign to Fuzz" is the primary action
 ## Operating Context
 
 - Triage: one card in focus, with the instructions, Fuzz's pre-filled suggestion and actions pinned (Assign, Work in Claude, Schedule, Done, Park, Waiting on someone, drop, Undo).
-- Card types: task, time-sensitive, stale, handed back, entity check (person, term), possible duplicate, check-in.
+- Card types: task, time-sensitive, stale, keeps coming back (rescheduled again and again), handed back, entity check (person, term), possible duplicate, check-in.
 - Lineup: Current, Parked, Waiting on others, Done and Let go, with full task detail (log, sources, drafts, code).
 - New task: one field, one key (N), no categories.
 - Background work: assigned tasks progress on their own, finish as "Needs your OK", or get handed back.

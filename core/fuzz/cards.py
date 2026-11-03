@@ -22,6 +22,9 @@ OPTIONS = {
 TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop"]
 REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
 CHECK_BACK_OPTIONS = ["got_it", "nudge", "keep_waiting", "drop"]   # a waiting task back to ask "Did they get back to you?"
+# a task you've scheduled again and again, back to ask what's in the way: unclear (Fuzz works out the
+# first step), now (it still matters: an ordinary card), or park, let go, or one more time
+PUT_OFF_OPTIONS = ["unclear", "now", "schedule", "park", "drop"]
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
@@ -37,9 +40,10 @@ PROMPTS = {
     "nudge": "Can Fuzz chase this reply?",
     "permission": "Can Fuzz use {resource}?",
 }
+PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off"}
 
 
 def open_cards(core, task_id):
@@ -116,7 +120,9 @@ def sync(core, task_id, where="back"):
         return c["id"]
     if t["state"] == "triage" and not open_:
         return create(core, "task", task_id, reason=t.get("reason"),
-                      suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags else "keep" if "stale" in tags else "done" if "result" in tags
+                      prompt=PUT_OFF_PROMPT if "put_off" in tags else None,
+                      suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
+                      else "unclear" if "put_off" in tags else "keep" if "stale" in tags else "done" if "result" in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
@@ -171,6 +177,8 @@ def task_options(task):
         return list(REVIEW_OPTIONS)
     if "check_back" in tags:
         return list(CHECK_BACK_OPTIONS)
+    if "put_off" in tags:
+        return list(PUT_OFF_OPTIONS)
     opts = list(TASK_OPTIONS)
     if "stale" in tags:
         opts.insert(0, "keep")
@@ -223,7 +231,8 @@ def task_summary(t):
         return None
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
-            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step")
+            "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step",
+            "reschedules")
     return {k: t.get(k) for k in keys}
 
 

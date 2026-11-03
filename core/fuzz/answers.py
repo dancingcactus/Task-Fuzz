@@ -9,6 +9,9 @@ from .config import gathers
 from .db import FuzzError
 
 POSTPONE_LIMIT = 2   # after two "Not sure yet", the core takes the safe answer
+UNCLEAR = ("This keeps getting put off, so something about it is probably unclear. Work out what's actually being "
+           "asked and what done looks like, and find the smallest first step. If one thing is still unclear, hand it "
+           "back with that one question.")
 SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term": None, "is_task": "mine"}
 
 
@@ -55,6 +58,8 @@ def _task_answer(core, card, t, option, value):
     if option == "keep_waiting":
         return tasks.wait(core, t["id"], on=t.get("waiting_on"), card=card, option="keep_waiting",
                           plan=gathers(core.config))
+    if option == "unclear":   # it keeps coming back: Fuzz works out what's actually asked and the first step
+        return tasks.assign(core, t["id"], card=card, option="unclear", instructions=UNCLEAR)
     if option == "nudge":
         who = t.get("waiting_on") or "them"
         return tasks.assign(core, t["id"], card=card, option="nudge",

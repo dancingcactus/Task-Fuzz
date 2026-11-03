@@ -165,7 +165,7 @@
     inQueue: function (id) { return state.queue.indexOf(id) > -1; },
     /* You picked this one from Lineup: it goes first, ahead of deadlines, until it leaves triage */
     pick: function (id) { var it = S.item(id); if (!it || !S.inQueue(id)) return; it.picked = true; state.queue = [id].concat(state.queue.filter(function (q) { return q !== id; })); },
-    leave: function (id) { var it = S.item(id); if (it) { it.atEnd = false; it.picked = false; } state.queue = state.queue.filter(function (q) { return q !== id; }); },
+    leave: function (id) { var it = S.item(id); if (it) { it.atEnd = false; it.picked = false; it.putOff = false; } state.queue = state.queue.filter(function (q) { return q !== id; }); },
 
     /* ---- decisions from triage ---- */
     /* read: sources you pointed Fuzz to with this ask */
@@ -225,6 +225,14 @@
     keepParked: function (id) { var it = S.item(id); S.leave(id); it.state = 'parked'; it.review = false; it.woke = false; it.parkedAgo = 'Today'; it.now = ''; S.log(it, 'status', 'You kept this parked.'); },
     /* You want it now: it stays first in triage as an ordinary card, so you decide what happens next */
     clarify: function (id) { var it = S.item(id); it.review = false; it.leansGo = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', 'You brought this back from Parked.'); },
+    /* A task you keep giving a new time came back to ask what's in the way (put_off in the core) */
+    unclear: function (id) {
+      var it = S.item(id); S.leave(id); it.putOff = false;
+      it.workStep = 0; it.nextAt = Date.now() + 4500; it.instr = 'Work out what this needs and the smallest first step.';
+      it.state = S.running() >= MAX_RUNNING ? 'ai-queued' : 'ai'; it.queuedAt = Date.now();
+      S.log(it, 'status', 'You asked Fuzz to work out the first step.');
+    },
+    stillMatters: function (id) { var it = S.item(id); it.putOff = false; it.ask = 'What should happen to this?'; S.queueUp(it, 'front'); S.log(it, 'status', 'You said this still matters.'); },
     /* Waiting means you're blocked until someone gets back to you, so it always names who, and Fuzz checks back */
     wait: function (id, who) { var it = S.item(id); S.leave(id); it.state = 'waiting'; it.checkBack = false; it.waitingOn = who || it.waitingOn || it.who || 'Someone'; it.waitedFor = 'Today'; it.nextCheck = 'In a few days'; S.log(it, 'status', 'You’re waiting on ' + it.waitingOn + '. Fuzz checks back in a few days, sooner if they reply.'); },
     /* A check-back: they got back to you, so it's yours to decide again, first in line */
