@@ -23,6 +23,7 @@ EVENT_TYPES = {
     "task.file_written", "task.file_deleted", "task.link_added", "task.review_due", "task.kept_parked", "task.check_back_set",
     "task.session_opened", "task.next_step", "task.session_ended",
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
+    "group.collected", "group.working",   # working through a group: Fuzz has the answers / the run goes on
     "entity.merged", "entity.kept_separate", "entity.defined",
     "card.created", "card.answered", "card.postponed", "card.expired", "card.updated",
     "permission.asked", "permission.granted", "permission.denied",
@@ -146,6 +147,10 @@ def emit(core, type, task_id=None, changes=None, log=None, data=None, actor=None
         cur = _current(core, "tasks", task_id, ["state"])
         if cur and cur["state"] == "working" and f.get("state", "working") == "working":
             f.setdefault("lease_until", core.renew[1])
+        for mate in (core.renew[2] if len(core.renew) > 2 else ()):   # the rest of a group claim
+            m = _current(core, "tasks", mate, ["state"])
+            if m and m["state"] == "working" and str(mate) not in ch["tasks"]:
+                ch["tasks"][str(mate)] = {"lease_until": core.renew[1]}
         if not f:
             del ch["tasks"][str(task_id)]
             if not ch["tasks"]:

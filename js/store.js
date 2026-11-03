@@ -151,7 +151,24 @@
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
+      /* A group's cards come back to back, where its first one is; the group you're working through comes
+         first, ahead of new arrivals and deadlines (one you picked from Lineup still goes first). The core
+         orders live cards the same way. */
+      var run = state.groupRun, out = [], used = {};
+      function together(it) { return it.group && !it.atEnd; }
+      function take(id) { if (!used[id]) { used[id] = true; out.push(id); } }
+      state.queue.forEach(function (id) { if (S.item(id).picked) take(id); });
+      if (run) state.queue.forEach(function (id) { var it = S.item(id); if (it.group === run && together(it)) take(id); });
+      state.queue.forEach(function (id) {
+        if (used[id]) return;
+        var it = S.item(id); take(id);
+        if (together(it)) state.queue.forEach(function (o) { var x = S.item(o); if (x.group === it.group && together(x)) take(o); });
+      });
+      state.queue = out;
     },
+    /* The group you're working through in Triage (its id), or null once Fuzz has every answer */
+    setRun: function (gid) { if (state.groupRun !== gid) { state.groupRun = gid || null; S.sortQueue(); } },
+    groupRun: function () { return state.groupRun || null; },
     setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
     /* End of the list: behind everything, deadlines too, until it next leaves triage */
     toBack: function (id, text) { var it = S.item(id); if (text != null) it.draft = text; if (it.kind === 'task') it.atEnd = true; it.order = ++state.maxOrder; S.sortQueue(); },

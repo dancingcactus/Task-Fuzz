@@ -107,6 +107,7 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
         fields.setdefault("quick_answers", None)
     if to not in ("queued", "working"):
         remove.add("gather")   # gathering ends however the task leaves Fuzz's hands
+        remove |= {"held", "together"}   # and so does waiting for, or working with, the rest of its group
     base = dict(t, **pend)
     f = dict(state=to, variant_tags=_tags(base, add_tags, remove), **fields)
     if "assignee" not in fields:
@@ -185,8 +186,10 @@ def pointed(core, t, refs):
     return out
 
 
-def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human", refs=None):
-    """refs: sources you pointed Fuzz to with this ask (see pointed). They go in the notes with your words."""
+def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human", refs=None,
+           hold=False):
+    """refs: sources you pointed Fuzz to with this ask (see pointed). They go in the notes with your words.
+    hold: you're working through its group, so it waits (tag held) until the group is collected."""
     t = require(core, task_id)
     extra = {}
     log = ("status", "You assigned this to Fuzz.")
@@ -200,9 +203,10 @@ def assign(core, task_id, instructions=None, card=None, option="assign", value=N
         log = ("guidance", f"You said: {said}")
     with core.tx(actor):
         ch = events.Changes()
-        move(core, ch, t, "queued", card=card, attempts=0, question=None, **extra)
+        move(core, ch, t, "queued", card=card, attempts=0, question=None, add_tags=("held",) if hold else (), **extra)
         _answered(core, ch, card, option, value)
-        events.emit(core, "task.assigned", task_id=t["id"], changes=ch, log=log, data={"to": "fuzz"})
+        events.emit(core, "task.assigned", task_id=t["id"], changes=ch, log=log,
+                    data={"to": "fuzz", "held": True} if hold else {"to": "fuzz"})
     return t["id"]
 
 
@@ -385,6 +389,8 @@ def to_back(core, task_id):
                     payload=dict(c.get("payload") or {}, at_end=True))
         events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": open_[0]["kind"], "to": "back"},
                     log=("status", "You moved this to the end of the list."))
+        from . import groups   # working through its group: the rest of it goes on without this one
+        groups.after_answer(core, t["id"])
     return t["id"]
 
 

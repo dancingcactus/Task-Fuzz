@@ -96,7 +96,8 @@ def build(core, role, task_id=None):
 
         @srv.tool()
         def save_draft(task_id: int, kind: str, target: str, body: str, final: bool = True,
-                       attach: list[str] | None = None, reply_to: int | None = None) -> dict:
+                       attach: list[str] | None = None, reply_to: int | None = None,
+                       covers: list[int] | None = None) -> dict:
             """Store a draft for the human to approve. The task moves to review. kind: email.reply, email.new,
             slack.message, calendar.invite, nudge.email, nudge.slack or note. target: only who it's to, as the
             person would say it on the card ("Stefano Marinoni <smarinoni@adobe.com>", "Slack #offsite-planning").
@@ -107,8 +108,11 @@ def build(core, role, task_id=None):
             final: false for a note that prepares a step still ahead ("send the update next week"). Call
             suggest_schedule (or update_brief with due) first: approving it schedules the task for then
             instead of closing it. attach: file names in the task's output_dir (as output_files lists them) for
-            the sender to attach to the message."""
-            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach, reply_to)
+            the sender to attach to the message.
+            covers: when get_task's group.together lists tasks you hold with this one (asks from the same thread
+            the person answered together), the ids this one reply also answers. Write one reply covering every
+            ask; approving it closes them all."""
+            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach, reply_to, covers)
 
         @srv.tool()
         def hand_back(task_id: int, question: str | None = None, options: list[str] | None = None,

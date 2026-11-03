@@ -222,8 +222,30 @@ def queue(core):
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
         k = (at_end, urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
-    keyed.sort(key=lambda x: x[0])
-    return [(c, t) for _, c, t in keyed]
+    return [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
+
+
+def _back_to_back(core, keyed):
+    """A group's cards come one after another, where its first one would be; the group you're working
+    through comes before everything else, new arrivals and deadlines too. A card you sent to the end
+    stays there. Returns the rows with their final keys."""
+    from . import groups
+    run = groups.run(core)
+    lead = {}
+    for k, c, t in keyed:
+        gid = (t or {}).get("group_id")
+        if gid and not k[0] and c["kind"] in groups.ROUTING:
+            lead.setdefault(gid, []).append(k)
+    lead = {g: min(ks) for g, ks in lead.items() if len(ks) > 1 or (run and run["group_id"] == g)}
+    out = []
+    for k, c, t in keyed:
+        gid = (t or {}).get("group_id")
+        if gid in lead and not k[0] and c["kind"] in groups.ROUTING:
+            first = 0 if run and run["group_id"] == gid else 1
+            out.append(((first,) + lead[gid] + (gid,) + k, c, t))
+        else:
+            out.append(((1,) + k + (0,) + k, c, t))
+    return out
 
 
 def task_summary(t):

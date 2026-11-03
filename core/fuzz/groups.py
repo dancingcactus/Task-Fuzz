@@ -40,13 +40,16 @@ def finished(core, g, tasks=None):
 
 
 def view(core, g):
-    """The group as a UI gets it: its name, where it came from and each task with its state."""
+    """The group as a UI gets it: its name, where it came from, each task with its state and what you
+    answered on its card ("What you said"), and once it's finished, the line Fuzz closes it with."""
     ts = members(core, g["id"])
     counted = [t for t in ts if t["state"] != "letgo"]
+    fin = finished(core, g, ts)
     return {"id": g["id"], "title": g["title"], "origin": g["origin"], "source": (g["origin"] or "").split(":")[0],
-            "link": g["link"], "wrapped": g["state"] == "wrapped", "finished": finished(core, g, ts),
+            "link": g["link"], "wrapped": g["state"] == "wrapped", "finished": fin,
             "done": sum(t["state"] == "done" for t in counted), "total": len(counted),
-            "tasks": [{"id": t["id"], "title": t["title"], "state": t["state"]} for t in ts]}
+            "tasks": [{"id": t["id"], "title": t["title"], "state": t["state"], "said": said(core, t["id"])} for t in ts],
+            "closed_line": closed_line(core, g, ts) if fin else None}
 
 
 def list_groups(core, since=None):
@@ -62,12 +65,29 @@ def list_groups(core, since=None):
 
 
 def brief(core, t):
-    """For the executor's get_task: the group's name and the other tasks in it, by title and state."""
+    """For the executor's get_task: the group's name and the other tasks in it, by title and state, with
+    what the person answered on each one's card and its notes. together: the ones this run holds with
+    this task (a group claim), to work as one: one lookup, and for a thread one reply (save_draft covers)."""
     if not t.get("group_id"):
         return None
     g = get(core, t["group_id"])
-    return {"title": g["title"], "others": [{"id": o["id"], "title": o["title"], "state": o["state"]}
-                                            for o in members(core, g["id"]) if o["id"] != t["id"]]}
+    mates = {m["id"] for m in claimed_with(core, t)}
+    others = []
+    for o in members(core, g["id"]):
+        if o["id"] == t["id"]:
+            continue
+        x = {"id": o["id"], "title": o["title"], "state": o["state"]}
+        s = said(core, o["id"])
+        if s:
+            x["you_said"] = s["text"]
+        if o["id"] in mates:
+            x.update(together=True, ask=o["ask"], notes=o["notes"])
+        others.append(x)
+    out = {"title": g["title"], "others": others}
+    if mates:
+        out["together"] = sorted(mates)
+        out["reply_to"] = sender(core, g["id"])
+    return out
 
 
 # ---------------------------------------------------------------- making groups
@@ -270,3 +290,210 @@ def wrap(core, group_id):
         events.emit(core, "group.wrapped", changes=ch, data={"group_id": g["id"]},
                     log=("status", f"You said {g['title']} is wrapped up."))
     return g["id"]
+
+
+# ---------------------------------------------------------------- working through a group
+# A group's cards come one at a time, back to back (cards.queue). Every answer takes effect at once,
+# except Assign to Fuzz: that task is held (tag "held") until the group is collected, so Fuzz works
+# the group in one run. Collected (group.collected) when the last card is answered, when you say
+# "Finish later", or after a quiet spell (grouping.collect_minutes): the held tasks become "together",
+# and claim_next_task leases them as one claim. The run in progress is user_state "group_run".
+
+HELD, TOGETHER = "held", "together"
+SAID = {"assign": "Fuzz", "quick": "Fuzz", "unclear": "Fuzz works out the first step", "nudge": "Fuzz nudges them",
+        "session": "Working session", "schedule": "Later", "done": "Done", "park": "Parked", "wait": "Waiting",
+        "keep_waiting": "Still waiting", "someone_else": "Not mine", "drop": "Let go", "not_task": "Not a task",
+        "mine": "Yours", "merge": "Merged", "keep_separate": "Kept separate", "keep": "Kept", "keep_parked": "Parked",
+        "now": "Yours", "got_it": "They got back to you"}
+ROUTING = ("task", "duplicate", "is_task", "entity_person", "entity_term")   # the cards a group is worked through with
+
+
+def _tags(t):
+    return t.get("variant_tags") or []
+
+
+def said(core, task_id):
+    """What you answered on this task's latest card: {"option", "text"}, or None."""
+    c = core.one("SELECT answer FROM cards WHERE user_id=? AND task_id=? AND status='answered' AND kind IN "
+                 f"({','.join('?' * len(ROUTING))}) ORDER BY answered_event_id DESC LIMIT 1",
+                 [core.user_id, task_id] + list(ROUTING))
+    a = (c or {}).get("answer") or {}
+    if not a.get("option"):
+        return None
+    v = a.get("value")
+    text = SAID.get(a["option"], a["option"].replace("_", " ").capitalize())
+    if a["option"] == "wait" and isinstance(v, str):
+        text = f"Waiting on {v}"
+    elif a["option"] in ("assign", "quick"):
+        words = v if isinstance(v, str) else (v or {}).get("instructions") if isinstance(v, dict) else None
+        if words:
+            text = f"Fuzz: “{words.strip()[:120]}”"
+    elif a["option"] == "someone_else" and isinstance(v, str) and v.strip():
+        text = f"{v.strip()}'s"
+    return {"option": a["option"], "text": text}
+
+
+def _waiting(core, t):
+    """This task has a card you haven't answered yet, and haven't put off to the end."""
+    return any(c["kind"] in ROUTING and not c["postponed"] and not (c.get("payload") or {}).get("at_end")
+               for c in core.all("SELECT * FROM cards WHERE user_id=? AND task_id=? AND status='open'",
+                                 (core.user_id, t["id"])))
+
+
+def run(core):
+    """The group you're working through, or None: {"group_id", "tasks", "at"}."""
+    row = core.one("SELECT value FROM user_state WHERE user_id=? AND key='group_run'", (core.user_id,))
+    v = (row or {}).get("value")
+    return json.loads(v) if isinstance(v, str) and v.startswith("{") else None
+
+
+def holds(core, t):
+    """Assigning this task from its card waits for the rest of its group: another task in it still has a
+    card for you, or is already held."""
+    if not t.get("group_id"):
+        return False
+    return any(m["id"] != t["id"] and (_waiting(core, m) or HELD in _tags(m))
+               for m in members(core, t["group_id"]) if m["state"] in states.LIVE)
+
+
+def after_answer(core, task_id):
+    """You answered a card. Inside the answer's transaction, so one Undo takes back both. Either the group
+    has cards left, and the run goes on, or this was the last one, and the group is collected."""
+    from . import tasks
+    t = tasks.get(core, task_id)
+    gid = t and t.get("group_id")
+    cur = run(core)
+    if cur and cur["group_id"] != gid:   # you moved on to something else: what was answered goes ahead
+        collect(core, cur["group_id"], "moved_on")
+        cur = None
+    if not gid:
+        return None
+    mem = [m for m in members(core, gid) if m["state"] in states.LIVE or m["id"] == task_id]
+    left = [m for m in mem if m["id"] != task_id and _waiting(core, m)]
+    if left:
+        ids = cur["tasks"] if cur else [task_id] + [m["id"] for m in left]
+        ch = events.Changes()
+        ch.state("group_run", json.dumps({"group_id": gid, "tasks": sorted(set(ids) | {task_id}), "at": core.now_iso()}))
+        events.emit(core, "group.working", task_id=task_id, changes=ch, actor="system",
+                    data={"group_id": gid, "left": len(left)})
+        return None
+    if cur or any(HELD in _tags(m) for m in mem):
+        return collect(core, gid, "answered")
+    return None
+
+
+def collect(core, gid, why="answered", actor="system"):
+    """Fuzz has the answers: the held tasks become one claim (together), and the run is over.
+    why: answered (the last card), later (you said Finish later), quiet (no answer for a while), moved_on."""
+    from . import tasks
+    g = get(core, gid)
+    cur = run(core)
+    mem = members(core, gid)
+    held = [m for m in mem if HELD in _tags(m) and m["state"] in states.LIVE]
+    ch = events.Changes()
+    for h in held:
+        ch.task(h["id"], variant_tags=tasks._tags(h, add=(TOGETHER,) if len(held) > 1 else (), remove=(HELD,)))
+    if cur and cur["group_id"] == gid:
+        ch.state("group_run", None)
+    if ch.empty():
+        return None
+    ids = cur["tasks"] if cur and cur["group_id"] == gid else [m["id"] for m in mem]
+    line = plan_line(core, g, [m for m in mem if m["id"] in ids], held, why)
+    if why == "later":   # the rest wait behind everything else, as ordinary cards
+        from . import cards
+        n = cards.next_order(core)
+        for m in mem:
+            for c in core.all("SELECT * FROM cards WHERE user_id=? AND task_id=? AND status='open'", (core.user_id, m["id"])):
+                if c["kind"] in ROUTING and not (c.get("payload") or {}).get("at_end"):
+                    ch.card(c["id"], order_key=n, postponed=c["postponed"] + 1, payload=dict(c.get("payload") or {}, at_end=True))
+                    n += 1
+    events.emit(core, "group.collected", task_id=held[0]["id"] if held else None, changes=ch, actor=actor,
+                data={"group_id": gid, "together": [h["id"] for h in held], "why": why, "line": line},
+                log=("status", line) if held else None)
+    return line
+
+
+def finish_later(core, gid):
+    """You stopped partway: Fuzz goes ahead with the answers it has; the rest come back as ordinary cards."""
+    require(core, gid)
+    with core.tx("human"):
+        line = collect(core, gid, "later", actor="human")
+        if line is None:
+            raise FuzzError("You're not working through this group", "group_id", 409)
+    return line
+
+
+def collect_quiet(core):
+    """Run by the clock: a run nobody has answered in a while goes ahead with what it has."""
+    from datetime import timedelta
+    cur = run(core)
+    if not cur:
+        return 0
+    quiet = float((core.config.get("grouping") or {}).get("collect_minutes", 30))
+    if parse_iso(cur["at"]) > core.now() - timedelta(minutes=quiet):
+        return 0
+    with core.tx("system"):
+        collect(core, cur["group_id"], "quiet")
+    return 1
+
+
+def sender(core, gid):
+    """Who a reply for the whole thread goes to: the person the group's first message came from, for an
+    email thread or a Slack burst. None for meeting notes, which have no one recipient."""
+    g = get(core, gid)
+    if (g["origin"] or "").split(":")[0] not in ("email", "slack"):
+        return None
+    row = core.one("SELECT g.payload FROM sources s JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
+                   "JOIN tasks t ON t.id=s.task_id WHERE t.group_id=? AND s.user_id=? AND s.role='origin' "
+                   "ORDER BY g.ts, s.id LIMIT 1", (gid, core.user_id))
+    return (((row or {}).get("payload") or {}).get("from") or {}).get("name")
+
+
+_NUM = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def plan_line(core, g, ran, held, why):
+    """What Fuzz says once it has the answers: "Got all 4. I'll look into the two together and draft one
+    reply to Priya. You've got the plan review." Deterministic, from the answers."""
+    from .sessions import label
+    n = len(ran)
+    answered = sum(1 for m in ran if not _waiting(core, m))
+    out = [f"Got all {n}." if why == "answered" or answered >= n else f"Got {answered} of {n}."]
+    who = sender(core, g["id"])
+    k = len(held)
+    reply = f" and draft one reply to {who}" if who and k else ""
+    if k > 1:
+        out.append(f"I'll look into the {_NUM.get(k, k)} together{reply}.")
+    elif k == 1:
+        out.append(f"I'll get on “{held[0]['title']}”{reply}.")
+    yours = [m for m in ran if m["state"] == "session"]
+    if yours:
+        out.append(f"You've got “{yours[0]['title']}” in {label(core)}." if len(yours) == 1
+                   else f"You've got {len(yours)} in {label(core)}.")
+    if why != "answered" and answered < n:
+        out.append("The rest come back as ordinary cards.")
+    return " ".join(out)
+
+
+def closed_line(core, g, ts):
+    """Fuzz's line for a finished group (the thread-closed moment)."""
+    done = [t for t in ts if t["state"] == "done"]
+    if g["state"] == "wrapped" and any(t["state"] in states.LIVE for t in ts):
+        return f"{g['title']} is wrapped up. What's still open carries on by itself."
+    if not done:
+        return f"That thread's closed: {g['title']} has nothing left in it."
+    one = core.one("SELECT d.covers FROM drafts d JOIN tasks t ON t.id=d.task_id WHERE t.group_id=? AND d.user_id=? "
+                   "AND d.status='sent' AND d.covers IS NOT NULL ORDER BY d.id DESC LIMIT 1", (g["id"], core.user_id))
+    who = sender(core, g["id"])
+    if one and one.get("covers"):
+        whose = f"{who}’s" if who else "the"
+        return f"All {len(one['covers']) + 1} of {whose} asks answered in one reply. That thread's done."
+    return f"All {len(done)} done from {g['title']}. That thread's done." if len(done) > 1 else f"{g['title']}: done. That thread's closed."
+
+
+def claimed_with(core, t):
+    """The other tasks this run holds in the same group claim as t."""
+    if not t.get("group_id") or t["state"] != "working" or not t.get("lease_owner"):
+        return []
+    return core.all("SELECT * FROM tasks WHERE user_id=? AND group_id=? AND state='working' AND lease_owner=? AND id!=?",
+                    (core.user_id, t["group_id"], t["lease_owner"], t["id"]))

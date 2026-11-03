@@ -72,13 +72,19 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
     t = tasks.require(core, task_id)
     if result and not t.get("context_md"):
         raise FuzzError("A result needs the brief first: write it with update_brief(context_md=…)", "result")
+    from . import groups
+    mates = groups.claimed_with(core, t)   # a group claim asks once: the others wait for your answer
     with core.tx(actor):
         ch = events.Changes()
         tasks.move(core, ch, t, "scheduled" if hold else "triage",
                    add_tags=("handed_back", "result") if result else ("handed_back",),
                    order_key=tasks.next_order(core), **tasks.handed_back_fields(question, options))
-        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch,
-                    data={"question": question.strip(), "result": bool(result)},
+        for m in mates:
+            tasks.move(core, ch, m, "queued", add_tags=("held",))
+        data = {"question": question.strip(), "result": bool(result)}
+        if mates:
+            data["held"] = [m["id"] for m in mates]
+        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch, data=data,
                     log=("action", log or "Finished. The result is in the brief.") if result
                     else ("blocked", log or f"Handed back: {question.strip()}"))
         cards.sync(core, t["id"])
@@ -206,8 +212,9 @@ def _eligible(core, task_id=None):
     rows = core.all(sql, (core.user_id, task_id) if task_id else (core.user_id,))
     mine = _released_by_me(core)
     # kickoff: the onboarding's "find your asks" task, which Fuzz works without the executor
-    rows = [t for t in rows if not {"needs_permission", "kickoff"} & set(t.get("variant_tags") or []) and t["id"] not in mine
-            and not files.waiting(core, t)]
+    # held: you're still working through its group, and Fuzz starts once it has every answer
+    rows = [t for t in rows if not {"needs_permission", "kickoff", "held"} & set(t.get("variant_tags") or [])
+            and t["id"] not in mine and not files.waiting(core, t)]
     # a task waiting to be gathered goes first: you're about to see it in triage
     rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
     return rows
@@ -219,7 +226,7 @@ def claim_next(core, task_id=None):
     expire_leases(core)
     while True:
         with core.tx("fuzz:executor"):
-            working = core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='working'", (core.user_id,))["n"]
+            working = _slots_used(core)
             if working >= b["max_working"]:
                 return None, f"{b['max_working']} tasks are already running"
             rows = _eligible(core, task_id)
@@ -235,11 +242,42 @@ def claim_next(core, task_id=None):
                           actor="system", log=f"Claimed {t['attempts']} times with no progress, so it came back to you.")
                 continue
             ch = events.Changes()
-            tasks.move(core, ch, t, "working", lease_owner=caller(core), lease_until=lease_until(core),
-                       attempts=t["attempts"] + 1)
-            events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core)},
-                        log=("status", "Fuzz is gathering context." if gathering(t) else "Fuzz started on this."))
+            # A group you answered together is one claim: Fuzz holds them all, for one lookup and one reply
+            mates = _together(core, t)
+            for x in [t] + mates:
+                tasks.move(core, ch, x, "working", lease_owner=caller(core), lease_until=lease_until(core),
+                           attempts=x["attempts"] + 1, remove_tags=("together",))
+            data = {"by": caller(core)}
+            if mates:
+                data["together"] = [x["id"] for x in mates]
+            events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data=data,
+                        log=("status", "Fuzz is gathering context." if gathering(t) else
+                             f"Fuzz started on this, together with {len(mates)} more from the same place." if mates
+                             else "Fuzz started on this."))
             return tasks.get(core, t["id"]), None
+
+
+def _together(core, t):
+    """The other tasks collected with t from its group, waiting to be claimed with it."""
+    if "together" not in (t.get("variant_tags") or []) or not t.get("group_id"):
+        return []
+    rows = core.all("SELECT * FROM tasks WHERE user_id=? AND group_id=? AND state='queued' AND assignee='fuzz' "
+                    "AND id!=? ORDER BY id", (core.user_id, t["group_id"], t["id"]))
+    return [x for x in rows if "together" in (x.get("variant_tags") or [])
+            and not {"needs_permission", "held"} & set(x.get("variant_tags") or [])]
+
+
+def _slots_used(core):
+    """Tasks running now, a group claim counting once."""
+    rows = core.all("SELECT group_id, lease_owner FROM tasks WHERE user_id=? AND state='working'", (core.user_id,))
+    seen, n = set(), 0
+    for r in rows:
+        key = (r["group_id"], r["lease_owner"]) if r["group_id"] else None
+        if key is None or key not in seen:
+            n += 1
+        if key:
+            seen.add(key)
+    return n
 
 
 def work_waiting(core, task_id=None):
@@ -475,6 +513,8 @@ def tick(core):
                 cards.sync(core, t["id"])
     out["review"] = review.release(core)
     out["quiet_sessions"] = sessions.quiet(core)
+    from . import groups
+    out["groups_collected"] = groups.collect_quiet(core)   # you stopped partway through a group a while ago
     return out
 
 

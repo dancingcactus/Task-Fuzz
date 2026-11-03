@@ -138,6 +138,7 @@ GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, do
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
 GET  /tasks/{id}/same_as       POST /tasks/{id}/same_as {other_id}   (merges it into that task; Undo splits it)
+GET  /groups                   POST /groups/{id}/rename|take_out|wrap|finish_later
 POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
 GET  /files/{source_id}        GET  /artifacts           GET  /artifacts/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
@@ -277,6 +278,20 @@ or an ask very close in meaning, raises a `duplicate` card, which comes before t
 A link on more than three live tasks doesn't count. The judge's `new` verdicts get the same check
 against the tasks made in the same run after their shortlist froze (`frozen_after` on the pending
 item), since those were never on it. The code is `fuzz/matching/dupes.py`.
+
+### Working through a group
+
+A group's cards come back to back in `GET /cards`, and once you've answered one, the rest come
+before anything else (`group_run` on the response says which group and tasks). Every answer takes
+effect at once, except Assign to Fuzz: that task waits with the `held` tag, and `claim_next_task`
+skips it. After the last card (or `POST /groups/{id}/finish_later`, or `grouping.collect_minutes`
+(30) with no answer), `group.collected` turns the held tasks `together`, and the answer returns Fuzz's
+plan as `collected` ("Got all 3. I'll look into the two together and draft one reply to Dana Reyes.").
+Finish later also sends the group's remaining cards to the end of the list. The next claim leases all
+the `together` tasks at once (one slot); `get_task`'s `group` lists them under `together`, with what
+you said on each other card, and `save_draft(covers=[…])` makes one reply that waits in review for all
+of them and closes them all when it's sent. A handback on a group claim asks once; the others wait,
+`held`, for your answer. Undo of the last answer takes the collection back too.
 
 ### Looking into a task you scheduled
 

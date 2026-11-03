@@ -4,7 +4,7 @@ The table below mirrors "What each answer writes" in the design doc. A new kind 
 code change here; the AI only fills in wording.
 """
 
-from . import cards, drafts, events, tasks
+from . import cards, drafts, events, groups, tasks
 from .config import gathers
 from .db import FuzzError
 
@@ -16,9 +16,11 @@ SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term
 
 
 def _task_answer(core, card, t, option, value):
+    hold = groups.holds(core, t)   # working through its group: Fuzz starts once it has every answer
     if option == "assign":
         v = value if isinstance(value, dict) else {"instructions": value}
-        return tasks.assign(core, t["id"], instructions=v.get("instructions"), refs=v.get("refs"), card=card)
+        return tasks.assign(core, t["id"], instructions=v.get("instructions"), refs=v.get("refs"), card=card,
+                            value=value, hold=hold)
     if option == "quick":
         text = value if isinstance(value, str) else (value or {}).get("text")
         if not text or text not in (t.get("quick_answers") or []) and not (value or {}).get("custom"):
@@ -28,7 +30,7 @@ def _task_answer(core, card, t, option, value):
             cards.mark_answered(core, ch, card, "quick", text)
             events.emit(core, "card.answered", task_id=t["id"], changes=ch, data={"kind": "task", "option": "quick"},
                         log=("guidance", f"You answered: {text}"))
-            tasks.assign(core, t["id"], instructions=text)
+            tasks.assign(core, t["id"], instructions=text, hold=hold)
         return
     if option == "session":
         return tasks.session(core, t["id"], card=card)
@@ -59,10 +61,10 @@ def _task_answer(core, card, t, option, value):
         return tasks.wait(core, t["id"], on=t.get("waiting_on"), card=card, option="keep_waiting",
                           plan=gathers(core.config))
     if option == "unclear":   # it keeps coming back: Fuzz works out what's actually asked and the first step
-        return tasks.assign(core, t["id"], card=card, option="unclear", instructions=UNCLEAR)
+        return tasks.assign(core, t["id"], card=card, option="unclear", instructions=UNCLEAR, hold=hold)
     if option == "nudge":
         who = t.get("waiting_on") or "them"
-        return tasks.assign(core, t["id"], card=card, option="nudge",
+        return tasks.assign(core, t["id"], card=card, option="nudge", hold=hold,
                             instructions=f"Draft a short, friendly nudge to {who} (a nudge.* draft in the same thread) "
                                          f"asking where this stands.")
 
@@ -187,12 +189,18 @@ def answer(core, card_id, option, value=None):
     allowed = cards.options(card, t or {})
     if option not in allowed:
         raise FuzzError(f"option must be one of {', '.join(allowed)}", "option")
+    line = None
     with core.tx("human"):
         if option == "not_sure":
             _postpone(core, card, t)
         else:
             HANDLERS[card["kind"]](core, card, t, option, value)
-    return {"card_id": card_id, "option": option}
+        if card["kind"] in groups.ROUTING and t:   # working through a group: the run goes on, or it's collected
+            line = groups.after_answer(core, t["id"])
+    out = {"card_id": card_id, "option": option}
+    if line:
+        out["collected"] = line
+    return out
 
 
 def _postpone(core, card, t):

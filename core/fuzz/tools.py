@@ -20,7 +20,8 @@ LOG_ON_GET = 8
 def _lease(core, task_id):
     """Check the caller holds the task, and renew the lease with whatever the tool writes."""
     t = scheduler.require_lease(core, task_id)
-    core.renew = (t["id"], scheduler.lease_until(core))
+    # the others in a group claim keep their leases while Fuzz works on any of them
+    core.renew = (t["id"], scheduler.lease_until(core), tuple(m["id"] for m in groups.claimed_with(core, t)))
     try:
         with core.tx("fuzz:executor"):
             yield t
@@ -147,11 +148,12 @@ def add_source(core, task_id, title, link):
     return {"source_id": sid, "added": added}
 
 
-def save_draft(core, task_id, kind, target, body, final=True, attach=None, reply_to=None):
+def save_draft(core, task_id, kind, target, body, final=True, attach=None, reply_to=None, covers=None):
     with _lease(core, task_id) as t:
         scheduler.refuse_while_gathering(t)
         outputs.record(core, task_id)
-        did = drafts.save_draft(core, task_id, kind, target, body, final, attach=attach, reply_to=reply_to)
+        did = drafts.save_draft(core, task_id, kind, target, body, final, attach=attach, reply_to=reply_to,
+                                covers=covers)
     return {"draft_id": did, "state": "review"}
 
 

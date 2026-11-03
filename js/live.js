@@ -15,7 +15,7 @@
   var KEY = 'fuzz.token', WHO = 'fuzz.account', NOTE = 'fuzz.account.note';
   var token = null, on = false, quiet = 0, gen = 0, pending = 0, chain = Promise.resolve(), recording = null;
   var unpin = false, extra = null, syncing = false, again = false, syncTimer = 0, detail = {}, sig = '', undoBlocked = {}, lastId = 0, said = {};
-  var base = {}, listeners = [], served = false;
+  var base = {}, listeners = [], served = false, collected = null;
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
@@ -102,7 +102,9 @@
   function decide(it, option, value, action, body) {
     var cardId = it.cardId, opts = it.cardOptions || [], tid = it.coreId;
     return function () {
-      if (cardId && opts.indexOf(option) > -1) return api('POST', '/cards/' + cardId + '/answer', value === undefined ? { option: option } : { option: option, value: value });
+      /* the last card of a group comes back with Fuzz's plan for it ("Got all 4. …"), for Triage to say */
+      if (cardId && opts.indexOf(option) > -1) return api('POST', '/cards/' + cardId + '/answer', value === undefined ? { option: option } : { option: option, value: value })
+        .then(function (r) { if (r && r.collected) collected = r.collected; return r; });
       if (!action) throw new Error('This card can’t do that any more. Refresh the page.');
       return api('POST', '/tasks/' + tid + '/' + action, body || {});
     };
@@ -332,6 +334,7 @@
   /* The tasks that came from the same place. A meeting's notes are a file, which a browser page can't open. */
   function toGroup(g) {
     return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped,
+      closedLine: g.closed_line || null,
       members: (g.tasks || []).map(function (t) { return { id: 't' + t.id, state: STATE[t.state] || t.state }; }) };
   }
 
@@ -636,6 +639,15 @@
     /* Finished work older than Lineup shows, by words in its title or summary, newest first */
     searchFinished: function (q) {
       return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
+    },
+    /* Working through a group: the core's plan once it has every answer ("Got all 4. …"), said once */
+    takeCollected: function () { var c = collected; collected = null; return c; },
+    /* You stopped partway through a group: Fuzz goes ahead with the answers so far, and the rest of the
+       group's cards go to the end of the list. Resolves to the core's plan line. */
+    finishLater: function (coreGroupId) {
+      gen++;
+      return write(function () { return api('POST', '/groups/' + coreGroupId + '/finish_later', {}); })
+        .then(function (r) { syncThenRefresh(); return r && r.collected; });
     },
     /* The open tasks one is most likely the same as, for "Same as…" in task detail: [{task_id, title, state, why}] */
     sameAsChoices: function (coreId) { return api('GET', '/tasks/' + coreId + '/same_as').then(function (r) { return r.choices || []; }); },

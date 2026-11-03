@@ -34,7 +34,9 @@ DEFAULTS = {
     "files": {"max_mb": 25, "max_per_task": 10},
     # Slack messages from one person, each within this many minutes of the one before (and nothing from
     # you in between), are one origin, so their asks form a group.
-    "grouping": {"slack_burst_minutes": 10},
+    # collect_minutes: working through a group and nothing answered for this long, Fuzz goes ahead with
+    # the answers it has (as if you'd said Finish later).
+    "grouping": {"slack_burst_minutes": 10, "collect_minutes": 30},
     # The connector tools the sender may call to send an approved draft, per client, as that client
     # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
     # hands each draft back.

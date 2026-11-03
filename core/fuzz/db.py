@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   created_at TEXT,
   final INTEGER,                   -- 0: a note that prepares a later step; approving it doesn't close the task
   attachments TEXT,                -- json list of file names in the task's output folder, for the sender
-  reply_to INTEGER                 -- the source whose thread a reply or nudge goes in
+  reply_to INTEGER,                -- the source whose thread a reply or nudge goes in
+  covers TEXT                      -- json list: the other tasks in the group one reply answers
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -307,7 +308,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 JSON_COLS = {"quick_answers", "variant_tags", "schedule_anchor", "schedule_hints", "title_history",
-             "options", "schedule_options", "payload", "answer", "detail", "attachments"}
+             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers"}
 
 
 def iso(dt):
@@ -344,7 +345,7 @@ def connect(home):
 
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
-              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
+              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
                         ("reschedules", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
@@ -394,7 +395,7 @@ class Core:
         self.user_id = int(user_id or os.environ.get("FUZZ_USER") or 1)
         self.clock = clock
         self.run = None              # {"id", "client", "model", "prompt_version"} for AI callers
-        self.renew = None            # (task_id, lease_until): renew this lease on the next event about it
+        self.renew = None            # (task_id, lease_until, mates): renew this lease (and a group claim's) on the next event about it
         self.lock = threading.RLock()
         self._depth = 0
         self._group = None

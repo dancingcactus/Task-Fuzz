@@ -793,6 +793,30 @@ html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
 .ps-open { padding: 0; border: 0; background: none; color: var(--link); text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 .ps-dw { font-size: 12.5px; color: var(--muted); }
 .ps-side { flex: none; display: flex; align-items: center; gap: 8px; }
+/* Working through a group in Triage: a band above the card (its name and a dot per ask) and a tray under it
+   with what you've answered, which Fuzz is collecting. Dots fill as you go and never count down. */
+.gband { position: relative; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 22px 0 34px; padding: 8px 8px 8px 14px; border: var(--bw) solid var(--accent); border-radius: 16px; background: var(--chip); }
+.gband-t { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14.5px; line-height: 1.35; }
+.gband-t svg { flex: none; color: var(--accent); }
+.gband-k { color: var(--muted); font-weight: 600; }
+.gdots { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.gdots li { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line); background: transparent; transition: background .25s, border-color .25s; }
+.gdots li.on { background: var(--accent); border-color: var(--accent); }
+.gdots li.now { border-color: var(--accent); }
+.gband .linkbtn { min-height: 40px; padding: 8px 10px; }
+.ghost.bound { border-color: var(--accent); border-style: dashed; }
+.gtray { margin-top: 14px; }
+.gtray-h { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.gtray-av { width: 22px; height: 22px; flex: none; }
+.gchips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gchip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 40px; padding: 6px 12px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 13.5px; text-align: left; }
+.gchip:hover:not(:disabled) { border-color: var(--accent); }
+.gchip:disabled { opacity: .7; }
+.gchip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+.gchip-a { flex: none; padding-left: 8px; border-left: var(--bw) solid var(--line); color: var(--muted); font-weight: 700; }
+html.calm .gdots li { transition: none; }
+.gband[hidden], .gtray[hidden] { display: none; }
+
 /* "Same as…" in task detail: a quiet way to say two tasks are one */
 .sameas { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .sameas .ps-tasks { align-self: stretch; }

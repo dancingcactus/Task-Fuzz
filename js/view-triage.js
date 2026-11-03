@@ -99,7 +99,7 @@
     if (onScroll) window.removeEventListener('scroll', onScroll); onScroll = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; };
+  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; grun = null; Store.setRun(null); };
   V.refresh = function () {
     if (!alive) return;
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; clearInterval(ciTimer); clearTimeout(rushTimer);
@@ -149,10 +149,14 @@
       stats();
       if (card.style.display === 'none' && !ciOpen && !scOpen) renderEmpty();
     } else if (e.type === 'wrapped') {
-      /* The last task in a group finished, so the group is finished too. Worth a small party. */
-      Fuzz.setMood('proud'); Fuzz.pAnim('hop'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
-      Say.tell('That wraps up ' + e.group.title + '. Every task in it is done.');
-      setTimeout(function () { if (alive && Fuzz.mood() === 'proud') Fuzz.setMood('idle'); }, 2600);
+      /* The last task in a group finished, so the thread is closed: a bigger moment than one task, and a line
+         on what happened (the core's, in live mode). Calm mode keeps the line and drops the motion. */
+      var line = e.group.closedLine || (e.group.title + ': every ask in it is done. That thread’s closed.');
+      Fuzz.setMood('proud'); Fuzz.pAnim('spin'); Fuzz.confetti(card.style.display === 'none' ? stack : card);
+      if (!Fuzz.isCalm()) { Fuzz.fxOn('star', 1350); Fuzz.hearts('★', 'var(--done)', 6); }
+      if (!busy && !ciOpen) Fuzz.say(line, { type: false });
+      Say.tell(line);
+      setTimeout(function () { if (alive && Fuzz.mood() === 'proud') Fuzz.setMood('idle'); }, 3200);
     } else if (e.type === 'reset' || e.type === 'restore' || e.type === 'moment') {
       /* the caller refreshes */
     }
@@ -185,6 +189,8 @@
         /* Fuzz and his bubble are for looking at. Screen readers hear outcomes from Say.announce instead of every quip. */
         '<div class="perch" id="perch"><div class="pwrap" id="pwrap" aria-hidden="true">' + window.FUZZ_SVG + '</div><div class="bubble" id="bubble"></div></div>' +
         '<div class="echo" id="echo" aria-hidden="true" hidden>' + Fuzz.mini('good', { cls: 'echo-av' }) + '<span id="echo-t"></span></div>' +
+        /* Working through a group: its name and how far along you are, above the card */
+        '<div class="gband" id="gband" hidden></div>' +
         '<div class="stack" id="stack">' +
           '<article class="card" id="card"></article>' +
           '<article class="card checkin" id="checkin" hidden>' +
@@ -197,6 +203,8 @@
           '</article>' +
           '<article class="card setupcard" id="setupcard" hidden aria-labelledby="sc-h"></article>' +
         '</div>' +
+        /* …and what you've answered so far, which Fuzz is collecting */
+        '<div class="gtray" id="gtray" hidden></div>' +
       '</section>' +
       '<div class="triage-foot"><button type="button" class="linkbtn" id="dropbtn"></button><span aria-hidden="true">·</span><button type="button" class="linkbtn" id="parkbtn" aria-expanded="false" aria-controls="parkform" aria-keyshortcuts="T">Park a stray thought' + kbd('T') + '</button><span class="keys-sep" aria-hidden="true">·</span><button type="button" class="linkbtn keys-link" id="keysbtn" aria-keyshortcuts="?">Keys</button></div>' +
       '<dialog class="dlg keys-dlg" id="keysdlg" aria-labelledby="keys-h"><div class="dlg-in"><div class="dlg-top"><h2 id="keys-h">Keys</h2><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' + keysHTML() + '</div></dialog>' +
@@ -219,12 +227,13 @@
     /* count what's cleared, never what's left */
     document.getElementById('left').textContent = left === 0 ? 'All clear' : cleared ? '✓ ' + cleared : 'Ready';
   }
-  /* The cards underneath are only a stack: what's on them, or how many, stays out of view until each is the one in front */
+  /* The cards underneath are only a stack: what's on them, or how many, stays out of view until each is the one
+     in front. Except a group's: while you work through one, the rest of it shows bound together under the card. */
   function updateStack(arriveLast) {
     stack.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
-    var q = Store.queue(), n = Math.min(Math.max(q.length - 1, 0), 3);
+    var q = Store.queue(), n = Math.min(Math.max(q.length - 1, 0), 3), r = q[0] && runFor(q[0]);
     for (var i = n; i >= 1; i--) {
-      var g = document.createElement('div'); g.className = 'ghost';
+      var g = document.createElement('div'); g.className = 'ghost' + (r && q[i] && r.ids.indexOf(q[i].id) > -1 ? ' bound' : '');
       g.style.transform = 'translateY(-' + (i * 9) + 'px) scale(' + (1 - i * 0.035) + ')';
       if (arriveLast && i === n && q.length - 1 <= 3) g.classList.add('arrive');
       stack.insertBefore(g, card);
@@ -395,6 +404,96 @@
     var line = Store.partOf(it, true); if (!line) return '';
     return '<button type="button" class="partof" data-act="group"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(line) + '</button>';
   }
+  /* ---------- Working through a group ----------
+     A group's cards come one at a time, back to back. While you go through them a band above the card names
+     the group with a dot per ask, and a tray under it shows what you've answered, which Fuzz is collecting:
+     tap a chip to bring that card back and answer it again. After the last one the tray folds into Fuzz and
+     he says what he'll do. The core holds what you hand Fuzz until then, and works it as one claim. */
+  var grun = null;   /* {gid, title, source, ids, entered} */
+  var GROUP_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>';
+  function inGroupQueue(gid) { return Store.queue().filter(function (i) { return i.group === gid && !i.atEnd; }); }
+  /* The run this card belongs to: the one under way, or a new one when its group has two or more cards waiting */
+  function runFor(it) {
+    var g = it && Store.groupOf(it); if (!g) return null;
+    var q = inGroupQueue(g.id);
+    if (grun && grun.gid === g.id) { q.forEach(function (i) { if (grun.ids.indexOf(i.id) < 0) grun.ids.push(i.id); }); return grun; }
+    if (q.length < 2 || q.indexOf(it) < 0) return null;
+    return { gid: g.id, title: g.title, source: g.source, ids: q.map(function (i) { return i.id; }), entered: false };
+  }
+  function answeredIn(r) { return r.ids.filter(function (id) { return !Store.inQueue(id); }); }
+  function runOver(r) { return r && r.ids.length && answeredIn(r).length === r.ids.length; }
+  /* What you answered, as the chip says it */
+  function saidOn(it) {
+    if (!it) return 'Answered';
+    return ({ ai: 'Fuzz', 'ai-queued': 'Fuzz', done: 'Done', scheduled: 'Later', parked: 'Parked', session: 'In ' + Store.workIn,
+      review: 'Needs your OK', sending: 'Sending', mine: 'Yours', dropped: 'Dropped', resolved: 'Answered' })[it.state] ||
+      (it.state === 'waiting' ? 'Waiting on ' + (it.waitingOn || 'someone') : it.state === 'letgo' ? (it.theirs ? 'Not mine' : 'Let go') : 'Answered');
+  }
+  function whereFrom(r) { return r.source === 'email' ? 'This email' : r.source === 'meeting' ? 'That meeting' : r.source === 'slack' ? 'Those messages' : '“' + r.title + '”'; }
+  function paintRun(it) {
+    var band = $('#gband'), tray = $('#gtray'); if (!band) return;
+    var r = it ? runFor(it) : grun;
+    if (r && r !== grun) { grun = r; Store.setRun(r.gid); }
+    if (!grun || (it && grun.ids.indexOf(it.id) < 0 && !runOver(grun))) { band.hidden = true; tray.hidden = true; return; }
+    var done = answeredIn(grun), n = grun.ids.length, at = Math.min(done.length + 1, n);
+    band.innerHTML = '<div class="gband-t">' + GROUP_SVG + '<span><span class="gband-k">Working through</span> ' + esc(grun.title) + '</span></div>' +
+      '<ol class="gdots" aria-hidden="true">' + grun.ids.map(function (id) { var d = done.indexOf(id) > -1, now = it && it.id === id; return '<li class="' + (d ? 'on' : now ? 'now' : '') + '"></li>'; }).join('') + '</ol>' +
+      '<span class="sr" aria-live="polite">' + esc(grun.title) + ', ask ' + at + ' of ' + n + '</span>' +
+      '<button type="button" class="linkbtn" data-run="later">Finish later</button>';
+    band.hidden = false;
+    tray.innerHTML = done.length ? '<p class="gtray-h">' + Fuzz.mini('good', { cls: 'gtray-av' }) + 'Collecting your answers</p><ul class="gchips">' + done.map(function (id) {
+      var x = Store.item(id), lab = saidOn(x), fixed = !x || x.state === 'resolved' || x.state === 'dropped';
+      return '<li><button type="button" class="gchip" data-run-chip="' + esc(id) + '"' + (fixed ? ' disabled' : '') + ' aria-label="' + esc((x ? x.title : 'This ask') + ': ' + lab + (fixed ? '' : '. Bring it back to answer again')) + '"><span class="gchip-t">' + esc(x ? x.title : '') + '</span><span class="gchip-a">' + esc(lab) + '</span></button></li>';
+    }).join('') + '</ul>' : '';
+    tray.hidden = !done.length;
+  }
+  /* Fuzz's line once he has every answer: the core's plan in live mode, else worked out from the tray */
+  function planLine(r) {
+    var line = Live.on() && Live.takeCollected(); if (line) return line;
+    var mine = r.ids.map(Store.item).filter(Boolean), k = mine.filter(function (x) { return x.state === 'ai' || x.state === 'ai-queued'; }).length;
+    var num = ['', 'it', 'the two', 'the three', 'the four', 'the five'][k] || 'the ' + k;
+    return 'Got all ' + r.ids.length + '.' + (k > 1 ? ' I’ll look into ' + num + ' together' + (r.source === 'email' || r.source === 'slack' ? ' and draft one reply' : '') + '.' : k ? ' I’ll get on it.' : ' Nothing for me this time.');
+  }
+  /* Starting a group: Fuzz says so, and starts collecting */
+  function enterRun() {
+    if (!grun || grun.entered) return false;
+    grun.entered = true;
+    Fuzz.setMood('eager'); if (!Fuzz.isCalm()) Fuzz.fxOn('scan', 900);
+    var line = whereFrom(grun) + ' has ' + grun.ids.length + ' asks. Let’s go through them, then I’ll pull it together.';
+    Fuzz.say(line, { type: false }); Say.announce(line);
+    setTimeout(function () { if (alive && Fuzz.mood() === 'eager') Fuzz.setMood('thinking'); }, 2200);
+    return true;
+  }
+  /* The last answer is in: the tray folds into Fuzz, he says the plan, and the band goes */
+  async function exitRun() {
+    var r = grun; grun = null; Store.setRun(null);
+    var tray = $('#gtray'), band = $('#gband'), bot = root.querySelector('#bot');
+    var chips = tray ? [].slice.call(tray.querySelectorAll('.gchip')) : [];
+    if (chips.length && bot) await Promise.all(chips.map(function (c, i) { return sleep(i * 70).then(function () { return Fuzz.flyTo(c, bot, { scale: 0.12, rot: -10, dur: 520 }); }); }));
+    if (tray) tray.hidden = true;
+    if (band) band.hidden = true;
+    var line = planLine(r);
+    Fuzz.setMood('happy'); if (!Fuzz.isCalm()) Fuzz.fxOn('rev', 1000); Fuzz.pAnim('hop');
+    Fuzz.say(line, { type: false }); Say.announce(line);
+    await sleep(1400);
+    if (Fuzz.mood() === 'happy') Fuzz.setMood('idle');
+  }
+  /* Finish later: Fuzz goes ahead with what you've answered; the rest go to the end of the list */
+  function finishLater() {
+    if (!grun || busy) return;
+    var r = grun, g = Store.group(r.gid), rest = r.ids.filter(function (id) { return Store.inQueue(id); });
+    grun = null; Store.setRun(null); paintRun(null);
+    var say = function (line) { Fuzz.setMood('caring'); line = line || 'Okay. I’ll go ahead with what you’ve told me; the rest come back later.'; Fuzz.say(line, { type: false }); Say.announce(line); };
+    if (Live.on() && g && g.coreId) Live.finishLater(g.coreId).then(say, function (e) { Say.tell('That didn’t work: ' + e.message, { stay: true }); });
+    else { rest.forEach(function (id) { Store.toBack(id); }); say(); V.refresh(); }
+  }
+  /* A chip in the tray: bring that card back to the front to answer it again */
+  function reopenAsk(id) {
+    var it = Store.item(id); if (!it || busy) return;
+    offer('Brought “' + it.title + '” back to answer again.', Store.track([id], function () { Store.bringBack(id, 'front'); }));
+    Fuzz.setMood('idle'); Fuzz.say('Sure, let’s look at that one again.', { type: false });
+    V.refresh();
+  }
   function findingHTML(it) {
     return '<div class="finding"><span class="finding-tag">' + esc(it.aiHeading || 'What Fuzz did') + '</span>' + Fuzz.mini('good', { cls: 'finding-av' }) + '<p>' + UI.text(it.aiNote) + '</p></div>';
   }
@@ -556,6 +655,7 @@
     paintDue(it);
     card.querySelectorAll('#instr, #draft').forEach(fit);
     if (busy) card.querySelectorAll('[data-act],[data-quick]').forEach(function (b) { b.disabled = true; });
+    paintRun(it);
   }
 
   function paintDue(t) {
@@ -603,7 +703,9 @@
   function shouldCheckin(next) {
     var waited = !ciCount || Date.now() - ciLastAt >= CI_GAP_MIN * Math.pow(2, ciCount - 1) * 60000;
     /* nor while Fuzz is asking what he may read (the onboarding's last task): it waits until he's done */
-    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack && !next.kickoff;
+    /* …nor partway through a group: it waits until you've been through all of it */
+    return waited && cleared() >= ciNextAt && !Store.queue().some(function (i) { return i.dueAt; }) && !next.dueAt && !next.handedBack && !next.kickoff &&
+      !(grun && !runOver(grun)) && !runFor(next);
   }
   function ciDone() {
     if (ciAnswer && !ciDemo && ciFollow !== 'hold_rest') Store.checkin(ciAnswer, ciFollow);
@@ -667,6 +769,7 @@
   async function showNext(shown) {
     var e = epoch;
     try {
+      if (runOver(grun)) await exitRun();   /* the last answer of a group is in */
       var q = Store.queue();
       if (!q.length) return zeroState();
       var t = q[0];
@@ -674,9 +777,13 @@
         if (shouldCheckin(t)) return showCheckin();
         if (showSetup()) return;
         enterCard(t);
-      }
+      } else paintRun(t);
+      var inRun = grun && grun.ids.indexOf(t.id) > -1, entered = inRun && enterRun();
+      if (inRun && !entered && !Fuzz.isCalm()) Fuzz.fxOn('scan', 700);   /* still gathering */
       var g = t.kind === 'task' && Onboard.guide(t);
-      if (g) {
+      if (entered) {
+        /* what he says is that you're going through a group */
+      } else if (g) {
         Fuzz.setMood('happy'); Fuzz.say(g.line, { type: false }); Say.announce(g.line);
       } else laterTip(t);
       if (g) {
@@ -1306,6 +1413,8 @@
   function wire() {
     offSay = Fuzz.onSay(echo);
     UI.wireSources(card, cur);
+    $('#gband').addEventListener('click', function (e) { if (e.target.closest('[data-run="later"]')) finishLater(); });
+    $('#gtray').addEventListener('click', function (e) { var c = e.target.closest('[data-run-chip]'); if (c && !c.disabled) reopenAsk(c.dataset.runChip); });
     $('#keysbtn').addEventListener('click', openKeys);
     $('#keysdlg').addEventListener('click', function (e) { if (e.target === e.currentTarget || e.target.closest('[data-close]')) e.currentTarget.close(); });
     $('#keysdlg').addEventListener('close', function () { var b = $('#keysbtn'); if (b && b.offsetParent) b.focus(); });

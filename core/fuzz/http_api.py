@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, matching, people, scheduler, sessions, states, tasks
+from . import answers, cards, config, drafts, engine, events, groups, matching, people, scheduler, sessions, states, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -59,6 +59,10 @@ def ensure_token(home, user_id=1):
 def task_view(core, t, full=False):
     out = cards.task_summary(t)
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
+    if t["state"] in ("review", "sending"):   # answered in one reply with another task of its group
+        d = drafts.covering(core, t["id"])
+        if d:
+            out["covered_by"] = d["task_id"]
     if full:
         out["log"] = events.task_log(core, t["id"])
         # newest first, each with its own time: the message's, or else when the run that found it started
@@ -141,7 +145,7 @@ class App:
             ("GET", r"/hours", self.hours_get),
             ("PUT", r"/hours", self.hours_put),
             ("GET", r"/groups", self.list_groups),
-            ("POST", r"/groups/(\d+)/(rename|take_out|wrap)", self.group_action),
+            ("POST", r"/groups/(\d+)/(rename|take_out|wrap|finish_later)", self.group_action),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
@@ -394,12 +398,19 @@ class App:
             if not isinstance(body.get("task_id"), int):
                 raise FuzzError("task_id is the task to take out", "task_id")
             groups.take_out(core, gid, body["task_id"])
+        elif act == "finish_later":   # you stopped partway: Fuzz goes ahead with the answers it has
+            line = groups.finish_later(core, gid)
+            start_group_run(core)
+            return dict(groups.view(core, groups.require(core, gid)), collected=line)
         else:
             groups.wrap(core, gid)
         return groups.view(core, groups.require(core, gid))
 
     def list_cards(self, core, m, body, q):
-        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core)}
+        """group_run: the group you're working through, so the UI can show its band (see groups.run)."""
+        cur = groups.run(core)
+        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core),
+                "group_run": {"group_id": cur["group_id"], "tasks": cur["tasks"]} if cur else None}
 
     def answer(self, core, m, body, q):
         if "option" not in body:
@@ -417,6 +428,8 @@ class App:
             onboarding.after_answer(core, card["task_id"])
         if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
+        if out.get("collected"):   # the last card of a group: Fuzz can start on the ones you handed it
+            start_group_run(core)
         return out
 
     def undo_list(self, core, m, body, q):
@@ -677,6 +690,16 @@ def kick_executor(app, core, now=None, wait=None):
     if now - app.gather_kicked.get(core.user_id, 0) < (wait or GATHER_KICK_SECONDS):
         return False
     app.gather_kicked[core.user_id] = now
+    engine.run_now(core, "executor")
+    return True
+
+
+def start_group_run(core):
+    """A group was collected: start an executor run for its claim, unless one is going (it claims next)."""
+    if not config.role_engine(core.config, "executor")[0] or executor_running(core):
+        return False
+    if not scheduler.work_waiting(core):
+        return False
     engine.run_now(core, "executor")
     return True
 
