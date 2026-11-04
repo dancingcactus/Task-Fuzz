@@ -17,6 +17,8 @@ SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term
 
 def _task_answer(core, card, t, option, value):
     hold = groups.holds(core, t)   # working through its group: Fuzz starts once it has every answer
+    if option == "add_to_reply":   # a late ask joins the thread's reply waiting for your OK
+        return drafts.add_to_reply(core, card, t)
     if option == "assign":
         v = value if isinstance(value, dict) else {"instructions": value}
         return tasks.assign(core, t["id"], instructions=v.get("instructions"), refs=v.get("refs"), card=card,

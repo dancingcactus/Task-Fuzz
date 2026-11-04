@@ -41,7 +41,7 @@ DUP_CONF = 0.60
 
 UNCHANGING = ("email",)   # sources whose messages are never edited: one signal each, whatever the version
 SOURCE_LABEL = {"email": "Email", "slack": "Slack", "meeting": "Meeting", "calendar": "Calendar", "fuzz": "Fuzz"}
-BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy")
+BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy", "steps")
 
 
 def _family(model):
@@ -278,6 +278,8 @@ def propose(ctx):
     cands = ctx.core.q("SELECT * FROM candidates WHERE user_id=? AND status='new' ORDER BY id", (_uid(ctx),)).fetchall()
     stats = {}
     fam = _family(ctx.embedder.model) if ctx.embedder else "hash"
+    # tasks matching makes from here on are this run's: a rule-made new task is checked against them too
+    ctx.run_start = ctx.core.one("SELECT COALESCE(MAX(id), 0) m FROM decisions WHERE user_id=?", (_uid(ctx),))["m"]
     for cand in cands:
         eligible = eligible_tasks(ctx)
         hits = stage1_anchor(ctx, cand, eligible)
@@ -321,6 +323,10 @@ def _decide(ctx, cand, eligible, hits, fam):
     if not keep:
         if cand["owner"] not in ("me", "unclear", None):
             return record(ctx, cand, "rule", "discarded", reason=f"Ask is for {cand['owner']}, no related task")
+        from . import dupes   # an ask made earlier in this run may be the same one (with no older task to judge against)
+        mate = dupes.same_run(ctx, cand, getattr(ctx, "run_start", None))
+        if mate:
+            return record(ctx, cand, "rule", "possible_duplicate", mate[0], confidence=mate[2], reason=mate[1])
         return record(ctx, cand, "semantic" if ctx.embed_ok else "entity", "new", reason="No anchor, entity or meaning match")
 
     item = _judgment_item(ctx, cand, keep, hits, escore, shared, sem)
@@ -408,8 +414,9 @@ def record(ctx, cand, stage, outcome, task_id=None, other_task_id=None, verdict=
 
 
 def _brief(cand):
+    """The brief an ask came with, as task fields (the extractor's steps estimate is the task's step_count)."""
     c = json.loads(cand["payload"]) if isinstance(cand["payload"], str) else (cand["payload"] or {})
-    return {k: c[k] for k in BRIEF_KEYS if c.get(k) is not None}
+    return {("step_count" if k == "steps" else k): c[k] for k in BRIEF_KEYS if c.get(k) is not None}
 
 
 def create_task(ctx, cand, decision_id):

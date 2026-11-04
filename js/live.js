@@ -230,6 +230,10 @@
       steps: t.steps_used || 0, needsPermission: tags.indexOf('needs_permission') > -1,
       cardId: c ? c.id : null, cardKind: c ? c.kind : null, cardOptions: c ? c.options : [],
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
+      /* a late ask from a thread whose reply is waiting for your OK: it can join that reply */
+      joinReply: !!(c && (c.options || []).indexOf('add_to_reply') > -1), joinReason: c && c.options && c.options.indexOf('add_to_reply') > -1 ? c.reason : '',
+      /* its size, "≈ 1½ h · 6 steps", and whether it's big (the core's call) */
+      effortMins: t.effort_mins || null, stepCount: t.step_count || null, gaps: t.gaps || [],
       group: t.group_id ? 'g' + t.group_id : null
     };
     /* Waiting on someone while Fuzz works out when to check back: it's already with them, not with Fuzz */
@@ -485,6 +489,8 @@
     wrap('renameGroup', function (id, title) { return groupCall(S.group(id), 'rename', { title: (title || '').trim() }); });
     wrap('takeOut', function (id) { var it = S.item(id); return groupCall(S.groupOf(it), 'take_out', { task_id: it && it.coreId }); });
     wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
+    /* A late ask joins the thread's reply waiting for your OK: Fuzz rewrites it to cover this too */
+    wrap('joinReply', function (id) { var it = S.item(id); return it && decide(it, 'add_to_reply'); });
     /* "Same as…": this task merges into the one you picked; Undo splits it back out */
     wrap('sameAs', function (id, otherCoreId) {
       var tid = (S.item(id) || {}).coreId;

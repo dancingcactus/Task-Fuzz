@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 JSON_COLS = {"quick_answers", "variant_tags", "schedule_anchor", "schedule_hints", "title_history",
-             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers"}
+             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers", "gaps"}
 
 
 def iso(dt):
@@ -347,7 +347,7 @@ def connect(home):
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
-                        ("reschedules", "INTEGER"),
+                        ("reschedules", "INTEGER"), ("step_count", "INTEGER"), ("gaps", "TEXT"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 

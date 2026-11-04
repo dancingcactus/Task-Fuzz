@@ -198,14 +198,15 @@ def suggest_schedule(core, task_id, anchor, reason, you_said=None):
 
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 title=None, ask=None, summary=None):
+                 title=None, ask=None, summary=None, steps=None, gaps=None):
     updated = []
     if title is not None or ask is not None:
         with _lease(core, task_id):   # its own command, so Undo reverses the rename and nothing else
             updated += tasks.rename(core, task_id, title, ask)
-    if any(v is not None for v in (context_md, summary, question, effort_mins, energy, due)) or (title is None and ask is None):
+    if any(v is not None for v in (context_md, summary, question, effort_mins, energy, due, steps, gaps)) or (title is None and ask is None):
         with _lease(core, task_id):
-            updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due, summary)
+            updated += tasks.update_brief(core, task_id, context_md, question, effort_mins, energy, due, summary,
+                                          steps=steps, gaps=gaps)
     return {"updated": sorted(updated)}
 
 

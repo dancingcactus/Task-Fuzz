@@ -76,7 +76,7 @@ class Dupes(CoreCase):
         self.send(slack(1, "Find the thread explaining how to test the plugin", [GUIDE]))
         new = tasks.capture(self.core, "Summarize the plugin test setup", gather=True)
         tasks.add_link(self.core, new, None, GUIDE)
-        tasks.update_brief(self.core, new, context_md="The guide says…")
+        tasks.update_brief(self.core, new, context_md="The guide says…", effort_mins=20, steps=2)
         scheduler.finish_gathering(self.core, new, actor="system", result=True)
         self.assertEqual(self.kinds(new), ["duplicate"])
         answers.answer(self.core, self.card_for(new)["id"], "keep_separate")

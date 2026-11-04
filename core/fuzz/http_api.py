@@ -428,7 +428,7 @@ class App:
             onboarding.after_answer(core, card["task_id"])
         if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
-        if out.get("collected"):   # the last card of a group: Fuzz can start on the ones you handed it
+        if out.get("collected") or option == "add_to_reply":   # Fuzz can start on the ones you handed it
             start_group_run(core)
         return out
 

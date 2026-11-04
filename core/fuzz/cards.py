@@ -119,6 +119,11 @@ def sync(core, task_id, where="back"):
                         data={"kind": "is_task", "card_id": c["id"], "added": task_id})
         return c["id"]
     if t["state"] == "triage" and not open_:
+        from . import drafts
+        reply = not tags and drafts.group_reply(core, t)   # a late ask from a thread whose reply waits for your OK
+        if reply:
+            return create(core, "task", task_id, payload={"reply_draft": reply["id"]}, suggested="add_to_reply",
+                          reason=f"A reply to {_group_title(core, t)} is waiting for your OK. Add this to it?", where=where)
         return create(core, "task", task_id, reason=t.get("reason"),
                       prompt=PUT_OFF_PROMPT if "put_off" in tags else None,
                       suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
@@ -187,9 +192,17 @@ def task_options(task):
     return opts
 
 
+def _group_title(core, t):
+    g = core.one("SELECT title FROM groups WHERE id=?", (t["group_id"],))
+    return f"“{g['title']}”" if g else "this thread"
+
+
 def options(card, task):
     if card["kind"] == "task":
-        return task_options(task)
+        opts = task_options(task)
+        if (card.get("payload") or {}).get("reply_draft"):
+            opts.insert(0, "add_to_reply")
+        return opts
     if card["kind"] in ("draft", "nudge"):   # the kind's options now, so a card made before Schedule can use it
         return OPTIONS[card["kind"]]
     return card.get("options") or OPTIONS[card["kind"]]
@@ -254,7 +267,7 @@ def task_summary(t):
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
             "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step",
-            "reschedules")
+            "reschedules", "step_count", "gaps")
     return {k: t.get(k) for k in keys}
 
 

@@ -283,9 +283,12 @@
     if (it.state === 'review') return reviewActionsHTML(it);
     /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further.
        Not sure yet? Ask me later opens the Schedule picker, and the result comes back to ask again. */
-    var res = !!it.result;
-    var assignBtn = '<button type="button" class="btn' + (res ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
-    return '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
+    var res = !!it.result, join = !!it.joinReply && !res;
+    /* A late ask from a thread whose reply waits for your OK: joining that reply leads */
+    var joinRow = join ? '<div class="lead-choice"><p class="meta">' + esc(it.joinReason || 'A reply to this thread is waiting for your OK.') + '</p>' +
+      '<button type="button" class="btn primary" data-act="joinreply">Add to the reply</button></div>' : '';
+    var assignBtn = '<button type="button" class="btn' + (res || join ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
+    return joinRow + '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
       (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>') +
       (res ? '' : '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Schedule' + kbd('S') + '</button>') +
       '<div class="split"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
@@ -1537,6 +1540,7 @@
       else if (a === 'ent-third') moment(function () { return answerEntity('third'); });
       else if (a === 'ent-later') moment(entityLater);
       else if (a === 'group') openGroup(t);
+      else if (a === 'joinreply') moment(function () { return quickClear('Added to the reply:', 'Added “' + cur().title + '” to the reply. Fuzz rewrites it to cover this too, and it comes back for your OK.', function (i) { Store.joinReply(i.id); }, 'Got it. I’ll fold it into the reply.'); });
     });
     docClick = function (e) {
       var mm = root && root.querySelector('#moremenu');

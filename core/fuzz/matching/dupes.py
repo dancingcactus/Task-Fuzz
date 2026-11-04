@@ -14,6 +14,7 @@ A likely match becomes a duplicate card. likely() also ranks the choices for "Sa
 """
 
 import json
+import re
 
 from .. import cards, events, states, tasks
 from . import entities, matcher, vectors
@@ -92,9 +93,13 @@ def likely(ctx, cand, others, strict=True):
     escore, names = matcher.stage2_entities(ctx, cand, others)
     sem = matcher.stage3_semantic(ctx, cand, list(others)) or {}
     out = []
+    mine = _words(cand["ask"])
     for tid in others:
         e, s, link = escore.get(tid, 0), sem.get(tid, 0), shared.get(tid)
-        close = bool(link) or s >= DUP_SEM[fam] or (e >= matcher.STRONG_ENTITY and s >= matcher.SEM_MIN_ENTITY[fam])
+        # the same words: works with no embedder (Ollama down), where meaning can't be measured
+        same_words = max(_overlap(mine, _words(others[tid]["title"])), _overlap(mine, _words(others[tid]["ask"]))) >= WORDS_SAME
+        close = (bool(link) or s >= DUP_SEM[fam] or same_words
+                 or (e >= matcher.STRONG_ENTITY and s >= matcher.SEM_MIN_ENTITY[fam]))
         loose = close or s >= matcher.SEM_FLOOR[fam] or e >= matcher.ENTITY_MIN
         if not (close if strict else loose):
             continue
@@ -104,6 +109,17 @@ def likely(ctx, cand, others, strict=True):
         out.append((tid, why, {"link": link or [], "entity": e, "semantic": s}))
     out.sort(key=lambda x: (bool(x[2]["link"]), x[2]["semantic"], x[2]["entity"]), reverse=True)
     return out
+
+
+WORDS_SAME = 0.8   # share of words two asks have in common to count as the same ask
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if w not in vectors.STOP and len(w) > 1}
+
+
+def _overlap(a, b):
+    return len(a & b) / len(a | b) if a and b else 0.0
 
 
 def _name(i):

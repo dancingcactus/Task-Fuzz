@@ -278,6 +278,12 @@
       var t = it.kind === 'dup' && S.item(it.dupOf);
       if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
     },
+    /* A late ask joins the thread's reply that's waiting for your OK: Fuzz rewrites the reply to cover it */
+    joinReply: function (id) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'ai-queued'; it.joinReply = false;
+      S.log(it, 'status', 'You added this to the reply waiting for your OK. Fuzz rewrites it to cover this too.');
+    },
     /* "Same as…" in task detail: this task is the one you picked, so it merges into it (the core matches;
        live mode only). other is the picked task's title, for the log. */
     sameAs: function (id, otherCoreId, otherTitle) {

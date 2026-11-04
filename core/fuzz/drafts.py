@@ -86,6 +86,41 @@ def covering(core, task_id):
     return None
 
 
+def group_reply(core, t):
+    """A reply to t's thread still waiting for your OK (on another task in its group), or None. A late ask
+    from the same thread can join it instead of getting a reply of its own."""
+    if not t or not t.get("group_id"):
+        return None
+    for d in core.all("SELECT d.* FROM drafts d JOIN tasks x ON x.id=d.task_id WHERE d.user_id=? AND x.group_id=? "
+                      "AND d.status='pending' AND d.task_id!=? ORDER BY d.id DESC", (core.user_id, t["group_id"], t["id"])):
+        if d.get("covers") or d["kind"] in IN_THREAD:
+            return d
+    return None
+
+
+def add_to_reply(core, card, t):
+    """Add this ask to the reply waiting for your OK: the draft goes back to Fuzz with it, and Fuzz writes one
+    reply covering every ask again (the tasks are claimed together)."""
+    d = group_reply(core, t)
+    if d is None:
+        raise FuzzError("That reply isn't waiting for your OK any more", "option", 409)
+    main = tasks.require(core, d["task_id"])
+    covered = [c for c in (tasks.get(core, i) for i in d.get("covers") or []) if c and c["state"] == "review"]
+    note = f"Add the new ask from the same thread to the reply: “{t['title']}”."
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.draft(d["id"], status="sent_back")
+        for x in [main] + covered:
+            fields = {"notes": ((x.get("notes") or "") + "\n" + note).strip()} if x["id"] == main["id"] else {}
+            tasks.move(core, ch, x, "queued", question=None, attempts=0, add_tags=("together",), **fields)
+        tasks.move(core, ch, t, "queued", card=card, question=None, attempts=0, add_tags=("together",))
+        cards.mark_answered(core, ch, card, "add_to_reply")
+        for c in cards.open_cards(core, main["id"]):
+            ch.card(c["id"], status="withdrawn")
+        events.emit(core, "task.sent_back", task_id=main["id"], changes=ch,
+                    data={"draft_id": d["id"], "added": t["id"]}, log=("guidance", f"You added “{t['title']}” to the reply."))
+
+
 def _close_covered(core, ch, d, log=None):
     """Close the tasks a group reply answered, in the same event as the one it's on."""
     for cid in d.get("covers") or []:

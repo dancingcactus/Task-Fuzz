@@ -37,6 +37,7 @@ CANDIDATE = {
         "context_md": {"type": "string", "maxLength": 16384},
         "question": {"type": "string", "maxLength": 500},
         "effort_mins": {"type": "integer", "minimum": 1},
+        "steps": {"type": "integer", "minimum": 1, "maximum": 50},   # how many steps the work takes
         "energy": {"enum": ["low", "normal", "high"]},
         "moments": {"type": "array", "maxItems": 2, "items": MOMENT},
     },

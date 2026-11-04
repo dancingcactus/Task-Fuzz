@@ -330,9 +330,16 @@ def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=N
     keep = ("result",) if "result" in (t.get("variant_tags") or []) and not look else ()
     with core.tx("human"):
         ch = events.Changes()
+        fire = fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         move(core, ch, t, "queued" if look else "scheduled", card=card, add_tags=("gather",) if look else keep,
-             schedule_anchor=anchor, schedule_fire_at=fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-             question=None, attempts=0, **extra)
+             schedule_anchor=anchor, schedule_fire_at=fire, question=None, attempts=0, **extra)
+        # a group reply put off takes the tasks it answers with it; they come back to review together
+        d = core.one("SELECT covers FROM drafts WHERE task_id=? AND user_id=? AND status='pending' AND covers IS NOT NULL",
+                     (t["id"], core.user_id))
+        for cid in (d or {}).get("covers") or []:
+            c = get(core, cid)
+            if c and c["state"] == "review":
+                move(core, ch, c, "scheduled", schedule_anchor=anchor, schedule_fire_at=fire)
         _answered(core, ch, card, "schedule", {"anchor": anchor, "instructions": said} if said else {"anchor": anchor})
         events.emit(core, "task.scheduled", task_id=t["id"], changes=ch, log=log,
                     data={"anchor": anchor, "source": source, "line": timeres.line(core, anchor), "gather": look})
@@ -359,8 +366,10 @@ def bring_back(core, task_id, where="back", reason=None, type="task.came_back", 
     if t["state"] in ("triage", "review"):
         return None
     to = "triage"
-    if t["state"] == "scheduled" and core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
-        to, tags = "review", ()
+    from .drafts import covering
+    if t["state"] == "scheduled" and (core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],))
+                                      or covering(core, t["id"])):
+        to, tags = "review", ()   # a draft, or a group reply that answers it, waits for your OK again
     elif t["state"] == "scheduled" and type == "task.came_back" and put_off_again(core, t):
         tags, reason = tuple(tags) + ("put_off",), PUT_OFF_REASON
         log = log or ("status", "This came back at its time again. Fuzz is asking what’s in the way.")
@@ -453,9 +462,20 @@ def check_back(core, task_id, actor="system"):
 # ---------------------------------------------------------------- the AI's writes
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 summary=None, actor="fuzz:executor"):
+                 summary=None, actor="fuzz:executor", steps=None, gaps=None):
+    """steps: how many steps the work takes. With effort_mins it's the task's size on its card, and a brief
+    from Fuzz always comes with both (see "Size, and big tasks"). gaps: what Fuzz couldn't find, in a
+    few words each ("the test accounts"); the card offers Find out… first while there are any."""
     t = require(core, task_id)
     f = {}
+    if steps is not None:
+        if int(steps) < 1 or int(steps) > 50:
+            raise FuzzError("steps is how many steps the work takes, 1 to 50", "steps")
+        f["step_count"] = int(steps)
+    if gaps is not None:
+        if not isinstance(gaps, list) or not all(isinstance(g, str) for g in gaps):
+            raise FuzzError("gaps is a list of short phrases, like [\"the test accounts\"]", "gaps")
+        f["gaps"] = [g.strip()[:120] for g in gaps if g.strip()][:5] or None
     if due is not None:
         from .timeres import local_iso
         # a bare date means by the end of that working day
@@ -481,7 +501,13 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError("energy must be low, normal or high", "energy")
         f["energy"] = energy
     if not f:
-        raise FuzzError("Pass context_md, summary, question, effort_mins, energy or due", "context_md")
+        raise FuzzError("Pass context_md, summary, question, effort_mins, steps, energy, gaps or due", "context_md")
+    if context_md and actor == "fuzz:executor":   # a brief from Fuzz always says how big the task is
+        size = {"effort_mins": f.get("effort_mins") or t.get("effort_mins"), "steps": f.get("step_count") or t.get("step_count")}
+        missing = [k for k, v in size.items() if not v]
+        if missing:
+            raise FuzzError(f"A brief comes with its size: pass {' and '.join(missing)} too (your estimate of the "
+                            "minutes the whole task takes and how many steps)", missing[0])
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], **f)

@@ -153,7 +153,8 @@ def build(core, role, task_id=None):
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
                          effort_mins: int | None = None, energy: str | None = None, due: str | None = None,
-                         title: str | None = None, ask: str | None = None, summary: str | None = None) -> dict:
+                         title: str | None = None, ask: str | None = None, summary: str | None = None,
+                         steps: int | None = None, gaps: list[str] | None = None) -> dict:
             """Write what the human sees. context_md: a short Markdown brief (what it is, when it's due, links),
             for tasks with no draft. summary: plain text, a sentence or two on what you did or found ("Checked
             Glean: three open items with Sydnee, led by the TAPER-8461 estimate"); it sits above the brief, so
@@ -161,9 +162,13 @@ def build(core, role, task_id=None):
             be?"). effort_mins and energy (low, normal, high) help order their queue. due: when it must be done,
             like 2026-11-03 or 2026-11-03T15:00 (their time zone unless it says otherwise). title and ask: only
             when their instructions changed what the task is; the old title is kept and Undo restores it.
+            Never retitle a task because they asked for one piece of it (a lookup, a question): that piece is a
+            step, logged with log_step and answered in the brief.
+            A brief always comes with its size: effort_mins (your estimate of the whole task's minutes) and steps
+            (how many steps it takes). gaps: what you couldn't find, a few words each ("the test accounts").
             Pass only what changes."""
             return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask,
-                         summary)
+                         summary, steps, gaps)
 
         @srv.tool()
         def finish_gathering(task_id: int, result: bool = False, options: list[str] | None = None,

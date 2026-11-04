@@ -151,7 +151,7 @@ class Folder(CoreCase):
 
     def test_a_result_and_an_approved_note_are_saved_as_markdown(self):
         tid = self.claimed("Summarize the launch thread")
-        tools.update_brief(self.core, tid, context_md="## Launch\n\nMoved to the 14th.")
+        tools.update_brief(self.core, tid, context_md="## Launch\n\nMoved to the 14th.", effort_mins=20, steps=2)
         tools.hand_back(self.core, tid, result=True)
         with open(os.path.join(outputs.task_dir(self.core, tid), "Summarize the launch thread - Result.md")) as f:
             self.assertIn("Moved to the 14th.", f.read())
