@@ -234,8 +234,13 @@
       joinReply: !!(c && (c.options || []).indexOf('add_to_reply') > -1), joinReason: c && c.options && c.options.indexOf('add_to_reply') > -1 ? c.reason : '',
       /* its size, "≈ 1½ h · 6 steps", and whether it's big (the core's call) */
       effortMins: t.effort_mins || null, stepCount: t.step_count || null, gaps: t.gaps || [],
+      /* Find out…: the answer is in, at the top of the card; or the brief has gaps, so it's suggested */
+      foundOut: tags.indexOf('found_out') > -1 && state === 'triage', findOutQ: t.find_out || '',
+      suggestFindOut: !!(c && c.suggested === 'find_out'),
       group: t.group_id ? 'g' + t.group_id : null
     };
+    if (f.foundOut) f.aiHeading = 'You asked: ' + (t.find_out || 'what you needed');
+    if (tags.indexOf('finding_out') > -1) f.now = 'Finding out: ' + (t.find_out || '');
     /* Waiting on someone while Fuzz works out when to check back: it's already with them, not with Fuzz */
     if (tags.indexOf('plan_wait') > -1) { f.state = 'waiting'; f.gathering = false; f.nextCheck = 'Fuzz is picking a time'; }
     /* Time-sensitive tasks get the rush treatment; others with a date get the due bar */
@@ -491,6 +496,8 @@
     wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
     /* A late ask joins the thread's reply waiting for your OK: Fuzz rewrites it to cover this too */
     wrap('joinReply', function (id) { var it = S.item(id); return it && decide(it, 'add_to_reply'); });
+    /* Find out…: Fuzz looks it up now (the core starts the run); the card comes back right after the front one */
+    wrap('findOut', function (id, q) { var it = S.item(id); return it && decide(it, 'find_out', q, 'find_out', { question: q }); });
     /* "Same as…": this task merges into the one you picked; Undo splits it back out */
     wrap('sameAs', function (id, otherCoreId) {
       var tid = (S.item(id) || {}).coreId;

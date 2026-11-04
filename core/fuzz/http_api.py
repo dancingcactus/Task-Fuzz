@@ -121,7 +121,7 @@ class App:
             ("POST", r"/tasks", self.capture),
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
-            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
+            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back|find_out)", self.task_action),
             ("GET", r"/tasks/(\d+)/same_as", self.same_as_choices),
             ("POST", r"/tasks/(\d+)/same_as", self.same_as),
             ("POST", r"/tasks/(\d+)/open", self.open_session),
@@ -213,6 +213,9 @@ class App:
             kick_executor(self, core)
         elif act == "back":
             tasks.to_back(core, tid)
+        elif act == "find_out":
+            tasks.find_out(core, tid, body.get("question"))
+            start_find_out(core, tid)
         elif act == "reopen":
             where = body.get("where", "front")
             if where not in ("front", "back"):
@@ -430,6 +433,8 @@ class App:
             kick_executor(self, core)
         if out.get("collected") or option == "add_to_reply":   # Fuzz can start on the ones you handed it
             start_group_run(core)
+        if option == "find_out":   # at once, not at the next scheduled run: the card comes back as soon as it lands
+            start_find_out(core, card["task_id"])
         return out
 
     def undo_list(self, core, m, body, q):
@@ -691,6 +696,15 @@ def kick_executor(app, core, now=None, wait=None):
         return False
     app.gather_kicked[core.user_id] = now
     engine.run_now(core, "executor")
+    return True
+
+
+def start_find_out(core, task_id):
+    """Find out… starts an executor run on that task now. One already running claims it next (gathering goes
+    first), so no second run is started."""
+    if not config.role_engine(core.config, "executor")[0] or executor_running(core):
+        return False
+    engine.run_now(core, "executor", task_id)
     return True
 
 

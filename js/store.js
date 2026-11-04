@@ -278,6 +278,22 @@
       var t = it.kind === 'dup' && S.item(it.dupOf);
       if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
     },
+    /* Find out…: Fuzz looks it up; the task stays yours and its card comes back right after the one in front.
+       Live mode does it in the core; the demo pretends, a few seconds later. */
+    findOut: function (id, q) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'ai-queued'; it.gathering = true; it.now = 'Finding out: ' + q;
+      S.log(it, 'guidance', 'You asked Fuzz to find out: ' + q);
+      if (S.live) return;
+      setTimeout(function () {
+        if (it.state !== 'ai-queued' || !it.gathering) return;
+        it.state = 'triage'; it.gathering = false; it.foundOut = true; it.now = '';
+        it.aiHeading = 'You asked: ' + q; it.aiNote = 'In this demo Fuzz doesn’t really look. With your engine set up, the answer lands here.';
+        S.log(it, 'status', 'Fuzz found out what you asked. It’s back for you.');
+        if (!S.inQueue(id)) { state.queue.splice(Math.min(1, state.queue.length), 0, id); state.totalEver++; }
+        emit({ type: 'review' });
+      }, 4000);
+    },
     /* A late ask joins the thread's reply that's waiting for your OK: Fuzz rewrites the reply to cover it */
     joinReply: function (id) {
       var it = S.item(id); if (!it) return;

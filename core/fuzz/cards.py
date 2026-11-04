@@ -19,7 +19,7 @@ OPTIONS = {
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
 }
-TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop"]
+TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop", "find_out"]
 REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
 CHECK_BACK_OPTIONS = ["got_it", "nudge", "keep_waiting", "drop"]   # a waiting task back to ask "Did they get back to you?"
 # a task you've scheduled again and again, back to ask what's in the way: unclear (Fuzz works out the
@@ -43,7 +43,8 @@ PROMPTS = {
 PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off",
+               "found_out"}
 
 
 def open_cards(core, task_id):
@@ -83,9 +84,13 @@ def create(core, kind, task_id=None, other_id=None, prompt=None, reason=None, su
     from . import tasks
     cid = core.new_id("cards")
     ch = events.Changes()
+    payload = dict(payload or {})
+    if where == "next":   # right after the card in front (a Find out… answer that just landed)
+        front = queue(core)
+        payload.update(next=True, after=front[0][0]["id"] if front else None)
     fields = dict(kind=kind, task_id=task_id, other_id=other_id, prompt=prompt, reason=reason,
-                  suggested=suggested or SUGGESTED.get(kind), payload=payload or {}, status="open",
-                  postponed=0, order_key=next_order(core, where),
+                  suggested=suggested or SUGGESTED.get(kind), payload=payload, status="open",
+                  postponed=0, order_key=next_order(core, "back" if where == "next" else where),
                   created_at=core.now_iso())
     if kind != "task":
         fields["options"] = OPTIONS[kind]
@@ -99,7 +104,8 @@ def create(core, kind, task_id=None, other_id=None, prompt=None, reason=None, su
 def sync(core, task_id, where="back"):
     """Make sure a task has the card its state calls for. Call at the end of any command that moves a task.
 
-    where: "front" puts a new card at the head of the queue (you pulled it back, a reply came in)."""
+    where: "front" puts a new card at the head of the queue (you pulled it back, a reply came in); "next"
+    right after the card in front (a Find out… answer)."""
     from . import tasks
     t = tasks.get(core, task_id)
     if t is None:
@@ -128,6 +134,8 @@ def sync(core, task_id, where="back"):
                       prompt=PUT_OFF_PROMPT if "put_off" in tags else None,
                       suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
                       else "unclear" if "put_off" in tags else "keep" if "stale" in tags else "done" if "result" in tags
+                      # the brief has gaps: finding out comes first
+                      else "find_out" if t.get("gaps") and "found_out" not in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
@@ -235,7 +243,15 @@ def queue(core):
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
         k = (at_end, urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
-    return [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
+    out = [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
+    # A Find out… answer that landed comes next, right after the card in front, which never changes under you
+    # (and once that card is answered, it's the one in front)
+    nxt = [x for x in out if (x[0].get("payload") or {}).get("next")]
+    if not nxt:
+        return out
+    rest = [x for x in out if not (x[0].get("payload") or {}).get("next")]
+    behind = rest[:1] if rest and any((x[0].get("payload") or {}).get("after") == rest[0][0]["id"] for x in nxt) else []
+    return behind + nxt + rest[len(behind):]
 
 
 def _back_to_back(core, keyed):
@@ -267,7 +283,7 @@ def task_summary(t):
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
             "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step",
-            "reschedules", "step_count", "gaps")
+            "reschedules", "step_count", "gaps", "find_out")
     return {k: t.get(k) for k in keys}
 
 

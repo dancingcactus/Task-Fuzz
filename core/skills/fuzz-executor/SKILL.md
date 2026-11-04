@@ -168,6 +168,10 @@ they assign it to you.
   last 5 emails" on a task titled "Summarize my last 5 Slack threads"), call `update_brief` with a
   new `title` (and `ask`) before anything else. Only when the scope really changed, not to reword.
   Fuzz logs the rename and they can undo it.
+- **Find out… is one question.** A claimed task with `finding_out` set is still the person's: they
+  asked you that one thing so they can decide. Look it up, `log_step` each lookup, put the answer at
+  the top of the brief (`context_md`, with `summary` saying it in a sentence, and `gaps` for anything
+  you couldn't find), then `finish_gathering`. Fuzz refuses a rename or a `result` on it.
 - **A piece of a task is a step.** When their instruction asks for one piece of the task ("what did
   Marcus say about the setup?", "find the test accounts"), that's a step, not the task: `log_step`
   it, put the answer in the brief, and keep the title and done-when. Never rename the task to the

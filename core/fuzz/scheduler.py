@@ -127,7 +127,10 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
     if "plan_wait" in (t.get("variant_tags") or []):
         return _done_planning(core, t, actor, log)
     held = hold and holding(core, t)
-    result = result and "review" not in (t.get("variant_tags") or [])   # a parked review only asks; you decide
+    tags = t.get("variant_tags") or []
+    if "finding_out" in tags:   # Find out…: the answer is a step; the task is still yours to decide
+        return _found_out(core, t, actor, log)
+    result = result and "review" not in tags   # a parked review only asks; you decide
     back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
     if result:
         if not core.config["gather"]["finish_results"]:
@@ -148,6 +151,18 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
                                             else "Fuzz found nothing more to add.")) + back))
         cards.sync(core, t["id"])
     _match_captured(core, t)
+    return t["id"]
+
+
+def _found_out(core, t, actor, log=None):
+    """The answer to your Find out… is in the brief: the card comes back next, right after the one in front."""
+    with core.tx(actor):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "triage", remove_tags=("finding_out",), add_tags=("found_out",),
+                   schedule_anchor=None, schedule_fire_at=None)
+        events.emit(core, "task.gathered", task_id=t["id"], changes=ch, data={"found_out": t.get("find_out")},
+                    log=("status", log or f"Fuzz found out: {t.get('find_out') or 'what you asked'}. It's back for you."))
+        cards.sync(core, t["id"], "next")
     return t["id"]
 
 
@@ -466,6 +481,10 @@ def tick(core):
             if (t.get("reviewed_at") or "") >= late:
                 continue
             log = "Fuzz didn't get to look before asking, so it came back as it was."
+        elif "finding_out" in (t.get("variant_tags") or []):   # your Find out…: its clock starts when you asked
+            if (t.get("state_changed_at") or "") >= late:
+                continue
+            log = "Fuzz didn't get to find that out in time, so it came back as it was."
         elif t["created_at"] < late:
             log = "Fuzz didn't get to this in time, so it came to you as captured."
         else:

@@ -210,6 +210,24 @@ def assign(core, task_id, instructions=None, card=None, option="assign", value=N
     return t["id"]
 
 
+def find_out(core, task_id, question, card=None, actor="human"):
+    """Find out…: you need to know something before you can decide. The task goes to Fuzz with your
+    question (tag finding_out, gathered like a capture) but stays yours: Fuzz answers into the brief as a
+    step, never retitles or finishes it, and the card comes back next, right after the one in front."""
+    t = require(core, task_id)
+    q = (question if isinstance(question, str) else (question or {}).get("question") or "").strip()
+    if not q:
+        raise FuzzError("What do you need to know? A question, like “What did Marcus say about the setup?”", "value")
+    with core.tx(actor):
+        ch = events.Changes()
+        move(core, ch, t, "queued", card=card, add_tags=("gather", "finding_out"), attempts=0, question=None,
+             find_out=q[:300], notes=((t.get("notes") or "") + f"\nYou asked Fuzz to find out: {q}").strip())
+        _answered(core, ch, card, "find_out", q)
+        eid = events.emit(core, "task.find_out", task_id=t["id"], changes=ch, data={"question": q},
+                          log=("guidance", f"You asked Fuzz to find out: {q}"))
+    return eid
+
+
 def session(core, task_id, card=None):
     from .sessions import label
     t = require(core, task_id)
@@ -395,7 +413,7 @@ def to_back(core, task_id):
         ch.task(t["id"], order_key=next_order(core))
         for c in open_:
             ch.card(c["id"], postponed=c["postponed"] + 1, order_key=cards.next_order(core),
-                    payload=dict(c.get("payload") or {}, at_end=True))
+                    payload=dict({k: v for k, v in (c.get("payload") or {}).items() if k != "next"}, at_end=True))
         events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": open_[0]["kind"], "to": "back"},
                     log=("status", "You moved this to the end of the list."))
         from . import groups   # working through its group: the rest of it goes on without this one

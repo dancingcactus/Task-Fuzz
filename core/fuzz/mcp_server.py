@@ -59,7 +59,10 @@ def build(core, role, task_id=None):
         def claim_next_task(task_id: int | None = None) -> dict:
             """Lease the next task the scheduler picks for you (or the one named), for 10 minutes.
             Any write renews the lease. Returns the task, or why there is nothing to do. gathering: true means
-            it was just captured: gather context for the person's triage card, then call finish_gathering."""
+            it was just captured: gather context for the person's triage card, then call finish_gathering.
+            finding_out: the person asked you one question about the task (Find out…). Look it up, log_step
+            what you found, answer it at the top of the brief, then finish_gathering. It's a step, not the task:
+            don't retitle it or finish it."""
             return _call(tools.claim_next_task, core, task_id)
 
         @srv.tool()
