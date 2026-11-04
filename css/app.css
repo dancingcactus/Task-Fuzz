@@ -830,7 +830,7 @@ html.calm .gdots li { transition: none; }
 .gband[hidden], .gtray[hidden] { display: none; }
 
 /* What Fuzz couldn't find, on the card: Find out… asks for it */
-.gaps { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--wait); border-radius: 6px; background: var(--chip); font-size: 14px; line-height: 1.45; }
+.gaps { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--chip); font-size: 14px; line-height: 1.45; }
 
 /* A choice that leads the card's actions (join a waiting reply; a big task's four choices) */
 .lead-choice { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px 14px; border: var(--bw) solid var(--accent); border-radius: 16px; background: var(--chip); }
