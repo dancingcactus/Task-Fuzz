@@ -27,8 +27,8 @@ Decided before wiring the UI to the core (each is reflected in the sections belo
   narrow **sender** role sends exactly the approved body and writes `task.sent`. There are no
   actuators in the core. See [Approval gate and sending](#approval-gate-and-sending).
 
-Decided in November 2026, after the first week of real use, and not built yet (build-order steps 10
-to 13):
+Decided in November 2026, after the first week of real use (build-order steps 10 to 17; 10 and 11
+are built):
 
 - **Catching duplicates** for tasks you capture and across channels. See
   [Catching duplicates](#catching-duplicates).
@@ -39,6 +39,9 @@ to 13):
   off by Fuzz against their done-when. See [Deliverables](#deliverables).
 - **Focus**, said per session, with the queue reordered straight away and refined by a quick AI pass.
   See [Focus](#focus).
+- **Working sessions**: Triage as sorting first, then working on purpose; **Find out…** for missing
+  information; a size on every card and four choices for big tasks; **Later** and **Book time** as
+  two actions, with booked blocks in your Focus time slots. See [Working sessions](#working-sessions).
 
 ## Summary
 
@@ -905,11 +908,14 @@ collapsed), the "For …" line on tasks, and the deliverable sheet. No progress 
 ## Focus
 
 Focus is what you're working on now, and it moves those tasks ahead of everything that isn't
-time-sensitive. It has two layers:
+time-sensitive. It has two layers, under a booked block while one is on:
 
 ```
-time-sensitive  >  this session's focus  >  this week's active deliverables  >  everything else
+your booked block (during it)  >  time-sensitive  >  this session's focus  >  this week's active deliverables  >  everything else
 ```
+
+During a block, a time-sensitive card is second, and Fuzz mentions it once ("1 time-sensitive
+waiting after this"); see [Booking time](#booking-time).
 
 ### Saying it, per session
 
@@ -965,6 +971,131 @@ Triage orders on `(at_end, urgent, focus, back, fits, order_key)`:
 `claim_next_task` orders the same way (deadline, then focus), so Fuzz spends its working slots on
 what matters now. Tasks outside the focus still arrive and get done, just not first, and the stale
 card still catches anything that sits too long.
+
+## Working sessions
+
+Triage gets used as a working session: sorting cards and doing the work, with nothing marking the
+switch. In the first week most answers came within a minute, but about one gap in five ran 3 to 30
+minutes. Those ended in Done (the work was done with the card in front) or in a stall and a
+postpone. The two causes were **missing information** and **a task that turns out to be big**. The
+rule for both: decide quickly on the card, never grind on it.
+
+### Two phases
+
+1. **Sort.** Quick decisions on new cards. A big task shows its size and gets booked or pushed;
+   missing information becomes a Find out… without stopping you.
+2. **Work.** The tasks you kept for yourself, then the ones you pushed to the end, each opened on
+   purpose with **Do it now**.
+
+A booked block opens straight into work mode (see [Booking time](#booking-time)).
+
+**Do it now** is a new answer on task cards. It opens the **working card**: the brief, the checklist,
+the sources and notes, with Fuzz beside it and the rest of the queue out of view. The task stays
+yours (tag `doing`). The ways out are Done · Pause (back to the list, with "where I left off" notes)
+· Hand to Fuzz · Work in Claude. In work mode the check-in runs on time, not on cleared cards (today
+it waits for two more cleared cards, so it never comes while you're stuck).
+
+### Find out…
+
+Missing information used to mean assigning the task to Fuzz with an instruction. That hands the task
+over, and Fuzz may take the question as the whole task: one task was renamed to the lookup asked
+for and handed back as finished, and the hour of work it stood for was lost. A lookup and a hand-off
+are different intents:
+
+| | **Find out…** | **Assign to Fuzz** |
+| --- | --- | --- |
+| You say | "What did Marcus say about the setup?" | "Do this" |
+| The task | Stays yours | Goes to Fuzz |
+| Fuzz | Answers the question into the brief, as a step | Works the task |
+| Title and done-when | Never change | Fuzz may sharpen them |
+| You | Keep sorting; the card steps aside | The task leaves triage |
+
+The task goes back to Fuzz tagged with your question (tag `finding_out`), reusing gathering: it
+returns when the executor calls `finish_gathering`, and the run starts at once (`run_now`), not at
+the next scheduled run. **The card comes back as soon as the answer lands**: next, right after the
+card in front, with the answer at the top. The card in front never changes under you. When the brief
+has gaps ("I couldn't find the test accounts"), the card says so and offers Find out… first.
+
+**A piece of a task is a step.** For Find out… and for an instruction on Assign alike, the executor
+logs a request for one piece of a task as a step. It keeps the title and the done-when, and never
+finishes the task because the piece is done.
+
+### Size, and big tasks
+
+Every card shows a **size**: "≈ 1½ h · 6 steps". The executor always writes `effort_mins` and a step
+count when it writes a brief, and the extractor estimates them with the ask (until now almost no
+task had one). A task is **big** at `work.big_minutes` (45) or more, or five or more steps. A big
+task's card leads with four choices:
+
+| Choice | What happens |
+| --- | --- |
+| **Do it now** | Work mode, as above |
+| **Book time** | Into the next Focus time slot; see [Booking time](#booking-time) |
+| **After the others** | To the end of this session; picked up in the work phase if there's time. If the session ends first, Fuzz asks whether to book time for it |
+| **Just the first step** | Fuzz writes the checklist, you do step 1 now (two minutes), and the rest is booked |
+
+### What's in the way?
+
+When a card has been in front for `work.stuck_minutes` while you're at the desk (`presence`): 3
+minutes when sorting, 25 in work mode with no sign of progress (no notes, edits or answers), Fuzz
+asks "What's in the way?" once. Esc dismisses it, and Calm mode keeps it quiet.
+
+| Answer | What happens |
+| --- | --- |
+| I need to know something | Opens Find out… |
+| This is a big one | The four choices above |
+| Something else → Can't decide | Fuzz lays out the options with a suggested default |
+| Something else → I don't want to write it | Fuzz drafts it for your OK |
+| Something else → Not now | After the others, with no penalty |
+
+A task card sent to the end of the list twice comes back as this card, like a task that keeps getting
+a new time. The UI records when each card is on screen and when you're away (kept for tuning, not in
+the event log), so the thresholds can be set from real use.
+
+### Later and Book time
+
+Schedule did two jobs. Now they're two actions:
+
+| | **Later** (postpone) | **Book time** (schedule) |
+| --- | --- | --- |
+| Means | Not now; bring it back then | I'll do it then; hold the time |
+| Options | Today's: later today, back at my desk, tomorrow morning, Monday, next week, moments | Focus time slots first, then other free time |
+| Calendar | Nothing | A hold |
+| Comes back | To triage, as a card | First in the list, in work mode |
+| "Keeps coming back" | Counts | Doesn't; a missed block is its own signal |
+| Key | **S**, as now | **B** (the parked card's Bring back moves to a free key) |
+
+Fuzz pre-fills Book time on big tasks and Later on the rest. "Keeps coming back" splits its "Give it
+a time" into both, Book time first for big tasks. Fuzz putting a task off, and the check-in's Hold
+the rest, are Later.
+
+### Booking time
+
+**Slots.** You keep "Focus time" events on your calendar (`booking.slot_titles`). The executor reads
+the calendar with its connector, as for moments (the core still never reads it), and returns
+candidate slots. The core ranks them: inside a Focus time slot, before the due date and long enough;
+then inside one but only part fits ("block 1 of 2"); then other free time, labelled "Not a focus
+slot". Two shorter tasks can share a slot, and the core knows its own holds, so it never
+double-books.
+
+**The hold** is a separate event inside the slot; Fuzz never edits your events. Its title is the
+task's title, and its body is a link to the task in Fuzz (`#tasks/<id>`) and the done-when. It's an
+outside action, so it's a draft (kind `calendar_hold`) through the approval gate, made by the sender
+with the calendar tools in `send.tools`. Always allow is offered for your own calendar. Without a
+calendar tool, Fuzz shows the slot for you to add, and the task is still booked in Fuzz. The task is
+`scheduled` with the anchor `block {start, end, event_id}`.
+
+**Before the block** (`booking.prep_minutes`, 30), Fuzz turns what it found into a step-by-step
+checklist in the brief, so you start on step 1.
+
+**During the block**, opening Fuzz goes straight to the task in work mode. The focus question is
+skipped: the block is the focus. A time-sensitive card is second, mentioned once.
+
+**At the end**, "How far did you get?": Done · Keep going (extends the hold if the calendar is free)
+· Another block (the checklist remembers where you stopped) · Pause. **A missed block** gets a card:
+"The block for this went by. Find another time?"; repeated misses bring the "keeps coming back"
+card. **Finished early**, Fuzz offers to remove the holds you no longer need, and asks first. An
+event you move or cancel is handled as moments are.
 
 ## Cards and actions
 
@@ -1399,6 +1530,10 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
 - **Focus ordering**: time-sensitive stays first, the card in front never changes, a refined result
   with an unknown id is refused, and a slow or failed AI pass leaves the instant order.
 - **Deliverables**: `report_deliverable_done` closes and undoes; it's refused for `checked_by = you`.
+- **Working sessions**: a Find out… answer brings the card back next without changing the card in
+  front, and never retitles or finishes the task; a big task leads with the four choices; Later
+  counts toward "keeps coming back" and Book time doesn't; during a block its task is first and a
+  time-sensitive card second.
 - The spike's existing tests carry over.
 
 ## Build order
@@ -1425,11 +1560,24 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
 11. **Working through a group**: back-to-back cards, held answers, `group.collected` and the group
     claim, drafts that cover several tasks, then the group band, collected tray and thread-closed
     moment in the UI.
-12. **Deliverables**: the table and events, `part_of` verdicts and cards, the Monday review and
+12. **Foundations**: effort and step estimates on every brief and extracted ask; a piece of a task is
+    a step (no retitling or finishing on a piece); the same-run duplicate check on the rule-made `new`
+    path too, not only after the judge; and step 11's leftovers (offer a late ask to a group draft
+    still waiting for your OK; covered tasks follow their draft when it's put off).
+13. **Find out…**: the answer, `finding_out` and the gathering run started at once, the card back next
+    when the answer lands, and gaps shown on the card.
+14. **Working sessions**: the size on cards and the four choices for big tasks; Later and Book time as
+    two actions (Book time picks a time in Fuzz until step 15); Do it now and the working card; After
+    the others; What's in the way?; the check-in on time; recording time on screen.
+15. **Booking time**: Focus time slots from the calendar, the `block` anchor, `calendar_hold` drafts
+    through the sender, prep before the block, the block first in the list, the end and missed-block
+    cards, and removing holds no longer needed.
+16. **Focus**: the session question, the instant pass and the new queue and claim order (with the block
+    on top), then the AI pass and the saved phrases. Until step 17 the weekly layer is empty, so focus
+    is per session only.
+17. **Deliverables**: the table and events, `part_of` verdicts and cards, the Monday review and
     weekday cards, `list_deliverables` and `report_deliverable_done`, then the Lineup section and the
     deliverable sheet.
-13. **Focus**: the session question, the instant pass and the new queue and claim order, then the AI
-    pass and the saved phrases. Until step 12 the weekly layer is empty, so focus is per session only.
 
 ## Open questions
 
@@ -1463,10 +1611,11 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
     nothing leaves without your OK) or a "Here's the plan" card to confirm before Fuzz starts, which
     would let you ask for separate replies before any work is done.
 13. **Tasks that keep cycling.** In use, most handbacks were "Here's what you asked for. Done?"
-    answered with a follow-up, so iterative work goes round the queue one turn at a time. Ideas, none
-    decided: run a follow-up straight away, offer Work in Claude after two rounds, stop asking for a
-    file after one failed read, and offer "Done, and start a new task" when a follow-up changes the
-    done-when.
+    answered with a follow-up, so iterative work goes round the queue one turn at a time. Decided:
+    a piece of a task is a step, and Find out… runs at once (see [Working sessions](#working-sessions)).
+    Still open: run every follow-up straight away, offer Work in Claude after two rounds, stop asking
+    for a file after one failed read, and offer "Done, and start a new task" when a follow-up changes
+    the done-when.
 14. **How fast the focus AI pass is on each client.** A tools-free one-shot's start-up time hasn't
     been measured, on Copilot especially. The design doesn't depend on it, since the instant pass
     carries the reorder.
