@@ -259,6 +259,27 @@
   function schedOpts(it) { return Store.scheduleOptions(it).filter(function (o) { return o.anchor.type !== 'exact'; }); }
   /* The visible key hint. Screen readers get aria-keyshortcuts on the button instead. */
   function kbd(k) { return '<kbd aria-hidden="true">' + k + '</kbd>'; }
+  /* A split button: the main action, and its close cousin behind the arrow (Assign to Fuzz / Find out…,
+     Later / Book time). The cousin keeps its own key, so Q and B work without opening the menu. */
+  var ARROW = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  function splitHTML(cls, main, menuId, label, items, primary) {
+    return '<div class="split ' + cls + '">' + main +
+      '<button type="button" class="btn more-btn' + (primary ? ' primary' : '') + '" data-act="more" data-menu="' + menuId + '" aria-haspopup="menu" aria-expanded="false" aria-label="' + label + '" title="' + label + '">' + ARROW + '</button>' +
+      '<div class="menu" role="menu" id="' + menuId + '" hidden aria-label="' + label + '">' + items + '</div></div>';
+  }
+  function menuItem(act, key, name, what) {
+    return '<button type="button" role="menuitem" data-act="' + act + '"' + (key ? ' aria-keyshortcuts="' + key + '"' : '') + '><b>' + name + (key ? kbd(key) : '') + '</b><span>' + what + '</span></button>';
+  }
+  /* Close every open split menu, except the one in keep (the split just clicked) */
+  function closeMenus(keep) {
+    if (!root) return;
+    root.querySelectorAll('.split').forEach(function (sp) {
+      if (sp === keep) return;
+      var m = sp.querySelector('.menu'); if (m) m.hidden = true;
+      var b = sp.querySelector('.more-btn'); if (b) b.setAttribute('aria-expanded', 'false');
+    });
+  }
+  var FIND_WHAT = 'Fuzz looks one thing up. The task stays yours and comes back next.';
   function actionsHTML(it) {
     if (scheduling) {
       /* Three likely times first. The rest, and an exact time, wait behind More times. */
@@ -322,10 +343,10 @@
         '<button type="button" class="btn primary done-btn" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
         (it.blockEnd ? '<button type="button" class="btn" data-act="keepgoing" aria-keyshortcuts="K">Keep going' + kbd('K') + '</button>' : '') +
         '<button type="button" class="btn" data-act="pause" aria-keyshortcuts="Z">Pause' + kbd('Z') + '</button>' +
-        '<button type="button" class="btn" data-act="assign" aria-keyshortcuts="A">Hand to Fuzz' + kbd('A') + '</button>' +
+        splitHTML('split-assign', '<button type="button" class="btn split-main" data-act="assign" aria-keyshortcuts="A">Hand to Fuzz' + kbd('A') + '</button>',
+          'assignmenu', 'Ask Fuzz something else', menuItem('findout', 'Q', 'Find out…', FIND_WHAT)) +
         '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>' +
-        '<button type="button" class="btn" data-act="book" aria-keyshortcuts="B">' + (it.firstStepMode ? 'Book the rest' : 'Book time') + kbd('B') + '</button>' +
-        '<button type="button" class="btn" data-act="findout" aria-keyshortcuts="Q">Find out…' + kbd('Q') + '</button></div>';
+        '<button type="button" class="btn" data-act="book" aria-keyshortcuts="B">' + (it.firstStepMode ? 'Book the rest' : 'Book time') + kbd('B') + '</button></div>';
     }
     if (it.state === 'review') return reviewActionsHTML(it);
     /* A result: what Fuzz found is the thing you asked for, so Done leads and Assign is the way to send him further.
@@ -342,12 +363,22 @@
     var joinRow = join ? '<div class="lead-choice"><p class="meta">' + esc(it.joinReason || 'A reply to this thread is waiting for your OK.') + '</p>' +
       '<button type="button" class="btn primary" data-act="joinreply">Add to the reply</button></div>' : '';
     var assignBtn = '<button type="button" class="btn' + (res || join || big || it.suggestFindOut ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
-    return joinRow + bigRow + '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignBtn) +
+    /* Find out… sits behind Assign's arrow. When the brief has gaps, Fuzz suggests it: it takes the front and
+       Assign goes behind the arrow instead. */
+    var findLeads = !!it.suggestFindOut && !join && !big;
+    var assignSplit = findLeads
+      ? splitHTML('split-assign', '<button type="button" class="btn primary split-main" data-act="findout" aria-keyshortcuts="Q">Find out…' + kbd('Q') + '</button>',
+          'assignmenu', 'Hand it to Fuzz instead', menuItem('assign', 'A', 'Assign to Fuzz', 'Fuzz takes the whole task, not just the question.'), true)
+      : splitHTML('split-assign', assignBtn.replace('class="btn', 'class="btn split-main'), 'assignmenu', 'Ask Fuzz something else',
+          menuItem('findout', 'Q', 'Find out…', FIND_WHAT), !(join || big));
+    /* Book time sits behind Later's arrow. A big task already offers it up top, so Later stands alone there. */
+    var laterBtn = '<button type="button" class="btn' + (big ? '' : ' split-main') + '" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Later' + kbd('S') + '</button>';
+    var laterSplit = big ? laterBtn : splitHTML('split-later', laterBtn, 'latermenu', 'Book time instead',
+      menuItem('book', 'B', 'Book time', 'Hold time on your calendar to do it. It doesn’t count as putting it off.'));
+    return joinRow + bigRow + '<div class="actions' + (res ? ' result' : '') + '">' + (res ? '' : assignSplit) +
       (res ? '' : '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>') +
-      (res ? '' : '<button type="button" class="btn' + (it.suggestFindOut && !join ? ' primary' : '') + '" data-act="findout" aria-keyshortcuts="Q">Find out…' + kbd('Q') + '</button>') +
-      (res ? '' : '<button type="button" class="btn" data-act="schedule" aria-keyshortcuts="S"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Later' + kbd('S') + '</button>') +
-      (res || big ? '' : '<button type="button" class="btn" data-act="book" aria-keyshortcuts="B">Book time' + kbd('B') + '</button>') +
-      '<div class="split"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
+      (res ? '' : laterSplit) +
+      '<div class="split split-done"><button type="button" class="btn done-btn' + (res ? ' primary' : '') + '" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
         '<button type="button" class="btn more-btn" data-act="more" aria-haspopup="menu" aria-expanded="false" aria-label="Clear it another way" title="Clear it another way"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
         '<div class="menu" role="menu" id="moremenu" hidden aria-label="Clear it another way"><p class="menu-h" aria-hidden="true">Clear it another way</p>' +
           (big ? '' : '<button type="button" role="menuitem" data-act="donow"><b>Do it now</b><span>Open it as your working card, with the rest of the list out of view.</span></button>' +
@@ -1771,11 +1802,12 @@
       if (t.dataset.quick !== undefined) { moment(function () { return answerHandback(parseInt(t.dataset.quick, 10)); }); return; }
       var a = t.dataset.act;
       if (a === 'more') {
-        var m = $('#moremenu'); m.hidden = !m.hidden; t.setAttribute('aria-expanded', String(!m.hidden));
-        if (!m.hidden) { var first = m.querySelector('button'); if (first) first.focus(); }
+        var m = $('#' + (t.dataset.menu || 'moremenu')), open = m.hidden;
+        closeMenus(); m.hidden = !open; t.setAttribute('aria-expanded', String(open));
+        if (open) { var first = m.querySelector('button'); if (first) first.focus(); }
         return;
       }
-      var mm = $('#moremenu'); if (mm) mm.hidden = true;
+      closeMenus();
       if (a === 'assign') moment(function () { return assign(); });
       else if (a === 'done') moment(done);
       else if (a === 'claude') moment(inClaude);
@@ -1828,8 +1860,7 @@
       else if (a === 'joinreply') moment(function () { return quickClear('Added to the reply:', 'Added “' + cur().title + '” to the reply. Fuzz rewrites it to cover this too, and it comes back for your OK.', function (i) { Store.joinReply(i.id); }, 'Got it. I’ll fold it into the reply.'); });
     });
     docClick = function (e) {
-      var mm = root && root.querySelector('#moremenu');
-      if (mm && !mm.hidden && !e.target.closest('.split')) { mm.hidden = true; var mb = root.querySelector('.more-btn'); if (mb) mb.setAttribute('aria-expanded', 'false'); }
+      if (root) closeMenus(e.target.closest && e.target.closest('.split'));
       var pm = root && root.querySelector('#plusmenu');
       if (pm && !pm.hidden && !e.target.closest('.plus')) { pm.hidden = true; root.querySelector('[data-act="plus"]').setAttribute('aria-expanded', 'false'); }
     };
@@ -1878,8 +1909,8 @@
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
       var pm = $('#plusmenu');
       if (e.key === 'Escape' && pm && !pm.hidden) { e.preventDefault(); plusMenu(false); return; }
-      var mm = $('#moremenu');
-      if (e.key === 'Escape' && mm && !mm.hidden) { e.preventDefault(); mm.hidden = true; var mb = $('.more-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.focus(); } return; }
+      var mm = root && root.querySelector('.split .menu:not([hidden])');
+      if (e.key === 'Escape' && mm) { e.preventDefault(); var mb = mm.parentNode.querySelector('.more-btn'); closeMenus(); if (mb) mb.focus(); return; }
       var k = e.key.toLowerCase(), n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) - 1 : -1, b = null;
       /* A setup card: its buttons take Enter, and Escape is Not now */
       if (scOpen) {

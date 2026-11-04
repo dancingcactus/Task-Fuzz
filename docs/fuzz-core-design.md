@@ -1016,6 +1016,10 @@ the next scheduled run. **The card comes back as soon as the answer lands**: nex
 card in front, with the answer at the top. The card in front never changes under you. When the brief
 has gaps ("I couldn't find the test accounts"), the card says so and offers Find out… first.
 
+On the card, Find out… sits behind the arrow of a split **Assign to Fuzz** button: both ask Fuzz,
+and keeping the row to four buttons keeps sorting quick. **Q** works without opening the menu. When
+the brief has gaps, the two swap: Find out… is the button and Assign moves behind the arrow.
+
 **A piece of a task is a step.** For Find out… and for an instruction on Assign alike, the executor
 logs a request for one piece of a task as a step. It keeps the title and the done-when, and never
 finishes the task because the piece is done.
@@ -1065,7 +1069,9 @@ Schedule did two jobs. Now they're two actions:
 | "Keeps coming back" | Counts | Doesn't; a missed block is its own signal |
 | Key | **S**, as now | **B** (the parked card's Bring back moves to a free key) |
 
-Fuzz pre-fills Book time on big tasks and Later on the rest. "Keeps coming back" splits its "Give it
+On the card, Book time sits behind the arrow of a split **Later** button, and **B** works without
+opening the menu. A big task already leads with Book time in its four choices, so Later stands alone
+there. Fuzz pre-fills Book time on big tasks and Later on the rest. "Keeps coming back" splits its "Give it
 a time" into both, Book time first for big tasks. Fuzz putting a task off, and the check-in's Hold
 the rest, are Later.
 

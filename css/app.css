@@ -291,6 +291,10 @@ html.dragging-file .drop.over .dropbtn { border-color: var(--accent); background
 .split .done-btn { flex: 1; border-radius: 12px 0 0 12px; border-right-width: 1px; }
 .split .done-btn svg { color: var(--ok); }
 .split .more-btn { flex: none; width: 44px; padding: 0; border-radius: 0 12px 12px 0; border-left-width: 1px; }
+.split .split-main { flex: 1; min-width: 0; border-radius: 12px 0 0 12px; border-right-width: 1px; }
+/* A task card's four: Assign (Find out… behind it), Work in Claude, Later (Book time behind it), Done. Two by two. */
+.actions:not(.working-actions):has(> .split-assign) { grid-template-columns: 1fr 1fr; }
+.split-assign .menu, .split-later .menu { left: 0; right: auto; } /* they start their row: open toward the card */
 /* A draft waiting for your OK: who it goes to, the editable text, then the decision */
 .draft { display: flex; flex-direction: column; gap: 8px; }
 .draft-to { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14.5px; }
@@ -714,10 +718,18 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
   .actions .split { grid-column: auto; }
   #actions > .actions:not(.ent):not(.review):not(.result) { grid-template-columns: 3fr 2fr; grid-template-areas: "assign done" "claude sched"; }
   #actions kbd { display: none; } /* no room for key hints in two tight rows */
-  #actions > .actions [data-act="assign"] { grid-area: assign; min-height: 46px; }
-  #actions > .actions .split { grid-area: done; }
-  #actions > .actions [data-act="claude"] { grid-area: claude; }
-  #actions > .actions [data-act="schedule"] { grid-area: sched; }
+  #actions > .actions > .split-assign, #actions > .actions > [data-act="assign"] { grid-area: assign; }
+  #actions > .actions [data-act="assign"] { min-height: 46px; }
+  #actions > .actions > .split-done { grid-area: done; }
+  #actions > .actions > [data-act="claude"] { grid-area: claude; }
+  #actions > .actions > .split-later, #actions > .actions > [data-act="schedule"] { grid-area: sched; }
+  #actions > .actions > .split-later .menu { left: auto; right: 0; }
+  /* Three of the four are split buttons: equal columns, a slimmer arrow, and words that never break mid-word */
+  #actions > .actions:not(.ent):not(.review):not(.result):not(.working-actions):has(> .split-assign) { grid-template-columns: 1fr 1fr; }
+  #actions .split .more-btn { width: 38px; }
+  #actions .split .split-main, #actions .split .done-btn { padding-left: 8px; padding-right: 8px; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  /* The actions stick to the bottom of the screen, so their menus open upward */
+  #actions .split .menu { top: auto; bottom: calc(100% + 8px); }
   /* The card's actions stay within thumb reach while you read on down the card */
   #actions:has(> .actions) {
     position: sticky; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 2; margin: 0 -8px; padding: 8px; border-radius: 16px;
