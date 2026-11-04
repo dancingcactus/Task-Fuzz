@@ -825,6 +825,15 @@ html.calm .gdots li { transition: none; }
 .lead-choice .meta { margin: 0; }
 .lead-choice .btn { align-self: flex-start; }
 
+/* Working sessions: the size on every card, a big task's four choices, and the working card */
+.sizechip { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.sizechip.big { border-color: var(--wait); color: var(--ink); }
+.lead-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.lead-choice .lead-btns .btn { align-self: auto; }
+.card.working { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.working-actions { flex-wrap: wrap; }
+.way .when-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
 /* "Same as…" in task detail: a quiet way to say two tasks are one */
 .sameas { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .sameas .ps-tasks { align-self: stretch; }

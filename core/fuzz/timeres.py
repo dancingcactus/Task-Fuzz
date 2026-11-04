@@ -16,7 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 from .db import FuzzError, iso, parse_iso
 
-ANCHOR_TYPES = ("in", "later_today", "at_desk", "day_part", "before_due", "moment", "exact")
+# block: booked time ({start, end, event_id?}); it fires at its start (see "Booking time" in the design)
+ANCHOR_TYPES = ("in", "later_today", "at_desk", "day_part", "before_due", "moment", "exact", "block")
 
 PARTS = {"morning": 9, "afternoon": 13, "evening": 17}
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -116,10 +117,36 @@ def resolve(core, anchor, task=None, now=None):
         if not at:
             raise FuzzError("anchor.at must be an ISO time for an exact anchor", "anchor.at")
         return at
+    if typ == "block":
+        return check_block(anchor)[0]
+
+
+def check_block(anchor):
+    """A booked block's (start, end), with the field named on any problem."""
+    try:
+        start, end = parse_iso(anchor.get("start")), parse_iso(anchor.get("end"))
+    except (TypeError, ValueError):
+        start = end = None
+    if not start or not end:
+        raise FuzzError("anchor.start and anchor.end are ISO times for a block", "anchor.start")
+    if end <= start:
+        raise FuzzError("A block ends after it starts", "anchor.end")
+    return start, end
+
+
+def block_label(core, anchor, with_day=True):
+    """"Tue 10:00–11:30" in your time zone."""
+    s, e = check_block(anchor)
+    tz = local_tz(core)
+    s, e = s.astimezone(tz), e.astimezone(tz)
+    day = s.strftime("%a ") if with_day else ""
+    return f"{day}{s.strftime('%-H:%M')}–{e.strftime('%-H:%M')}"
 
 
 def label(core, anchor):
     typ = anchor.get("type")
+    if typ == "block":
+        return "Booked " + block_label(core, anchor)
     if typ == "in":
         d = duration(anchor.get("minutes", anchor.get("for")), "anchor.minutes")
         mins = int(d.total_seconds() // 60)

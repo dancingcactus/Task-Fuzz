@@ -128,7 +128,7 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
         return _done_planning(core, t, actor, log)
     held = hold and holding(core, t)
     tags = t.get("variant_tags") or []
-    if "finding_out" in tags:   # Find out…: the answer is a step; the task is still yours to decide
+    if "finding_out" in tags or "first_step" in tags:   # a step for you: the task is still yours
         return _found_out(core, t, actor, log)
     result = result and "review" not in tags   # a parked review only asks; you decide
     back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
@@ -155,13 +155,18 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
 
 
 def _found_out(core, t, actor, log=None):
-    """The answer to your Find out… is in the brief: the card comes back next, right after the one in front."""
+    """The answer to your Find out… is in the brief: the card comes back next, right after the one in front.
+    Just the first step: the checklist is in, and the task comes back next as the working card, on step 1."""
+    first = "first_step" in (t.get("variant_tags") or [])
     with core.tx(actor):
         ch = events.Changes()
-        tasks.move(core, ch, t, "triage", remove_tags=("finding_out",), add_tags=("found_out",),
+        tasks.move(core, ch, t, "triage", remove_tags=("finding_out",),
+                   add_tags=("doing", "first_step") if first else ("found_out",),
                    schedule_anchor=None, schedule_fire_at=None)
-        events.emit(core, "task.gathered", task_id=t["id"], changes=ch, data={"found_out": t.get("find_out")},
-                    log=("status", log or f"Fuzz found out: {t.get('find_out') or 'what you asked'}. It's back for you."))
+        events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                    data={"first_step": True} if first else {"found_out": t.get("find_out")},
+                    log=("status", log or ("The checklist is in. Step 1 is yours now." if first else
+                                           f"Fuzz found out: {t.get('find_out') or 'what you asked'}. It's back for you.")))
         cards.sync(core, t["id"], "next")
     return t["id"]
 
@@ -481,7 +486,7 @@ def tick(core):
             if (t.get("reviewed_at") or "") >= late:
                 continue
             log = "Fuzz didn't get to look before asking, so it came back as it was."
-        elif "finding_out" in (t.get("variant_tags") or []):   # your Find out…: its clock starts when you asked
+        elif {"finding_out", "first_step"} & set(t.get("variant_tags") or []):   # a Find out… or a first step: its clock starts when you asked
             if (t.get("state_changed_at") or "") >= late:
                 continue
             log = "Fuzz didn't get to find that out in time, so it came back as it was."
@@ -538,8 +543,19 @@ def tick(core):
 
 
 def wake(core):
-    """You're back at your desk: everything scheduled for that comes back."""
+    """You're back at your desk: everything scheduled for that comes back. It's a new session, so what you
+    put After the others last time asks whether to book time for it."""
     n = 0
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='triage'", (core.user_id,)):
+        if "after_others" in (t.get("variant_tags") or []):
+            with core.tx("system"):
+                ch = events.Changes()
+                ch.task(t["id"], variant_tags=tasks._tags(t, add=("ask_book",), remove=("after_others",)),
+                        reason="You didn’t get to this last time. Book time for it?")
+                for c in cards.open_cards(core, t["id"]):
+                    if c["kind"] == "task":
+                        ch.card(c["id"], suggested="book", payload={k: v for k, v in (c.get("payload") or {}).items() if k != "at_end"})
+                events.emit(core, "card.updated", task_id=t["id"], changes=ch, data={"kind": "task", "ask_book": True})
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued'", (core.user_id,)):
         if gathering(t) and (t.get("schedule_anchor") or {}).get("type") == "at_desk":
             finish_gathering(core, t["id"], actor="system", hold=False,

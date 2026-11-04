@@ -19,12 +19,18 @@ OPTIONS = {
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
 }
-TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop", "find_out"]
+# schedule is Later (bring it back then); book is Book time (hold the time). do_now, after_others and
+# first_step are a big task's choices with book; decide and draft_it answer "What's in the way?"
+TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop", "find_out",
+                "book", "do_now", "after_others", "first_step", "decide", "draft_it"]
+BIG_LEAD = ["do_now", "book", "after_others", "first_step"]   # a big task's card leads with these
+DOING_OPTIONS = ["done", "pause", "assign", "session", "book", "find_out"]   # the working card's ways out
+WAY_OPTIONS = ["find_out", "do_now", "book", "first_step", "decide", "draft_it", "after_others", "drop"]
 REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
 CHECK_BACK_OPTIONS = ["got_it", "nudge", "keep_waiting", "drop"]   # a waiting task back to ask "Did they get back to you?"
 # a task you've scheduled again and again, back to ask what's in the way: unclear (Fuzz works out the
 # first step), now (it still matters: an ordinary card), or park, let go, or one more time
-PUT_OFF_OPTIONS = ["unclear", "now", "schedule", "park", "drop"]
+PUT_OFF_OPTIONS = ["unclear", "now", "book", "schedule", "park", "drop"]
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
@@ -44,7 +50,7 @@ PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
 # Variant tags that only make sense while the task sits in triage.
 TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off",
-               "found_out"}
+               "found_out", "doing", "block", "after_others", "ask_book", "in_the_way", "first_step"}
 
 
 def open_cards(core, task_id):
@@ -130,9 +136,24 @@ def sync(core, task_id, where="back"):
         if reply:
             return create(core, "task", task_id, payload={"reply_draft": reply["id"]}, suggested="add_to_reply",
                           reason=f"A reply to {_group_title(core, t)} is waiting for your OK. Add this to it?", where=where)
+        from . import booking
+        if "doing" in tags:   # the working card: Do it now, a booked block starting, or step 1 of a big one
+            return create(core, "task", task_id, reason=t.get("reason"), suggested="done",
+                          prompt="Step 1 is about two minutes. Then book the rest." if "first_step" in tags
+                          else "You’re on this one.", where="front" if where == "back" else where)
+        if "in_the_way" in tags:
+            from .tasks import WAY_PROMPT
+            return create(core, "task", task_id, reason=t.get("reason"), prompt=WAY_PROMPT, suggested="find_out",
+                          payload={"at_end": True}, where=where)
+        if "ask_book" in tags or "after_others" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"),
+                          suggested="book" if "ask_book" in tags else "do_now",
+                          payload={"at_end": True} if "after_others" in tags else None, where=where)
         return create(core, "task", task_id, reason=t.get("reason"),
                       prompt=PUT_OFF_PROMPT if "put_off" in tags else None,
-                      suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
+                      suggested="book" if booking.is_big(core, t) and not t.get("gaps") and not (
+                          {"review", "check_back", "put_off", "stale", "result", "handed_back"} & set(tags))
+                      else review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
                       else "unclear" if "put_off" in tags else "keep" if "stale" in tags else "done" if "result" in tags
                       # the brief has gaps: finding out comes first
                       else "find_out" if t.get("gaps") and "found_out" not in tags
@@ -186,6 +207,10 @@ def review_suggests(core, t):
 
 def task_options(task):
     tags = task.get("variant_tags") or []
+    if "doing" in tags:
+        return list(DOING_OPTIONS)
+    if "in_the_way" in tags:
+        return list(WAY_OPTIONS)
     if "review" in tags:
         return list(REVIEW_OPTIONS)
     if "check_back" in tags:
@@ -241,7 +266,9 @@ def queue(core):
         elif m == "low":
             fits = 0 if (t and t.get("energy") == "low") else 1
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
-        k = (at_end, urgent, back, fits, c["order_key"] or 0)
+        # the working card (Do it now, or a booked block that started) is first, ahead of deadlines
+        doing = 0 if "doing" in tags and c["kind"] == "task" else 1
+        k = (doing, at_end, urgent, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
     out = [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
     # A Find out… answer that landed comes next, right after the card in front, which never changes under you
@@ -263,13 +290,15 @@ def _back_to_back(core, keyed):
     lead = {}
     for k, c, t in keyed:
         gid = (t or {}).get("group_id")
-        if gid and not k[0] and c["kind"] in groups.ROUTING:
+        if gid and k[0] and not k[1] and c["kind"] in groups.ROUTING:
             lead.setdefault(gid, []).append(k)
     lead = {g: min(ks) for g, ks in lead.items() if len(ks) > 1 or (run and run["group_id"] == g)}
     out = []
     for k, c, t in keyed:
         gid = (t or {}).get("group_id")
-        if gid in lead and not k[0] and c["kind"] in groups.ROUTING:
+        if not k[0]:   # the working card stays first
+            out.append(((-1,) + k + (0,) + k, c, t))
+        elif gid in lead and not k[1] and c["kind"] in groups.ROUTING:
             first = 0 if run and run["group_id"] == gid else 1
             out.append(((first,) + lead[gid] + (gid,) + k, c, t))
         else:
@@ -312,6 +341,16 @@ def view(core, card, task=None):
         out["asks"] = [task_summary(a) for a in many]
     if card["kind"] == "task":
         out["schedule_options"] = card.get("schedule_options") or []
+        if task:   # its size, a big task's four choices, and the times Book time offers
+            from . import booking
+            sz = booking.size(core, task)
+            if sz:
+                out["size"] = sz
+            plain = not ({"review", "check_back", "put_off", "doing", "result", "handed_back"} & set(task.get("variant_tags") or []))
+            if sz and sz["big"] and plain:
+                out["lead"] = list(BIG_LEAD)
+            if "book" in out["options"]:
+                out["book_options"] = booking.options(core, task)
     elif card["kind"] in SCHEDULED:   # a draft card made before it had Schedule options works them out now
         out["schedule_options"] = card.get("schedule_options") or (timeres.build_options(core, task) if task else [])
     if other:

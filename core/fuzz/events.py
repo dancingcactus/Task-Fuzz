@@ -23,6 +23,7 @@ EVENT_TYPES = {
     "task.file_written", "task.file_deleted", "task.link_added", "task.review_due", "task.kept_parked", "task.check_back_set",
     "task.session_opened", "task.next_step", "task.session_ended",
     "task.find_out",   # you asked Fuzz to find something out; the task stays yours
+    "task.doing", "task.paused",   # Do it now opened the working card; Pause put it back in the list
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "group.collected", "group.working",   # working through a group: Fuzz has the answers / the run goes on
     "entity.merged", "entity.kept_separate", "entity.defined",

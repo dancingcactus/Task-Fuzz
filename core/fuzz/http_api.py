@@ -152,6 +152,8 @@ class App:
             ("POST", r"/undo", self.undo),
             ("GET", r"/events", self.events_since),
             ("POST", r"/checkin", self.checkin),
+            ("POST", r"/screen", self.screen_time),
+            ("GET", r"/screen", self.screen_times),
             ("POST", r"/signals/at_desk", self.at_desk),
             ("POST", r"/tick", self.tick),
             ("GET", r"/me", self.me_get),
@@ -413,7 +415,8 @@ class App:
         """group_run: the group you're working through, so the UI can show its band (see groups.run)."""
         cur = groups.run(core)
         return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core),
-                "group_run": {"group_id": cur["group_id"], "tasks": cur["tasks"]} if cur else None}
+                "group_run": {"group_id": cur["group_id"], "tasks": cur["tasks"]} if cur else None,
+                "work": core.config.get("work")}
 
     def answer(self, core, m, body, q):
         if "option" not in body:
@@ -450,6 +453,23 @@ class App:
         """The UI asked how you're doing: {answer, follow_up?}. It decides when to ask; the core keeps the answer."""
         from . import checkins
         return checkins.record(core, body.get("answer"), body.get("follow_up")), 201
+
+    def screen_time(self, core, m, body, q):
+        """The UI says how long a card was on screen and how long you were away meanwhile: {card_id?, task_id?,
+        mode: sort|work, shown_at, left_at?, away_s?, how?}. Kept for tuning the stuck thresholds; not an event."""
+        if not isinstance(body.get("shown_at"), str):
+            raise FuzzError("shown_at is when the card came on screen (ISO time)", "shown_at")
+        if body.get("mode") not in (None, "sort", "work"):
+            raise FuzzError("mode is sort or work", "mode")
+        rid = core.q("INSERT INTO screen_times (user_id, card_id, task_id, mode, shown_at, left_at, away_s, how) "
+                     "VALUES (?,?,?,?,?,?,?,?)", (core.user_id, body.get("card_id"), body.get("task_id"), body.get("mode"),
+                                                  body["shown_at"], body.get("left_at"), int(body.get("away_s") or 0),
+                                                  (body.get("how") or "")[:40] or None)).lastrowid
+        return {"id": rid}, 201
+
+    def screen_times(self, core, m, body, q):
+        return {"times": core.all("SELECT card_id, task_id, mode, shown_at, left_at, away_s, how FROM screen_times "
+                                  "WHERE user_id=? ORDER BY id DESC LIMIT ?", (core.user_id, min(int(q.get("limit") or 200), 2000)))}
 
     def at_desk(self, core, m, body, q):
         return {"came_back": scheduler.wake(core)}

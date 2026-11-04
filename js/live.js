@@ -237,6 +237,11 @@
       /* Find out…: the answer is in, at the top of the card; or the brief has gaps, so it's suggested */
       foundOut: tags.indexOf('found_out') > -1 && state === 'triage', findOutQ: t.find_out || '',
       suggestFindOut: !!(c && c.suggested === 'find_out'),
+      /* working sessions: the size and whether it's big, Book time's options, the working card, "What's in the way?" */
+      size: c && c.size || null, sizeLabel: c && c.size ? c.size.label : '', suggested: c ? c.suggested : null,
+      bookOptions: c && c.book_options ? c.book_options : null,
+      doing: tags.indexOf('doing') > -1 && state === 'triage', firstStepMode: tags.indexOf('first_step') > -1 && state === 'triage',
+      inTheWay: tags.indexOf('in_the_way') > -1 && state === 'triage', afterOthers: tags.indexOf('after_others') > -1,
       group: t.group_id ? 'g' + t.group_id : null
     };
     if (f.foundOut) f.aiHeading = 'You asked: ' + (t.find_out || 'what you needed');
@@ -311,6 +316,7 @@
         var listed = {}; list.forEach(function (t) { listed[t.id] = true; });
         Object.keys(detail).forEach(function (id) { if (!listed[id]) delete detail[id]; });
         Store.get().finishedOlder = r[0].finished_older || 0;
+        Store.get().work = r[1].work || null;   /* the stuck thresholds and what counts as big */
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
@@ -498,6 +504,15 @@
     wrap('joinReply', function (id) { var it = S.item(id); return it && decide(it, 'add_to_reply'); });
     /* Find out…: Fuzz looks it up now (the core starts the run); the card comes back right after the front one */
     wrap('findOut', function (id, q) { var it = S.item(id); return it && decide(it, 'find_out', q, 'find_out', { question: q }); });
+    /* Working sessions: Book time, Do it now, Pause, After the others, Just the first step, and two
+       answers to "What's in the way?" (lay out the options; draft it for my OK) */
+    wrap('book', function (id, opt) { var it = S.item(id); return it && opt && decide(it, 'book', { anchor: opt.anchor }); });
+    wrap('doNow', function (id) { var it = S.item(id); return it && decide(it, 'do_now'); });
+    wrap('pause', function (id, note) { var it = S.item(id); return it && decide(it, 'pause', (note || '').trim() || undefined); });
+    wrap('afterOthers', function (id) { var it = S.item(id); return it && decide(it, 'after_others'); });
+    wrap('firstStep', function (id) { var it = S.item(id); return it && decide(it, 'first_step'); });
+    wrap('decideFor', function (id) { var it = S.item(id); return it && decide(it, 'decide'); });
+    wrap('draftIt', function (id) { var it = S.item(id); return it && decide(it, 'draft_it'); });
     /* "Same as…": this task merges into the one you picked; Undo splits it back out */
     wrap('sameAs', function (id, otherCoreId) {
       var tid = (S.item(id) || {}).coreId;
@@ -653,6 +668,8 @@
     searchFinished: function (q) {
       return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
     },
+    /* How long a card was on screen and how long you were away: kept for tuning, not in the event log */
+    screen: function (rec) { return api('POST', '/screen', rec).catch(function () {}); },
     /* Working through a group: the core's plan once it has every answer ("Got all 4. …"), said once */
     takeCollected: function () { var c = collected; collected = null; return c; },
     /* You stopped partway through a group: Fuzz goes ahead with the answers so far, and the rest of the

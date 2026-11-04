@@ -21,6 +21,21 @@ def _task_answer(core, card, t, option, value):
         return drafts.add_to_reply(core, card, t)
     if option == "find_out":   # you need to know something first: Fuzz looks, the task stays yours
         return tasks.find_out(core, t["id"], value, card=card)
+    # working sessions: a big task's four choices, the working card's Pause, and "What's in the way?"
+    if option == "book":
+        return tasks.book(core, t["id"], (value or {}).get("anchor") if isinstance(value, dict) else value, card=card)
+    if option == "do_now":
+        return tasks.do_now(core, t["id"], card=card)
+    if option == "pause":
+        return tasks.pause(core, t["id"], card=card, left_off=value)
+    if option == "after_others":
+        return tasks.after_others(core, t["id"], card=card)
+    if option == "first_step":
+        return tasks.first_step(core, t["id"], card=card)
+    if option == "decide":   # can't decide: Fuzz lays out the options with a suggested default
+        return tasks.find_out(core, t["id"], tasks.DECIDE, card=card)
+    if option == "draft_it":   # don't want to write it: Fuzz drafts it for your OK
+        return tasks.assign(core, t["id"], instructions=tasks.DRAFT_IT, card=card, option="draft_it", hold=hold)
     if option == "assign":
         v = value if isinstance(value, dict) else {"instructions": value}
         return tasks.assign(core, t["id"], instructions=v.get("instructions"), refs=v.get("refs"), card=card,

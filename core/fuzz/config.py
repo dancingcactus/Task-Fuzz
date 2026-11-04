@@ -37,6 +37,10 @@ DEFAULTS = {
     # collect_minutes: working through a group and nothing answered for this long, Fuzz goes ahead with
     # the answers it has (as if you'd said Finish later).
     "grouping": {"slack_burst_minutes": 10, "collect_minutes": 30},
+    # Working sessions: a task is big at big_minutes or big_steps, and leads with Do it now, Book time,
+    # After the others and Just the first step. stuck_minutes: a card in front this long while you're at
+    # the desk asks "What's in the way?" once (sorting; in work mode with no sign of progress).
+    "work": {"big_minutes": 45, "big_steps": 5, "stuck_minutes": {"sort": 3, "work": 25}},
     # The connector tools the sender may call to send an approved draft, per client, as that client
     # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
     # hands each draft back.

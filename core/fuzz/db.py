@@ -295,6 +295,17 @@ CREATE TABLE IF NOT EXISTS decisions (
   matcher_version TEXT,
   ts TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS screen_times (   -- when each card was on screen and how long you were away; for tuning, not events
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  card_id INTEGER,
+  task_id INTEGER,
+  mode TEXT,                       -- sort | work
+  shown_at TEXT NOT NULL,
+  left_at TEXT,
+  away_s INTEGER,
+  how TEXT                         -- what ended it: the answer, or skipped
+);
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -348,6 +359,7 @@ MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"
               "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
                         ("reschedules", "INTEGER"), ("step_count", "INTEGER"), ("gaps", "TEXT"), ("find_out", "TEXT"),
+                        ("pushes", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 

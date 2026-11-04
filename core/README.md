@@ -293,6 +293,25 @@ you said on each other card, and `save_draft(covers=[…])` makes one reply that
 of them and closes them all when it's sent. A handback on a group claim asks once; the others wait,
 `held`, for your answer. Undo of the last answer takes the collection back too.
 
+### Find out… and working sessions
+
+**Find out…** (`find_out {question}` on a task card, or `POST /tasks/{id}/find_out`) sends the task to
+Fuzz tagged `finding_out`, gathered like a capture, and starts a run at once. Fuzz can't retitle it or
+finish it (`result`); when it calls `finish_gathering` the card comes back next, right after the card
+that was in front, tagged `found_out`. A brief's `gaps` make Find out… the suggested answer.
+
+Every brief from Fuzz carries `effort_mins` and `steps` (`step_count`), and cards show the size
+("≈ 1½ h · 6 steps"). A task is big at `work.big_minutes` (45) or `work.big_steps` (5); its card has
+`lead: [do_now, book, after_others, first_step]` and suggests `book`. **Later** is `schedule` and counts
+toward "keeps coming back". **Book time** is `book {anchor: {type: block, start, end}}` from the card's
+`book_options`: the task is `scheduled` (tag `booked`), never double-booked, and comes back first in the
+list as the working card (tags `doing`, `block`) without counting. `do_now` opens the working card
+(`done`, `pause {notes}`, `assign`, `session`, `book`, `find_out`); `after_others` sends it to the end
+with no penalty, and back at your desk it asks to book time; `first_step` has Fuzz write the checklist
+and brings it back next as the working card. A task card sent to the end twice asks "What's in the way?"
+(`find_out`, `do_now`, `book`, `first_step`, `decide`, `draft_it`, `after_others`, `drop`). The UI posts
+each card's time on screen to `POST /screen` (not an event).
+
 ### Looking into a task you scheduled
 
 Schedule a task with instructions (`schedule` with `{anchor, instructions}`) and Fuzz gathers on it

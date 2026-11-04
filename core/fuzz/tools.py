@@ -73,9 +73,11 @@ def _task_brief(core, t):
             "planning_wait": ({"on": t.get("waiting_on"), "default": tasks._when(core, t["schedule_fire_at"])}
                               if scheduler.gathering(t) and "plan_wait" in (t.get("variant_tags") or []) else None),
             "may_finish": scheduler.gathering(t) and core.config["gather"]["finish_results"]
-                          and not {"review", "plan_wait", "finding_out"} & set(t.get("variant_tags") or []),
+                          and not {"review", "plan_wait", "finding_out", "first_step"} & set(t.get("variant_tags") or []),
             # Find out…: answer this one question into the brief, as a step; the task stays theirs
             "finding_out": t.get("find_out") if "finding_out" in (t.get("variant_tags") or []) else None,
+            # Just the first step: write the checklist (step 1 about two minutes), then finish_gathering
+            "first_step": tasks.FIRST_STEP if "first_step" in (t.get("variant_tags") or []) else None,
             "comes_back": timeres.label(core, t["schedule_anchor"]) if scheduler.gathering(t) and t.get("schedule_anchor") else None,
             "notes": t["notes"], "context_md": t["context_md"], "summary": t["summary"], "question": t["question"],
             "steps_used": t["steps_used"], "max_steps": b["max_steps"],
@@ -202,7 +204,7 @@ def suggest_schedule(core, task_id, anchor, reason, you_said=None):
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
                  title=None, ask=None, summary=None, steps=None, gaps=None):
     updated = []
-    if (title is not None or ask is not None) and "finding_out" in (tasks.require(core, task_id).get("variant_tags") or []):
+    if (title is not None or ask is not None) and {"finding_out", "first_step"} & set(tasks.require(core, task_id).get("variant_tags") or []):
         raise FuzzError(f"Task {task_id} is a Find out…: the person asked one question about it. Answer it in the "
                         "brief (context_md, summary) as a step; the title and ask stay as they are.", "title", 409)
     if title is not None or ask is not None:
