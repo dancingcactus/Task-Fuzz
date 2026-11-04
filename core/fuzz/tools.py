@@ -42,7 +42,18 @@ def whoami(core, role, prompt_version=None, client=None):
             "now": core.now_iso(), "today": local.strftime("%A %Y-%m-%d"), "local_time": local.isoformat(timespec="minutes"),
             "tz": timeres.tz_name(core), "run_id": (core.run or {}).get("id"),
             **({"can_ask_for": _askable(core)} if role == "executor" else {}),
+            **({"calendar": _calendar_ask(core)} if role == "executor" else {}),
             **({"output_folder": outputs.folder(core)} if role == "executor" and outputs.folder(core) else {})}
+
+
+def _calendar_ask(core):
+    """Whether Fuzz wants the calendar read this run (report_calendar), and what to look for."""
+    from . import booking
+    holds = [t["schedule_anchor"]["event_id"] for t in core.all(
+        "SELECT schedule_anchor FROM tasks WHERE user_id=? AND schedule_anchor IS NOT NULL AND state!='merged'", (core.user_id,))
+        if (t.get("schedule_anchor") or {}).get("event_id")]
+    return {"read_now": booking.stale(core), "slot_titles": (core.config.get("booking") or {}).get("slot_titles") or ["Focus time"],
+            "days": 7, "your_holds": holds}
 
 
 def _askable(core):
@@ -185,8 +196,20 @@ def request_permission(core, task_id, scope, resource, why):
         return drafts.request_permission(core, task_id, scope, resource, why)
 
 
-def suggest_schedule(core, task_id, anchor, reason, you_said=None):
-    """you_said: the person asked for it later, in these words, so Fuzz schedules it there and its turn ends."""
+def suggest_schedule(core, task_id, anchor=None, reason=None, you_said=None, calendar=None):
+    """you_said: the person asked for it later, in these words, so Fuzz schedules it there and its turn ends.
+    calendar: what you read of the person's calendar ({slots, holds}, see report_calendar), when whoami asks
+    for it; it can come with an anchor or on its own (one tool for time, so the executor keeps few tools)."""
+    out = {}
+    if calendar is not None:
+        scheduler.require_lease(core, task_id)
+        if not isinstance(calendar, dict):
+            raise FuzzError("calendar is {slots: [{start, end, title?}], holds?: [...]}", "calendar")
+        out["calendar"] = report_calendar(core, calendar.get("slots") or [], calendar.get("holds"))
+        if anchor is None:
+            return out
+    if anchor is None:
+        raise FuzzError("anchor is the time to offer, like {\"type\": \"moment\", …}", "anchor")
     if you_said is not None:
         t = scheduler.require_lease(core, task_id)
         scheduler.refuse_while_gathering(t)
@@ -194,11 +217,11 @@ def suggest_schedule(core, task_id, anchor, reason, you_said=None):
     with _lease(core, task_id):
         label = scheduler.suggest_schedule(core, task_id, anchor, reason)
     if you_said is None:
-        return {"label": label}
+        return dict(out, label=label)
     hint = tasks.require(core, task_id)["schedule_hints"][0]   # the anchor as the core keeps it, moment key and all
     outputs.record(core, task_id)
     scheduler.put_off(core, task_id, {k: v for k, v in hint.items() if k != "reason"}, you_said)
-    return {"label": label, "state": "scheduled"}
+    return dict(out, label=label, state="scheduled")
 
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
@@ -350,9 +373,13 @@ def claim_next_send(core):
     if d.get("reply_to"):
         s = core.one("SELECT * FROM sources WHERE id=? AND user_id=?", (d["reply_to"], core.user_id))
         thread = _thread_ref(core, s) if s else None
-    return {"send": {"task_id": t["id"], "draft_id": d["id"], "kind": d["kind"], "target": d["target"],
-                     "thread": thread, "body": d["body"], "title": t["title"], "attachments": att},
-            "lease_until": t["lease_until"]}
+    out = {"task_id": t["id"], "draft_id": d["id"], "kind": d["kind"], "target": d["target"],
+           "thread": thread, "body": d["body"], "title": t["title"], "attachments": att}
+    if d["kind"] in drafts.HOLD_KINDS:   # a hold: an event of your own inside the slot (title, start, end), or its id to remove
+        m = d.get("meta") or {}
+        out["hold"] = {"title": m.get("title") or t["title"], "start": m.get("start"), "end": m.get("end"),
+                       "event_id": m.get("event_id")}
+    return {"send": out, "lease_until": tasks.get(core, t["id"])["lease_until"]}
 
 
 def _thread_ref(core, s):
@@ -410,6 +437,18 @@ def submit_verdicts(core, verdicts):
 EXECUTOR = ("whoami", "claim_next_task", "get_task", "read_source", "add_source", "log_step", "save_notes", "save_draft",
             "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "finish_gathering",
             "release")
+
+
+def report_calendar(core, slots, holds=None):
+    """What the executor read from the calendar with its own connector (the core never reads it): free time and
+    Focus time events ahead, and what became of Fuzz's holds. It reaches the executor as suggest_schedule's
+    calendar argument, not a tool of its own: past about fifteen tools a model picks the wrong one."""
+    from . import booking
+    if not isinstance(slots, list):
+        raise FuzzError("slots is a list of {start, end, title?}: your free time and Focus time events", "slots")
+    if holds is not None and not isinstance(holds, list):
+        raise FuzzError("holds is a list of {event_id, start?, end?, cancelled?}", "holds")
+    return booking.report(core, slots, holds)
 EXTRACTOR = ("whoami", "get_cursors", "submit_signals", "get_pending_judgments", "submit_verdicts")
 SENDER = ("whoami", "claim_next_send", "mark_sent", "send_failed")
 SESSION = ("get_task", "read_source", "log_progress", "set_next_step", "add_source", "end_session")

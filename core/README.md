@@ -312,6 +312,22 @@ and brings it back next as the working card. A task card sent to the end twice a
 (`find_out`, `do_now`, `book`, `first_step`, `decide`, `draft_it`, `after_others`, `drop`). The UI posts
 each card's time on screen to `POST /screen` (not an event).
 
+### Booking time
+
+The core never reads the calendar. When `whoami`'s `calendar.read_now` says so, the executor reads it
+with its own connector and passes `{slots, holds}` as `suggest_schedule`'s `calendar` argument (not a
+tool of its own, to keep the executor at fifteen tools). Book time then ranks: inside a Focus time slot
+(`booking.slot_titles`) before the due date and long enough; inside one where only part fits ("Block 1
+of 2"); then other free time ("Not a focus slot"), around Fuzz's own blocks. Booking makes a
+`calendar_hold` draft (title: the task's title; body: its `#tasks/<id>` link and done-when) with a
+`hold` card (Approve, Always allow, Skip) when the sender has a calendar tool in `send.tools`; otherwise
+it's booked in Fuzz only. The sender gets `hold {title, start, end, event_id?}` and marks it sent with
+the event id. `booking.prep_minutes` (30) before the block Fuzz writes the checklist; at the start the
+task is first in the list as the working card; at the end it asks "How far did you get?" (Done, Keep
+going by `booking.extend_minutes`, another block, Pause), or, if you never touched it, "The block for
+this went by" (two misses: "keeps coming back"). A task done before its block offers to remove the
+hold. Holds you move or cancel are reported back in `holds` and handled as moments are.
+
 ### Looking into a task you scheduled
 
 Schedule a task with instructions (`schedule` with `{anchor, instructions}`) and Fuzz gathers on it

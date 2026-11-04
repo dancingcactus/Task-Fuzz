@@ -317,6 +317,7 @@
       /* The working card: the rest of the queue is out of view. Its ways out. */
       return '<div class="actions working-actions">' +
         '<button type="button" class="btn primary done-btn" data-act="done" aria-keyshortcuts="D"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done' + kbd('D') + '</button>' +
+        (it.blockEnd ? '<button type="button" class="btn" data-act="keepgoing" aria-keyshortcuts="K">Keep going' + kbd('K') + '</button>' : '') +
         '<button type="button" class="btn" data-act="pause" aria-keyshortcuts="Z">Pause' + kbd('Z') + '</button>' +
         '<button type="button" class="btn" data-act="assign" aria-keyshortcuts="A">Hand to Fuzz' + kbd('A') + '</button>' +
         '<button type="button" class="btn" data-act="claude" aria-keyshortcuts="C">Work in ' + esc(Store.workIn) + kbd('C') + '</button>' +
@@ -595,7 +596,17 @@
 
   /* Reading order: the question, what it's about, then how to act on it, then the background.
      Entity and duplicate cards put their evidence before the answers, so you see it before choosing. */
+  function holdHTML(it) {
+    return tagrow(it) + askHTML(it.holdPrompt || 'Add a hold for this to your calendar?') +
+      '<div class="title-block"><h3 class="task-title">' + esc(it.title) + '</h3><div class="chips"><span class="meta">' + esc(it.holdWhen || '') + '</span></div></div>' +
+      '<p class="meta">' + esc(it.holdRemove ? 'It’s done before its block, so the time can go back to you.' : 'Fuzz adds an event of your own in that time, named after the task. Your other events are never changed.') + '</p>' +
+      '<div id="actions"><div class="actions">' +
+      '<button type="button" class="btn primary" data-act="hold-approve">' + (it.holdRemove ? 'Remove it' : 'Add the hold') + '</button>' +
+      (it.holdRemove ? '' : '<button type="button" class="btn" data-act="hold-always">Always allow for my calendar</button>') +
+      '<button type="button" class="btn" data-act="hold-skip">' + (it.holdRemove ? 'Keep it' : 'Skip') + '</button></div></div>';
+  }
   function cardHTML(it) {
+    if (it.cardKind === 'hold') return holdHTML(it);
     if (it.state === 'review') return reviewHTML(it);
     var isTask = it.kind === 'task';
     /* The onboarding's first card carries its one lesson (js/onboarding.js) */
@@ -843,8 +854,13 @@
       var inRun = grun && grun.ids.indexOf(t.id) > -1, entered = inRun && enterRun();
       if (inRun && !entered && !Fuzz.isCalm()) Fuzz.fxOn('scan', 700);   /* still gathering */
       var g = t.kind === 'task' && Onboard.guide(t);
+      var rushing = t.doing && t.block && !saidRush[t.id] && Store.queue().filter(function (x) { return x !== t && x.dueAt; }).length;
       if (entered) {
         /* what he says is that you're going through a group */
+      } else if (rushing) {
+        /* your booked block is first; a deadline waits second, and Fuzz says so once */
+        saidRush[t.id] = true;
+        Fuzz.setMood('caring'); Fuzz.say(rushing + ' time-sensitive waiting after this.', { type: false }); Say.announce(rushing + ' time-sensitive waiting after this.');
       } else if (g) {
         Fuzz.setMood('happy'); Fuzz.say(g.line, { type: false }); Say.announce(g.line);
       } else laterTip(t);
@@ -1409,7 +1425,7 @@
   }
   /* When a card has sat in front a while (3 minutes sorting; 25 in work mode with no sign of progress) while
      you're here, Fuzz asks what's in the way, once per card. The times on screen are kept for tuning. */
-  var shown = null, lastInput = 0, awayFrom = 0, awayS = 0, asked = {};
+  var shown = null, lastInput = 0, awayFrom = 0, awayS = 0, asked = {}, saidRush = {};
   /* Time away from the page doesn't count as time stuck, and is recorded with the card */
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) awayFrom = Date.now();
@@ -1628,6 +1644,11 @@
       else if (a === 'book') { booking = true; pausing = false; wayOpen = false; renderCardKeep(); var bh = $('#book-h'); if (bh) bh.focus(); Fuzz.setMood('eager'); Fuzz.say('When will you do it? I’ll hold the time.', { type: false }); }
       else if (a === 'book-cancel') { booking = false; renderCardKeep(); Fuzz.setMood('idle'); }
       else if (a === 'donow') moment(doNow);
+      else if (a === 'keepgoing') moment(function () { return quickClear('Kept going on', 'Kept going: the block runs on a little, if your calendar is free.', function (i) { Store.keepGoing(i.id); }, 'Nice. I’ll stretch the block.'); });
+      else if (a === 'hold-approve' || a === 'hold-always' || a === 'hold-skip') moment(function () {
+        var opt = { 'hold-approve': 'approve', 'hold-always': 'always_allow', 'hold-skip': 'skip' }[a], hit = cur();
+        return quickClear(opt === 'skip' ? 'No calendar change for' : 'Calendar hold for', opt === 'skip' ? 'No change to your calendar for “' + hit.title + '”.' : 'Fuzz will update your calendar for “' + hit.title + '”.', function (i) { Store.answerHold(i.id, opt); }, opt === 'skip' ? 'Okay, I’ll leave your calendar alone.' : 'On it. Your calendar, your events: I only touch the hold.');
+      });
       else if (a === 'pause') { pausing = true; renderCardKeep(); var pq = $('#pause-q'); if (pq) pq.focus(); }
       else if (a === 'pause-cancel') { pausing = false; renderCardKeep(); }
       else if (a === 'afterothers' || a === 'way-notnow') moment(function () { wayOpen = false; return quickClear('After the others:', 'After the others: “' + cur().title + '” waits until the rest are sorted. No penalty.', function (i) { Store.afterOthers(i.id); }, 'Sure. After the others.'); });

@@ -32,6 +32,9 @@ def _task_answer(core, card, t, option, value):
         return tasks.after_others(core, t["id"], card=card)
     if option == "first_step":
         return tasks.first_step(core, t["id"], card=card)
+    if option == "keep_going":   # the block's over and you're on a roll: it runs on, if the calendar is free
+        from . import booking
+        return booking.keep_going(core, t["id"], card=card)
     if option == "decide":   # can't decide: Fuzz lays out the options with a suggested default
         return tasks.find_out(core, t["id"], tasks.DECIDE, card=card)
     if option == "draft_it":   # don't want to write it: Fuzz drafts it for your OK
@@ -195,9 +198,14 @@ def _permission(core, card, t, option, value):
     return drafts.answer_permission(core, card, option)
 
 
+def _hold(core, card, t, option, value):
+    from . import booking
+    return booking.answer_hold(core, card, option)
+
+
 HANDLERS = {"task": _task_answer, "duplicate": _duplicate, "entity_person": _entity_person,
             "entity_term": _entity_term, "is_task": _is_task, "draft": _draft, "nudge": _draft,
-            "permission": _permission}
+            "permission": _permission, "hold": _hold}
 
 
 def answer(core, card_id, option, value=None):

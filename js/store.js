@@ -322,6 +322,10 @@
       if (S.live) { S.leave(id); it.state = 'ai-queued'; it.gathering = true; return; }
       it.doing = true; it.firstStepMode = true; it.firstStep = it.firstStep || 'Open what you need and write the first line (two minutes).'; S.pick(id);
     },
+    /* The end of a booked block: Keep going (the block runs on, if the calendar is free) */
+    keepGoing: function (id) { var it = S.item(id); if (!it) return; it.blockEnd = false; S.log(it, 'status', 'You kept going.'); S.pick(id); },
+    /* A hold on your calendar for booked time: approve, always allow, or skip (still booked in Fuzz) */
+    answerHold: function (id, opt) { var it = S.item(id); if (!it) return; S.leave(id); it.cardKind = null; S.log(it, 'status', opt === 'skip' ? 'No change to your calendar.' : 'You approved the calendar hold.'); },
     decideFor: function (id) { return S.findOut(id, 'What are my options here? Lay them out with the one you’d suggest.'); },
     draftIt: function (id) { var it = S.item(id); if (!it) return; S.leave(id); it.state = 'ai-queued'; S.log(it, 'guidance', 'You said: draft it for my OK.'); },
     /* Find out…: Fuzz looks it up; the task stays yours and its card comes back right after the one in front.

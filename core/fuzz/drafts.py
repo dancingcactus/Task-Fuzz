@@ -12,6 +12,7 @@ from . import cards, events, tasks
 from .db import FuzzError, iso
 
 DRAFT_KINDS = ("email.reply", "email.new", "slack.message", "calendar.invite", "nudge.email", "nudge.slack", "note")
+HOLD_KINDS = ("calendar_hold", "calendar_remove")   # made by the core when you book time (booking.ask_hold)
 IN_THREAD = ("email.reply", "slack.message", "nudge.email", "nudge.slack")   # kinds that can go in a source's thread
 BODY_MAX = 32 * 1024
 
@@ -40,7 +41,8 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
     with core.tx(actor):
         did = core.new_id("drafts")
         ch = events.Changes()
-        for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
+        for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending' "
+                          "AND kind NOT IN ('calendar_hold', 'calendar_remove')", (t["id"],)):
             ch.draft(d["id"], status="withdrawn")
         ch.draft(did, task_id=t["id"], kind=kind, target=target, body=body, status="pending",
                  created_at=core.now_iso(), final=1 if final else 0, attachments=attach or None,
@@ -191,6 +193,10 @@ def is_prep(d):
 def after_approve(core, d, t):
     """What approving this draft does, in a line the card can show before you tap."""
     from . import timeres
+    if d["kind"] == "calendar_hold":
+        return "Fuzz puts the hold on your calendar. Your own events are never changed."
+    if d["kind"] == "calendar_remove":
+        return "Fuzz takes the hold off your calendar."
     if d["kind"] != "note":
         return f"Fuzz sends it in {_where(d['kind'])}."
     if not is_prep(d):
@@ -258,6 +264,8 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
     d = approved_draft(core, t["id"])
     if d is None or d["id"] != draft_id:
         raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    if d["kind"] in HOLD_KINDS:
+        return _hold_sent(core, t, d, where, link, actor)
     with core.tx(actor):
         ch = events.Changes()
         ch.draft(d["id"], status="sent")
@@ -273,14 +281,44 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
     return {"state": "waiting" if d["kind"].startswith("nudge") else "done"}
 
 
+def _hold_sent(core, t, d, where, link, actor):
+    """The sender put the hold on your calendar (link: the event's id), or took it off. The task stays as it is."""
+    meta = dict(d.get("meta") or {})
+    with core.tx(actor):
+        ch = events.Changes()
+        ch.draft(d["id"], status="sent", meta=dict(meta, event_id=link or meta.get("event_id")))
+        a = dict(t.get("schedule_anchor") or {})
+        if d["kind"] == "calendar_hold" and a.get("type") == "block":
+            if not link and not a.get("event_id"):
+                raise FuzzError("link is the calendar event's id, so Fuzz can move or remove the hold later", "link")
+            ch.task(t["id"], schedule_anchor=dict(a, event_id=link or a.get("event_id")), lease_owner=None, lease_until=None)
+        else:
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+        text = "The hold is on your calendar." if d["kind"] == "calendar_hold" else "The hold is off your calendar."
+        events.emit(core, "task.sent", task_id=t["id"], changes=ch,
+                    data={"draft_id": d["id"], "kind": d["kind"], "where": where.strip(), "link": link}, log=("sent", text))
+    return {"state": t["state"]}
+
+
 def send_failed(core, task_id, draft_id, why, actor="fuzz:sender", log=None):
-    """It couldn't go out. The draft comes back to review with the reason as the question."""
+    """It couldn't go out. The draft comes back to review with the reason as the question. A hold that
+    couldn't be made comes back as its card, with the reason; the task stays booked in Fuzz."""
     if not (why or "").strip():
         raise FuzzError("why says what stopped it, in one line", "why")
     t = tasks.require(core, task_id)
     d = approved_draft(core, t["id"])
     if d is None or d["id"] != draft_id:
         raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    if d["kind"] in HOLD_KINDS:
+        with core.tx(actor):
+            ch = events.Changes()
+            ch.draft(d["id"], status="pending")
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+            events.emit(core, "task.send_failed", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "why": why.strip()},
+                        log=("blocked", log or f"Couldn't change your calendar: {why.strip()}"))
+            cards.create(core, "hold", t["id"], payload={"draft_id": d["id"], "kind": d["kind"]},
+                         prompt=f"{why.strip()[:200]} Try again?", reason="The hold didn’t go on your calendar.")
+        return {"state": t["state"]}
     with core.tx(actor):
         ch = events.Changes()
         ch.draft(d["id"], status="pending")

@@ -147,7 +147,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   final INTEGER,                   -- 0: a note that prepares a later step; approving it doesn't close the task
   attachments TEXT,                -- json list of file names in the task's output folder, for the sender
   reply_to INTEGER,                -- the source whose thread a reply or nudge goes in
-  covers TEXT                      -- json list: the other tasks in the group one reply answers
+  covers TEXT,                     -- json list: the other tasks in the group one reply answers
+  meta TEXT                        -- json: a calendar hold's {start, end, event_id}
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -319,7 +320,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 JSON_COLS = {"quick_answers", "variant_tags", "schedule_anchor", "schedule_hints", "title_history",
-             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers", "gaps"}
+             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers", "gaps", "meta"}
 
 
 def iso(dt):
@@ -356,10 +357,11 @@ def connect(home):
 
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
-              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT")],
+              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT"),
+                         ("meta", "TEXT")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
                         ("reschedules", "INTEGER"), ("step_count", "INTEGER"), ("gaps", "TEXT"), ("find_out", "TEXT"),
-                        ("pushes", "INTEGER"),
+                        ("pushes", "INTEGER"), ("missed_blocks", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 

@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.15
+prompt_version: executor-0.16
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.15`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.16`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -168,6 +168,14 @@ they assign it to you.
   last 5 emails" on a task titled "Summarize my last 5 Slack threads"), call `update_brief` with a
   new `title` (and `ask`) before anything else. Only when the scope really changed, not to reword.
   Fuzz logs the rename and they can undo it.
+- **Read the calendar when Fuzz asks.** When `whoami`'s `calendar.read_now` is true and you can read
+  their calendar, look at the next `days`: each free stretch, each event whose title is one of
+  `slot_titles` (their Focus time), and what became of `your_holds`. Pass it once per run as
+  `suggest_schedule`'s `calendar` (`{slots, holds}`) on the task you hold. Never change their events;
+  Fuzz's holds go through the sender, after their OK.
+- **Before a booked block** a claimed task may say, in its notes, to turn what you found into a
+  checklist: put a step-by-step list at the top of the brief, step 1 about two minutes, then
+  `finish_gathering`.
 - **Find out… is one question.** A claimed task with `finding_out` set is still the person's: they
   asked you that one thing so they can decide. Look it up, `log_step` each lookup, put the answer at
   the top of the brief (`context_md`, with `summary` saying it in a sentence, and `gaps` for anything

@@ -24,6 +24,8 @@ EVENT_TYPES = {
     "task.session_opened", "task.next_step", "task.session_ended",
     "task.find_out",   # you asked Fuzz to find something out; the task stays yours
     "task.doing", "task.paused",   # Do it now opened the working card; Pause put it back in the list
+    "task.block_started", "task.block_ended", "task.block_missed", "task.block_extended",   # booked time
+    "calendar.reported",   # the executor read the calendar: Focus time slots, free time and Fuzz's holds
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "group.collected", "group.working",   # working through a group: Fuzz has the answers / the run goes on
     "entity.merged", "entity.kept_separate", "entity.defined",

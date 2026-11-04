@@ -52,7 +52,15 @@ def expire_leases(core):
             tasks.move(core, ch, t, "queued")
             events.emit(core, "task.released", task_id=t["id"], changes=ch, data={"why": "lease_expired"},
                         log=("status", "Fuzz's run stopped partway, so this went back to the queue."))
-    return len(rows) + len(sends)
+    # a calendar hold the sender claimed and never finished: free it for the next send run
+    holds = core.all("SELECT * FROM tasks WHERE user_id=? AND state NOT IN ('working', 'sending') AND lease_owner IS NOT NULL "
+                     "AND lease_until < ?", (core.user_id, core.now_iso()))
+    for t in holds:
+        with core.tx("system"):
+            ch = events.Changes()
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+            events.emit(core, "task.released", task_id=t["id"], changes=ch, data={"why": "hold_lease_expired"})
+    return len(rows) + len(sends) + len(holds)
 
 
 RESULT_PROMPT = "Here’s what you asked for. Done?"
@@ -142,8 +150,9 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
         return t["id"]
     with core.tx(actor):
         ch = events.Changes()
-        if held:
-            tasks.move(core, ch, t, "scheduled")
+        if held:   # prep before a booked block: the checklist's in, and it waits for the block
+            prepped = "prep" in (t.get("variant_tags") or [])
+            tasks.move(core, ch, t, "scheduled", **({"add_tags": ("prepped",), "remove_tags": ("prep",)} if prepped else {}))
         else:
             tasks.move(core, ch, t, "triage", schedule_anchor=None, schedule_fire_at=None)
         events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
@@ -318,18 +327,28 @@ def extract_hours(core, now=None):
     return h[0] <= loc.hour + loc.minute / 60 < h[1]
 
 
+def _holds_waiting(core):
+    """Tasks with an approved calendar hold (or removal) for the sender, not already being sent."""
+    return core.all("SELECT t.* FROM tasks t JOIN drafts d ON d.task_id=t.id WHERE t.user_id=? AND d.status='approved' "
+                    "AND d.kind IN ('calendar_hold', 'calendar_remove') AND t.lease_owner IS NULL AND t.state!='sending' "
+                    "ORDER BY d.id", (core.user_id,))
+
+
 def sends_waiting(core):
     return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL",
-                    (core.user_id,))["n"]
+                    (core.user_id,))["n"] + len(_holds_waiting(core))
 
 
 def claim_next_send(core):
-    """Lease the oldest approved draft waiting to go out. Returns (task, draft), or (None, why)."""
+    """Lease the oldest approved draft waiting to go out (a calendar hold too). Returns (task, draft), or (None, why)."""
     from . import drafts
     expire_leases(core)
     with core.tx("fuzz:sender"):
         t = core.one("SELECT * FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL "
                      "ORDER BY state_changed_at, id LIMIT 1", (core.user_id,))
+        if t is None:
+            held = _holds_waiting(core)
+            t = held[0] if held else None
         if t is None:
             return None, "Nothing is waiting to be sent"
         ch = events.Changes()
@@ -340,7 +359,8 @@ def claim_next_send(core):
 
 def require_send_lease(core, task_id):
     t = tasks.require(core, task_id)
-    if t["state"] != "sending" or t["lease_owner"] != caller(core):
+    if t["lease_owner"] != caller(core) or (t["state"] != "sending" and not core.one(
+            "SELECT id FROM drafts WHERE task_id=? AND status='approved' AND kind IN ('calendar_hold', 'calendar_remove')", (t["id"],))):
         raise FuzzError(f"You don't hold task {t['id']}. Call claim_next_send first.", "task_id", 409)
     if parse_iso(t["lease_until"]) < core.now():
         raise FuzzError(f"Your lease on task {t['id']} ran out, so it went back to the human.", "task_id", 409)
@@ -476,6 +496,13 @@ def tick(core):
         if t.get("schedule_anchor"):   # you scheduled it: Fuzz has until its time
             if not t.get("schedule_fire_at") or t["schedule_fire_at"] > now:
                 continue
+            if "prep" in (t.get("variant_tags") or []):   # the block is starting: it comes as it was, below
+                with core.tx("system"):
+                    ch = events.Changes()
+                    tasks.move(core, ch, t, "scheduled", add_tags=("prepped",), remove_tags=("prep",))
+                    events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                                log=("status", "Fuzz didn't get to the checklist before your block."))
+                continue
             lab = timeres.label(core, t["schedule_anchor"])
             log = f"Fuzz didn't get to this before {lab[0].lower() + lab[1:]}, so it came back as it was."
         elif "plan_wait" in (t.get("variant_tags") or []):   # working out when to check back: the default stands
@@ -499,7 +526,10 @@ def tick(core):
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='scheduled' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
         lab = timeres.label(core, t["schedule_anchor"] or {"type": "exact"})
-        tasks.bring_back(core, t["id"], reason=f"You scheduled this for {lab[0].lower() + lab[1:]}.", actor="system")
+        if "booked" in (t.get("variant_tags") or []):   # your block starts: first in the list, in work mode
+            tasks.bring_back(core, t["id"], reason="Your booked time starts now.", type="task.block_started", actor="system")
+        else:
+            tasks.bring_back(core, t["id"], reason=f"You scheduled this for {lab[0].lower() + lab[1:]}.", actor="system")
         out["came_back"] += 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='waiting' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
@@ -537,8 +567,9 @@ def tick(core):
                 cards.sync(core, t["id"])
     out["review"] = review.release(core)
     out["quiet_sessions"] = sessions.quiet(core)
-    from . import groups
+    from . import booking, groups
     out["groups_collected"] = groups.collect_quiet(core)   # you stopped partway through a group a while ago
+    out["blocks"] = booking.tick(core)   # prep before a block, its end or a missed one, holds no longer needed
     return out
 
 

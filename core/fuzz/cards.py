@@ -8,7 +8,8 @@ from . import events, timeres
 from .db import FuzzError
 
 FAMILY = {"task": "routing", "duplicate": "question", "entity_person": "question", "entity_term": "question",
-          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval"}
+          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval",
+          "hold": "approval"}   # a hold on your calendar for booked time (or taking one off)
 
 OPTIONS = {
     "duplicate": ["merge", "keep_separate", "not_sure"],
@@ -18,6 +19,7 @@ OPTIONS = {
     "draft": ["approve", "edit", "send_back", "schedule", "done"],
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
+    "hold": ["approve", "always_allow", "skip"],
 }
 # schedule is Later (bring it back then); book is Book time (hold the time). do_now, after_others and
 # first_step are a big task's choices with book; decide and draft_it answer "What's in the way?"
@@ -34,7 +36,7 @@ PUT_OFF_OPTIONS = ["unclear", "now", "book", "schedule", "park", "drop"]
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
-             "draft": "approve", "nudge": "approve", "permission": "allow_once"}
+             "draft": "approve", "nudge": "approve", "permission": "allow_once", "hold": "approve"}
 
 PROMPTS = {
     "task": "What should happen to this?",
@@ -45,12 +47,14 @@ PROMPTS = {
     "draft": "Is this draft okay?",
     "nudge": "Can Fuzz chase this reply?",
     "permission": "Can Fuzz use {resource}?",
+    "hold": "Add a hold for this to your calendar?",
 }
 PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
 # Variant tags that only make sense while the task sits in triage.
 TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off",
-               "found_out", "doing", "block", "after_others", "ask_book", "in_the_way", "first_step"}
+               "found_out", "doing", "block", "after_others", "ask_book", "in_the_way", "first_step",
+               "block_end", "missed_block"}
 
 
 def open_cards(core, task_id):
@@ -137,6 +141,12 @@ def sync(core, task_id, where="back"):
             return create(core, "task", task_id, payload={"reply_draft": reply["id"]}, suggested="add_to_reply",
                           reason=f"A reply to {_group_title(core, t)} is waiting for your OK. Add this to it?", where=where)
         from . import booking
+        if "block_end" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"), prompt="How far did you get?", suggested="done",
+                          where="front" if where == "back" else where)
+        if "missed_block" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"), prompt="The block for this went by. Find another time?",
+                          suggested="book", where=where)
         if "doing" in tags:   # the working card: Do it now, a booked block starting, or step 1 of a big one
             return create(core, "task", task_id, reason=t.get("reason"), suggested="done",
                           prompt="Step 1 is about two minutes. Then book the rest." if "first_step" in tags
@@ -160,7 +170,8 @@ def sync(core, task_id, where="back"):
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
-        d = core.one("SELECT * FROM drafts WHERE task_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (task_id,))
+        d = core.one("SELECT * FROM drafts WHERE task_id=? AND status='pending' AND kind NOT IN ('calendar_hold', "
+                     "'calendar_remove') ORDER BY id DESC LIMIT 1", (task_id,))
         if d:
             kind = "nudge" if d["kind"].startswith("nudge") else "draft"
             return create(core, kind, task_id, payload={"draft_id": d["id"]})
@@ -207,6 +218,11 @@ def review_suggests(core, t):
 
 def task_options(task):
     tags = task.get("variant_tags") or []
+    from .booking import BLOCK_END_OPTIONS, MISSED_OPTIONS
+    if "block_end" in tags:   # "How far did you get?"
+        return list(BLOCK_END_OPTIONS)
+    if "missed_block" in tags:   # "The block for this went by. Find another time?"
+        return list(MISSED_OPTIONS)
     if "doing" in tags:
         return list(DOING_OPTIONS)
     if "in_the_way" in tags:

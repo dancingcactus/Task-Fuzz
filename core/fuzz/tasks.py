@@ -381,8 +381,12 @@ def book(core, task_id, anchor, card=None):
         move(core, ch, t, "scheduled", card=card, add_tags=("booked",), schedule_anchor=anchor,
              schedule_fire_at=iso(s), question=None, attempts=0, remove_tags=("after_others", "ask_book", "in_the_way"))
         _answered(core, ch, card, "book", {"anchor": anchor})
-        eid = events.emit(core, "task.scheduled", task_id=t["id"], changes=ch, log=("status", f"You booked time: {lab}."),
-                          data={"anchor": anchor, "source": "book", "booked": True, "line": f"It’s yours {lab}."})
+        hold = booking.can_hold(core)
+        eid = events.emit(core, "task.scheduled", task_id=t["id"], changes=ch,
+                          log=("status", f"You booked time: {lab}." + ("" if hold else " Add it to your calendar yourself; it’s booked in Fuzz.")),
+                          data={"anchor": anchor, "source": "book", "booked": True, "line": f"It’s yours {lab}.",
+                                "hold": "draft" if hold else "manual"})
+        booking.ask_hold(core, get(core, t["id"]), anchor)   # the hold on your calendar, through the approval gate
     return eid
 
 
@@ -472,10 +476,11 @@ def bring_back(core, task_id, where="back", reason=None, type="task.came_back", 
         return None
     to = "triage"
     from .drafts import covering
-    if t["state"] == "scheduled" and (core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],))
+    if t["state"] == "scheduled" and (core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending' "
+                                               "AND kind NOT IN ('calendar_hold', 'calendar_remove')", (t["id"],))
                                       or covering(core, t["id"])):
         to, tags = "review", ()   # a draft, or a group reply that answers it, waits for your OK again
-    elif t["state"] == "scheduled" and "booked" in (t.get("variant_tags") or []) and type == "task.came_back":
+    elif t["state"] == "scheduled" and "booked" in (t.get("variant_tags") or []) and type in ("task.came_back", "task.block_started"):
         # booked time: first in the list, in work mode (and never a "keeps coming back")
         where, tags = "front", ("returning", "doing", "block")
     elif t["state"] == "scheduled" and type == "task.came_back" and put_off_again(core, t):

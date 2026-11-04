@@ -41,6 +41,12 @@ DEFAULTS = {
     # After the others and Just the first step. stuck_minutes: a card in front this long while you're at
     # the desk asks "What's in the way?" once (sorting; in work mode with no sign of progress).
     "work": {"big_minutes": 45, "big_steps": 5, "stuck_minutes": {"sort": 3, "work": 25}},
+    # Booking time: your "Focus time" events (slot_titles) are where Book time looks first. The executor
+    # reads the calendar when what it last reported is refresh_hours old. prep_minutes before a block,
+    # Fuzz turns what it found into a checklist; Keep going extends the hold by extend_minutes.
+    # ui_url: where a hold's link to the task points.
+    "booking": {"slot_titles": ["Focus time"], "refresh_hours": 12, "prep_minutes": 30, "extend_minutes": 30,
+                "ui_url": "http://127.0.0.1:8765/"},
     # The connector tools the sender may call to send an approved draft, per client, as that client
     # names them (e.g. "mcp__claude_ai_Slack__slack_send_message"). Empty: the sender can't send and
     # hands each draft back.

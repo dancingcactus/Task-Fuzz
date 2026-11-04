@@ -242,6 +242,10 @@
       bookOptions: c && c.book_options ? c.book_options : null,
       doing: tags.indexOf('doing') > -1 && state === 'triage', firstStepMode: tags.indexOf('first_step') > -1 && state === 'triage',
       inTheWay: tags.indexOf('in_the_way') > -1 && state === 'triage', afterOthers: tags.indexOf('after_others') > -1,
+      /* booked time: in the block, at its end ("How far did you get?"), and a hold for your OK */
+      block: tags.indexOf('block') > -1 && state === 'triage', blockEnd: tags.indexOf('block_end') > -1 && state === 'triage',
+      holdPrompt: c && c.kind === 'hold' ? c.prompt : '', holdWhen: c && c.kind === 'hold' ? c.reason || '' : '',
+      holdRemove: !!(c && c.kind === 'hold' && c.payload && c.payload.kind === 'calendar_remove'),
       group: t.group_id ? 'g' + t.group_id : null
     };
     if (f.foundOut) f.aiHeading = 'You asked: ' + (t.find_out || 'what you needed');
@@ -513,6 +517,9 @@
     wrap('firstStep', function (id) { var it = S.item(id); return it && decide(it, 'first_step'); });
     wrap('decideFor', function (id) { var it = S.item(id); return it && decide(it, 'decide'); });
     wrap('draftIt', function (id) { var it = S.item(id); return it && decide(it, 'draft_it'); });
+    /* Booking time: the end of a block, and the hold on your calendar */
+    wrap('keepGoing', function (id) { var it = S.item(id); return it && decide(it, 'keep_going'); });
+    wrap('answerHold', function (id, opt) { var it = S.item(id); return it && decide(it, opt); });
     /* "Same as…": this task merges into the one you picked; Undo splits it back out */
     wrap('sameAs', function (id, otherCoreId) {
       var tid = (S.item(id) || {}).coreId;

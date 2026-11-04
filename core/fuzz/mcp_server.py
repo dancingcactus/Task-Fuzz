@@ -141,7 +141,8 @@ def build(core, role, task_id=None):
             return _call(tools.request_permission, core, task_id, scope, resource, why)
 
         @srv.tool()
-        def suggest_schedule(task_id: int, anchor: dict[str, Any], reason: str, you_said: str | None = None) -> dict:
+        def suggest_schedule(task_id: int, anchor: dict[str, Any] | None = None, reason: str | None = None,
+                             you_said: str | None = None, calendar: dict[str, Any] | None = None) -> dict:
             """Offer a time for this task's Schedule options. For a meeting or a person, look it up with your
             calendar connector and hand in a moment: {"type": "moment", "key": "leadership-1030",
             "label": "Before the leadership meeting", "at": "2026-10-30T09:00:00Z"}, where at is when the task
@@ -150,8 +151,13 @@ def build(core, role, task_id=None):
             At most two are kept; it must be in the future and before the due date.
             you_said: only when the person asked for it later ("can we bring this up next week?"): quote their
             words from the task. Fuzz then schedules the task on this anchor and your turn on it ends, with
-            nothing for them to approve. Without it, the time is only offered."""
-            return _call(tools.suggest_schedule, core, task_id, anchor, reason, you_said)
+            nothing for them to approve. Without it, the time is only offered.
+            calendar: when whoami's calendar says read_now, read the person's calendar for the next `days` with
+            your calendar connector and pass {slots, holds} here (with or without an anchor). slots: each free
+            stretch and each event whose title is one of slot_titles (their Focus time), as {start, end, title?}.
+            holds: what you saw of your_holds, {event_id, start, end} or {event_id, cancelled: true}. Fuzz ranks
+            the times for Book time from it; you never change their events."""
+            return _call(tools.suggest_schedule, core, task_id, anchor, reason, you_said, calendar)
 
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
@@ -197,7 +203,10 @@ def build(core, role, task_id=None):
         def claim_next_send() -> dict:
             """Lease the oldest approved draft waiting to go out: its kind, target (who it's to), thread (the
             message it replies in: title, link and the connector's ids, or null for a new one), the exact body to
-            send, and attachments (each a name and a path) to attach to it."""
+            send, and attachments (each a name and a path) to attach to it. A calendar_hold has hold {title, start,
+            end, event_id?}: create an event of their own with that title and the body as its description (or move
+            event_id to the new times), then mark_sent with link set to the event's id. A calendar_remove: delete
+            event_id, then mark_sent. Never change any other event."""
             return _call(tools.claim_next_send, core)
 
         @srv.tool()
