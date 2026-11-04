@@ -150,8 +150,10 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.picked ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.picked ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        /* the working card first; then deadlines; then this session's focus (the core orders live cards the same way) */
+        var fo = (state.focus && state.focus.task_ids) || [];
+        var kx = [x.picked ? 0 : 1, x.doing ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, fo.indexOf(x.coreId || x.id) > -1 ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.picked ? 0 : 1, y.doing ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, fo.indexOf(y.coreId || y.id) > -1 ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
@@ -281,6 +283,26 @@
       var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
       var t = it.kind === 'dup' && S.item(it.dupOf);
       if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
+    },
+    /* ---- focus: what we're working on this session ----
+       Live mode asks the core (its instant pass, then the AI's); the demo matches words in titles. */
+    focusNow: function () { return (state && state.focus) || null; },
+    focusChips: function () {
+      var out = (state.focusChips || []).slice();
+      if (!out.length) { var last = state.lastFocus; if (last) out.push({ label: last, text: last }); out.push({ label: 'Whatever’s next', skip: true }); }
+      return out;
+    },
+    focusPreview: function (text) {
+      var words = (text || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+      if (/small things|quick ones|quick things/.test((text || '').toLowerCase())) return Promise.resolve({ tasks: [], quick: true });
+      var ts = S.queue().filter(function (it) { var t = (it.title || '').toLowerCase(); return words.some(function (w) { return ['the', 'for', 'and', 'prep', 'stuff', 'things'].indexOf(w) < 0 && t.indexOf(w) > -1; }); });
+      return Promise.resolve({ tasks: ts.map(function (it) { return { task_id: it.id, title: it.title, why: 'Says it in the title' }; }), quick: false });
+    },
+    setFocus: function (text, ids, skip) {
+      if (skip) { state.focus = { source: 'skip', text: null, task_ids: null }; S.sortQueue(); return; }
+      if (/small things|quick ones|quick things/.test((text || '').toLowerCase())) { state.focus = { text: text, task_ids: null, quick: true }; S.setMoment('quick'); return; }
+      state.focus = { text: text, task_ids: ids || [] }; state.lastFocus = text;
+      S.sortQueue(); emit({ type: 'moment' });
     },
     /* ---- working sessions ---- */
     /* A task is big at 45 minutes or five steps (work.big_minutes, work.big_steps in the core), or when you say so */

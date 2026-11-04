@@ -244,8 +244,11 @@ def _eligible(core, task_id=None):
     # held: you're still working through its group, and Fuzz starts once it has every answer
     rows = [t for t in rows if not {"needs_permission", "kickoff", "held"} & set(t.get("variant_tags") or [])
             and t["id"] not in mine and not files.waiting(core, t)]
-    # a task waiting to be gathered goes first: you're about to see it in triage
-    rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
+    # a task waiting to be gathered goes first: you're about to see it in triage; then by deadline, then your focus
+    from . import focus
+    fids = focus.focus_ids(core)
+    rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["id"] not in fids, t["order_key"] or 0,
+                             t["created_at"] or ""))
     return rows
 
 
@@ -575,8 +578,10 @@ def tick(core):
 
 def wake(core):
     """You're back at your desk: everything scheduled for that comes back. It's a new session, so what you
-    put After the others last time asks whether to book time for it."""
+    put After the others last time asks whether to book time for it, and the last session's focus is over."""
     n = 0
+    from . import focus
+    focus.clear(core, "away")
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='triage'", (core.user_id,)):
         if "after_others" in (t.get("variant_tags") or []):
             with core.tx("system"):

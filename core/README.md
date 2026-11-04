@@ -328,6 +328,18 @@ going by `booking.extend_minutes`, another block, Pause), or, if you never touch
 this went by" (two misses: "keeps coming back"). A task done before its block offers to remove the
 hold. Holds you move or cancel are reported back in `holds` and handled as moments are.
 
+### Focus
+
+At the start of a session the UI asks "What are we working on?" (chips from `GET /focus`, or your own
+words). `GET /focus/preview?q=…` is the instant pass (names Fuzz knows, ticket keys, words in titles
+and asks, meaning against the stored vectors, and phrases resolved before); `POST /focus {text,
+task_ids?}` (or `{skip: true}`) sets it, and the queue orders `(working card, at end, time-sensitive,
+focus, handbacks, moment, order)`; `claim_next_task` orders deadline, then focus. Both start one
+tools-free call to a small model in the background (`focus.ai_pass`, the shape of connector discovery)
+that can only pick from the open tasks it was given; an unknown id is refused, a slow or failed call
+leaves the instant order, and the phrase is kept so it's instant next time. `GET /cards?front=<card>`
+keeps the card on screen first. Stepping away (`wake`) ends the session's focus.
+
 ### Looking into a task you scheduled
 
 Schedule a task with instructions (`schedule` with `{anchor, instructions}`) and Fuzz gathers on it

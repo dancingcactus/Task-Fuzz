@@ -94,6 +94,7 @@ class App:
         self.send_kicked = {}
         self.gather_kicked = {}
         self.discovering = {}   # (user, client) -> {"state": running | error, "error"}
+        self.refining = {}      # (user, focus phrase) -> True while its AI pass runs
         self.boot = f"{os.getpid()}-{int(time.time() * 1000)}"
         self._mu = threading.Lock()
         self.changed = threading.Condition()
@@ -152,6 +153,9 @@ class App:
             ("POST", r"/undo", self.undo),
             ("GET", r"/events", self.events_since),
             ("POST", r"/checkin", self.checkin),
+            ("GET", r"/focus", self.focus_get),
+            ("GET", r"/focus/preview", self.focus_preview),
+            ("POST", r"/focus", self.focus_set),
             ("POST", r"/screen", self.screen_time),
             ("GET", r"/screen", self.screen_times),
             ("POST", r"/signals/at_desk", self.at_desk),
@@ -414,7 +418,10 @@ class App:
     def list_cards(self, core, m, body, q):
         """group_run: the group you're working through, so the UI can show its band (see groups.run)."""
         cur = groups.run(core)
-        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core),
+        from . import focus
+        front = int(q["front"]) if (q.get("front") or "").isdigit() else None   # the card on screen stays first
+        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core, front)], "moment": cards.moment(core),
+                "focus": focus.current(core), "focus_chips": focus.chips(core),
                 "group_run": {"group_id": cur["group_id"], "tasks": cur["tasks"]} if cur else None,
                 "work": core.config.get("work")}
 
@@ -453,6 +460,47 @@ class App:
         """The UI asked how you're doing: {answer, follow_up?}. It decides when to ask; the core keeps the answer."""
         from . import checkins
         return checkins.record(core, body.get("answer"), body.get("follow_up")), 201
+
+    # ---- Focus: what you're working on this session
+    def focus_get(self, core, m, body, q):
+        """The session's focus, and the chips the session question offers."""
+        from . import focus
+        return {"focus": focus.current(core), "chips": focus.chips(core)}
+
+    def focus_preview(self, core, m, body, q):
+        """What a phrase would match right now (the instant pass), before you confirm. It also starts the AI
+        pass in the background, so it's often done by the time you press Enter."""
+        from . import focus
+        text = (q.get("q") or "").strip()
+        out = focus.match(core, text)
+        if text and not out["quick"]:
+            self.refine_soon(core, text)
+        return out
+
+    def focus_set(self, core, m, body, q):
+        """{text, task_ids?} or {skip: true}. The queue reorders at once; the AI pass refines it later."""
+        from . import focus
+        cur = focus.set_focus(core, body.get("text"), body.get("task_ids"), skip=bool(body.get("skip")))
+        if cur and cur.get("text") and not cur.get("quick"):
+            self.refine_soon(core, cur["text"])
+        return {"focus": cur}
+
+    def refine_soon(self, core, text):
+        """One AI pass per phrase at a time, off the request thread."""
+        from . import focus
+        key = (core.user_id, focus.norm(text))
+        if self.refining.get(key) or not config.role_engine(core.config, "executor")[0]:
+            return False
+        self.refining[key] = True
+
+        def work():
+            try:
+                focus.ai_pass(core, text, lock=core.lock)
+            finally:
+                self.refining.pop(key, None)
+                self._notify()
+        threading.Thread(target=work, daemon=True).start()
+        return True
 
     def screen_time(self, core, m, body, q):
         """The UI says how long a card was on screen and how long you were away meanwhile: {card_id?, task_id?,

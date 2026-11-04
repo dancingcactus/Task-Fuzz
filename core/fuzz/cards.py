@@ -264,11 +264,14 @@ def moment(core):
     return (row or {}).get("value") or "any"
 
 
-def queue(core):
-    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order.
-    A card you sent to the end of the list waits behind all of them, deadline or not."""
-    from . import tasks
+def queue(core, front=None):
+    """Open cards in triage order: the working card (a booked block), then time-sensitive, then your focus,
+    handbacks and postponed last, then the moment, then order. A card you sent to the end of the list waits
+    behind all of them, deadline or not. front: the card on screen, which stays first while it's open (a
+    focus or a refined focus never changes the card in front)."""
+    from . import focus, tasks
     m = moment(core)
+    fids = focus.focus_ids(core)
     cards = core.all("SELECT * FROM cards WHERE user_id=? AND status='open'", (core.user_id,))
     keyed = []
     for c in cards:
@@ -284,17 +287,21 @@ def queue(core):
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
         # the working card (Do it now, or a booked block that started) is first, ahead of deadlines
         doing = 0 if "doing" in tags and c["kind"] == "task" else 1
-        k = (doing, at_end, urgent, back, fits, c["order_key"] or 0)
+        infocus = 0 if t and t["id"] in fids else 1
+        k = (doing, at_end, urgent, infocus, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
     out = [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
     # A Find out… answer that landed comes next, right after the card in front, which never changes under you
     # (and once that card is answered, it's the one in front)
     nxt = [x for x in out if (x[0].get("payload") or {}).get("next")]
-    if not nxt:
-        return out
-    rest = [x for x in out if not (x[0].get("payload") or {}).get("next")]
-    behind = rest[:1] if rest and any((x[0].get("payload") or {}).get("after") == rest[0][0]["id"] for x in nxt) else []
-    return behind + nxt + rest[len(behind):]
+    if nxt:
+        rest = [x for x in out if not (x[0].get("payload") or {}).get("next")]
+        behind = rest[:1] if rest and any((x[0].get("payload") or {}).get("after") == rest[0][0]["id"] for x in nxt) else []
+        out = behind + nxt + rest[len(behind):]
+    if front is not None:   # the card on screen stays first
+        pin = [x for x in out if x[0]["id"] == front]
+        out = pin + [x for x in out if x[0]["id"] != front]
+    return out
 
 
 def _back_to_back(core, keyed):

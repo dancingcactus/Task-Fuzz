@@ -80,7 +80,7 @@
     ambientTimer = setInterval(ambient, 45000);
     V.stuckTimer = setInterval(stuckCheck, 15000);
     V.tickTimer = setInterval(function () { var t = cur(); if (t && t.dueAt && card.style.display !== 'none' && !ciOpen) paintDue(t); }, 1000);
-    stats();
+    stats(); paintFocusLine();
     if (!greeted) { greeted = true; greet(); }
     else Fuzz.say('Back to the queue.', { type: false });
     booting = true; showNext(); booting = false;
@@ -100,9 +100,10 @@
     if (onScroll) window.removeEventListener('scroll', onScroll); onScroll = null;
     Fuzz.unmount(); root = null;
   };
-  V.hardReset = function () { keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; grun = null; Store.setRun(null); };
+  V.hardReset = function () { foAsked = false; foOpen = false; keptStale = {}; edits = {}; refs = {}; refPick = {}; ciCount = 0; ciNextAt = CI_FIRST; ciLastAt = 0; sessionAt = Date.now(); lastTask = null; greeted = false; grun = null; Store.setRun(null); };
   V.refresh = function () {
     if (!alive) return;
+    paintFocusLine();
     epoch++; busy = false; ciOpen = false; ciBusy = false; scheduling = false; askingWho = false; askingFind = false; booking = false; pausing = false; wayOpen = false; clearInterval(ciTimer); clearTimeout(rushTimer);
     lock(false); stats();
     if (!scOpen) showNext();   /* a setup card stays until you answer it */
@@ -169,7 +170,7 @@
       ['On a task card', [['A', 'Assign to Fuzz'], ['C', 'Work in ' + Store.workIn], ['S', 'Later (M for more times)'], ['D', 'Done'], ['P', 'Park it'], ['W', 'Waiting on someone'], ['X', 'Not mine'], ['Q', 'Find out… (Fuzz looks something up; the card comes back next)'], ['B', 'Book time (hold the time; it opens first then)'], ['Z', 'On the working card: Pause']]],
       ['On a draft', [['R', 'Ask Fuzz to change it'], ['L', 'Not now'], ['D', 'Mark done (you send it yourself)']]],
       ['Choices on screen', [['1 – 9', 'Pick an answer, a time or a mood'], ['K', 'Keep a stale card, or keep a parked one parked'], ['R', 'Bring a parked card back'], ['G / U', 'On a check-back: they got back to you, or nudge them'], ['H', 'On a task that keeps coming back: Fuzz works out the first step'], ['E', 'When picking a time: move it to the end of the list instead'], ['L', 'Let a stale or parked card go'], ['Esc', 'Leave the text box, back out, close a menu, or skip a check-in']]],
-      ['Anywhere', [['N', 'New task (Esc goes back)'], [Dictate.key, 'Hold to dictate into the box for Fuzz'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
+      ['Anywhere', [['F', 'Say what we’re working on (this session’s focus)'], ['N', 'New task (Esc goes back)'], [Dictate.key, 'Hold to dictate into the box for Fuzz'], ['T', 'Park a stray thought (Esc closes it)'], ['?', 'This list']]]
     ];
     return g.map(function (s) { return '<section><h3>' + s[0] + '</h3><dl class="keylist">' + s[1].map(function (k) { return '<div><dt><kbd>' + k[0] + '</kbd></dt><dd>' + k[1] + '</dd></div>'; }).join('') + '</dl></section>'; }).join('') +
       '<p class="meta">A card without a draft starts with the cursor in its text box. Press Esc first to use the letter and number keys.</p>' +
@@ -189,6 +190,7 @@
         '<div class="fx" id="fx"></div>' +
         /* Fuzz and his bubble are for looking at. Screen readers hear outcomes from Say.announce instead of every quip. */
         '<div class="perch" id="perch"><div class="pwrap" id="pwrap" aria-hidden="true">' + window.FUZZ_SVG + '</div><div class="bubble" id="bubble"></div></div>' +
+        '<div class="focusline" id="focusline" hidden></div>' +
         '<div class="echo" id="echo" aria-hidden="true" hidden>' + Fuzz.mini('good', { cls: 'echo-av' }) + '<span id="echo-t"></span></div>' +
         /* Working through a group: its name and how far along you are, above the card */
         '<div class="gband" id="gband" hidden></div>' +
@@ -203,6 +205,7 @@
             '<div class="ci-foot"><button type="button" class="linkbtn" data-ci="skip" id="ci-skip" aria-keyshortcuts="Escape">Skip' + kbd('Esc') + '</button></div>' +
           '</article>' +
           '<article class="card setupcard" id="setupcard" hidden aria-labelledby="sc-h"></article>' +
+          '<article class="card focuscard" id="focuscard" hidden aria-labelledby="fo-h"></article>' +
         '</div>' +
         /* …and what you've answered so far, which Fuzz is collecting */
         '<div class="gtray" id="gtray" hidden></div>' +
@@ -846,6 +849,7 @@
       var q = Store.queue();
       if (!q.length) return zeroState();
       var t = q[0];
+      if (needFocus(q)) return showFocus();
       if (t.id !== shown) {
         if (shouldCheckin(t)) return showCheckin();
         if (showSetup()) return;
@@ -1448,6 +1452,79 @@
     if (!Fuzz.isCalm()) Fuzz.setMood('caring');
     Fuzz.say('What’s in the way?', { type: false });
   }
+  /* ---------- Focus: what we're working on this session ----------
+     Asked once at the start of a session, before the first card: chips (this week's active deliverables,
+     last session's focus, Whatever's next), or your own words. The queue reorders as soon as you confirm;
+     Fuzz's AI pass may find more a moment later. F changes it; stepping away ends it. */
+  var foAsked = false, foOpen = false, foTimer = 0, foSeq = 0, foMatch = null, foNot = {}, foSaidAdded = '';
+  function needFocus(q) {
+    if (foAsked || foOpen || scOpen || ciOpen || q.length < 2) return false;
+    if (q[0].doing && q[0].block) { foAsked = true; return false; }   /* a booked block is the focus */
+    return true;
+  }
+  function focusHTML() {
+    var ch = Store.focusChips();
+    return '<div class="tagrow"><span class="src">This session</span></div><h2 id="fo-h" tabindex="-1">What are we working on?</h2>' +
+      '<p class="meta">Those come first, after anything due soon. Skip it and it’s the usual order.</p>' +
+      '<div class="quick" role="group" aria-label="Pick one">' + ch.map(function (c, i) { return '<button type="button" class="chip" data-fochip="' + i + '" aria-keyshortcuts="' + (i + 1) + '">' + esc(c.label) + kbd(i + 1) + '</button>'; }).join('') + '</div>' +
+      '<form id="fo-form" class="parkrow"><label class="sr" for="fo-q">In your own words</label><input id="fo-q" type="text" autocomplete="off" placeholder="prep for the Northwind call">' + Dictate.button('fo-q', 'Dictate your focus') + '<button class="btn primary" type="submit">That’s it</button></form>' +
+      '<div id="fo-prev" aria-live="polite"></div>' +
+      '<div class="ci-foot"><button type="button" class="linkbtn" data-fo="skip" aria-keyshortcuts="Escape">Skip' + kbd('Esc') + '</button></div>';
+  }
+  function paintPreview() {
+    var el = $('#fo-prev'); if (!el) return;
+    if (!foMatch) { el.innerHTML = ''; return; }
+    if (foMatch.quick) { el.innerHTML = '<p class="meta">Quick ones first, then.</p>'; return; }
+    var ts = foMatch.tasks.filter(function (x) { return !foNot[x.task_id]; });
+    if (!foMatch.tasks.length) { el.innerHTML = '<p class="meta">Nothing matches yet. Press That’s it and I’ll keep looking, or it can be a new task.</p>'; return; }
+    el.innerHTML = '<p class="meta">That’s ' + ts.length + ' task' + (ts.length === 1 ? '' : 's') + ':</p><ul class="ps-tasks">' + foMatch.tasks.map(function (x) {
+      var off = !!foNot[x.task_id];
+      return '<li' + (off ? ' class="off"' : '') + '><span class="ps-main"><span class="ps-name">' + esc(x.title) + '</span><span class="ps-dw">' + esc(x.why) + '</span></span><span class="ps-side"><button type="button" class="btn small" data-fonot="' + x.task_id + '">' + (off ? 'Put it back' : 'Not that one') + '</button></span></li>';
+    }).join('') + '</ul>';
+  }
+  function preview(text) {
+    clearTimeout(foTimer);
+    var seq = ++foSeq;
+    foTimer = setTimeout(function () {
+      if (!text.trim()) { foMatch = null; paintPreview(); return; }
+      Store.focusPreview(text).then(function (m) { if (seq === foSeq) { foMatch = m; foNot = {}; paintPreview(); } });
+    }, 600);
+  }
+  function showFocus() {
+    foAsked = true; foOpen = true;
+    card.style.display = 'none'; $('#checkin').hidden = true; $('#dropbtn').hidden = true;
+    var fc = $('#focuscard'); fc.innerHTML = focusHTML(); fc.hidden = false;
+    foMatch = null; foNot = {};
+    Fuzz.setMood('eager'); Fuzz.say('What are we working on?', { type: false });
+    refocus($('#fo-q'));
+  }
+  function closeFocus(line) {
+    foOpen = false; $('#focuscard').hidden = true; paintFocusLine();
+    if (line) { Fuzz.setMood('happy'); Fuzz.say(line, { type: false }); Say.announce(line); }
+    else Fuzz.setMood('idle');
+    V.refresh();
+  }
+  function focusOn(text, chip) {
+    clearTimeout(foTimer);
+    if (chip && chip.skip) { Store.setFocus(null, null, true); return closeFocus('The usual order, then.'); }
+    var ids = foMatch && foMatch.tasks ? foMatch.tasks.filter(function (x) { return !foNot[x.task_id]; }).map(function (x) { return x.task_id; }) : null;
+    if (chip && chip.deliverable_id) { text = chip.label; ids = null; }
+    if (!(text || '').trim()) { var fq = $('#fo-q'); if (fq) fq.focus(); return; }
+    Store.setFocus(text.trim(), foMatch && foMatch.quick ? null : ids, false);
+    closeFocus(foMatch && foMatch.quick ? 'Quick ones first.' : 'Got it. Those come first.');
+  }
+  function paintFocusLine() {
+    var el = $('#focusline'); if (!el) return;
+    var f = Store.focusNow();
+    if (!f || !f.text || f.source === 'skip') { el.hidden = true; return; }
+    el.innerHTML = '<span>Focus: <b>' + esc(f.text) + '</b></span><button type="button" class="linkbtn" data-fo="change" aria-keyshortcuts="F">change' + kbd('F') + '</button>';
+    el.hidden = false;
+    /* the AI pass found more: Fuzz says so, once */
+    if (f.refined && f.added && f.added.length && foSaidAdded !== f.text) {
+      foSaidAdded = f.text;
+      Fuzz.say('Found ' + f.added.length + ' more for ' + f.text + '.', { type: false });
+    }
+  }
   /* Find out…: Fuzz looks it up and the card steps aside, coming back right after the one in front */
   function findOut(q) {
     q = (q || '').trim();
@@ -1533,6 +1610,14 @@
   function wire() {
     offSay = Fuzz.onSay(echo);
     UI.wireSources(card, cur);
+    $('#focuscard').addEventListener('click', function (e) {
+      var c = e.target.closest('[data-fochip]'); if (c) { var chip = Store.focusChips()[+c.dataset.fochip]; return focusOn(chip.text || chip.label, chip); }
+      var n = e.target.closest('[data-fonot]'); if (n) { foNot[n.dataset.fonot] = !foNot[n.dataset.fonot]; return paintPreview(); }
+      if (e.target.closest('[data-fo="skip"]')) { Store.setFocus(null, null, true); closeFocus('The usual order, then.'); }
+    });
+    $('#focuscard').addEventListener('submit', function (e) { e.preventDefault(); focusOn($('#fo-q').value); });
+    $('#focuscard').addEventListener('input', function (e) { if (e.target.id === 'fo-q') preview(e.target.value); });
+    $('#focusline').addEventListener('click', function (e) { if (e.target.closest('[data-fo="change"]') && !busy) { foAsked = false; showFocus(); } });
     $('#gband').addEventListener('click', function (e) { if (e.target.closest('[data-run="later"]')) finishLater(); });
     $('#gtray').addEventListener('click', function (e) { var c = e.target.closest('[data-run-chip]'); if (c && !c.disabled) reopenAsk(c.dataset.runChip); });
     $('#keysbtn').addEventListener('click', openKeys);
@@ -1718,6 +1803,7 @@
       if (e.key === 'Escape' && t && t.id === 'parktext') { e.preventDefault(); $('#parkbtn').click(); return; }
       /* Escape on a setup or question card, even from its time pickers: back out, or Not now */
       if (e.key === 'Escape' && scOpen && t && $('#setupcard').contains(t)) { e.preventDefault(); setupAnswer(scState && scState.step === 'other' ? 'back' : 'later'); return; }
+      if (e.key === 'Escape' && t && t.id === 'fo-q') { e.preventDefault(); Store.setFocus(null, null, true); closeFocus('The usual order, then.'); return; }
       if (e.key === 'Escape' && t && t.id === 'pause-q') { e.preventDefault(); card.querySelector('[data-act="pause-cancel"]').click(); return; }
       if (e.key === 'Escape' && (booking || wayOpen) && card.style.display !== 'none') { var bx = card.querySelector('[data-act="book-cancel"], [data-act="way-dismiss"]'); if (bx) { e.preventDefault(); bx.click(); return; } }
       if (e.key === 'Escape' && t && t.id === 'find-q') { e.preventDefault(); card.querySelector('[data-act="find-cancel"]').click(); return; }
@@ -1725,6 +1811,12 @@
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
       if (e.key === '?') { e.preventDefault(); openKeys(); return; }
+      if (foOpen) {
+        if (e.key === 'Escape') { e.preventDefault(); Store.setFocus(null, null, true); closeFocus('The usual order, then.'); }
+        else if (/^[1-9]$/.test(e.key)) { var fb = $('#focuscard').querySelectorAll('[data-fochip]')[+e.key - 1]; if (fb) { e.preventDefault(); fb.click(); } }
+        return;
+      }
+      if (e.key.toLowerCase() === 'f' && !ciOpen && !scOpen && !busy) { e.preventDefault(); foAsked = false; showFocus(); return; }
       /* T parks a stray thought from any card without leaving it */
       if (e.key.toLowerCase() === 't' && !ciOpen) { e.preventDefault(); if ($('#parkform').hidden) $('#parkbtn').click(); else $('#parktext').focus(); return; }
       var pm = $('#plusmenu');

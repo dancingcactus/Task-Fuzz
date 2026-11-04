@@ -321,6 +321,8 @@
         Object.keys(detail).forEach(function (id) { if (!listed[id]) delete detail[id]; });
         Store.get().finishedOlder = r[0].finished_older || 0;
         Store.get().work = r[1].work || null;   /* the stuck thresholds and what counts as big */
+        Store.get().focus = r[1].focus || null;   /* this session's focus (the core orders the cards by it) */
+        Store.get().focusChips = r[1].focus_chips || [];
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
@@ -517,6 +519,19 @@
     wrap('firstStep', function (id) { var it = S.item(id); return it && decide(it, 'first_step'); });
     wrap('decideFor', function (id) { var it = S.item(id); return it && decide(it, 'decide'); });
     wrap('draftIt', function (id) { var it = S.item(id); return it && decide(it, 'draft_it'); });
+    /* Focus: the core's instant pass for the preview, and setting it (the core reorders, then refines) */
+    S.focusPreview = function (text) {
+      return api('GET', '/focus/preview?q=' + encodeURIComponent(text)).then(function (m) {
+        m.tasks = (m.tasks || []).map(function (x) { return { task_id: x.task_id, title: x.title, why: x.why }; });
+        return m;
+      }, function () { return { tasks: [], quick: false }; });
+    };
+    var setFocus = S.setFocus;
+    S.setFocus = function (text, ids, skip) {
+      setFocus.call(S, text, ids, skip);
+      gen++;
+      write(function () { return api('POST', '/focus', skip ? { skip: true } : { text: text, task_ids: ids || undefined }); }).then(syncThenRefresh, syncThenRefresh);
+    };
     /* Booking time: the end of a block, and the hold on your calendar */
     wrap('keepGoing', function (id) { var it = S.item(id); return it && decide(it, 'keep_going'); });
     wrap('answerHold', function (id, opt) { var it = S.item(id); return it && decide(it, opt); });
