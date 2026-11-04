@@ -12,7 +12,8 @@ POSTPONE_LIMIT = 2   # after two "Not sure yet", the core takes the safe answer
 UNCLEAR = ("This keeps getting put off, so something about it is probably unclear. Work out what's actually being "
            "asked and what done looks like, and find the smallest first step. If one thing is still unclear, hand it "
            "back with that one question.")
-SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term": None, "is_task": "mine"}
+SAFE = {"duplicate": "keep_separate", "entity_person": "different", "entity_term": None, "is_task": "mine",
+        "part_of": "no", "deliverable": "keep_going", "deliverable_new": "no"}
 
 
 def _task_answer(core, card, t, option, value):
@@ -203,9 +204,15 @@ def _hold(core, card, t, option, value):
     return booking.answer_hold(core, card, option)
 
 
+def _deliverable(core, card, t, option, value):
+    from . import deliverables
+    return deliverables.answer(core, card, option, value)
+
+
 HANDLERS = {"task": _task_answer, "duplicate": _duplicate, "entity_person": _entity_person,
             "entity_term": _entity_term, "is_task": _is_task, "draft": _draft, "nudge": _draft,
-            "permission": _permission, "hold": _hold}
+            "permission": _permission, "hold": _hold, "part_of": _deliverable, "deliverable": _deliverable,
+            "deliverable_new": _deliverable, "week_plan": _deliverable}
 
 
 def answer(core, card_id, option, value=None):

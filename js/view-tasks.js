@@ -84,6 +84,58 @@
         function (e) { console.error('[fuzz] search', e); });
     }, 250);
   }
+  /* ---------- Deliverables: named outcomes served by many tasks ----------
+     The active ones (this week's, two or three) in full; the rest collapsed. No progress bars. */
+  function delivRow(d) {
+    var n = (d.open || []).length;
+    return '<li><button type="button" class="lrow dv-row" data-deliv="' + d.id + '"><span class="lrow-main"><span class="rt">' + esc(d.title) + '</span>' +
+      '<span class="rs">Done when ' + esc(d.done_when) + (d.checked_by === 'you' ? ' · you check it' : '') + (d['for'] ? ' · for ' + esc(d['for']) : '') + '</span></span>' +
+      '<span class="lrow-side">' + UI.pill(d.tier === 'active' ? 'This week' : 'Background', d.tier === 'active' ? 'accent' : 'muted') + '<span class="lrow-sub">' + (n ? n + ' open' : 'Nothing open') + '</span></span></button></li>';
+  }
+  function deliverablesHTML() {
+    var ds = Store.deliverables(); if (!ds.length) return '';
+    var act = ds.filter(function (d) { return d.tier === 'active'; }), bg = ds.filter(function (d) { return d.tier !== 'active'; });
+    return sectionHTML('deliv', 'Deliverables', act.map(delivRow), 'None picked for this week. Monday’s review asks.') +
+      foldHTML('deliv-bg', 'Other deliverables', bg.map(delivRow));
+  }
+  var dsheet = null;
+  function sheetHTML(d) {
+    var h = '<div class="dlg-top"><div class="dlg-titles"><div class="dlg-chips">' + UI.pill(d.tier === 'active' ? 'This week' : 'Background', d.tier === 'active' ? 'accent' : 'muted') +
+      (d.state !== 'open' ? UI.pill(d.state === 'done' ? 'Done' : 'Let go', d.state === 'done' ? 'ok' : 'muted') : '') + '</div>' +
+      '<h2 id="dv-title-h">' + esc(d.title) + '</h2>' + (d['for'] ? '<p class="meta">For ' + esc(d['for']) + '</p>' : '') + '</div>' +
+      '<button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+      '<section class="donewhen"><h3>Done when</h3><p>' + esc(d.done_when) + '</p><p class="meta">' + (d.checked_by === 'you' ? 'You check this one; Fuzz won’t close it.' : 'Fuzz checks this with its tools and closes it when it’s true.') + '</p>' +
+      (d.evidence ? '<p class="meta">' + esc(d.evidence) + '</p>' : '') + '</section>';
+    var row = function (t) { return '<li><span class="ps-main"><button type="button" class="ps-open" data-dvopen="' + t.id + '">' + esc(t.title) + '</button>' + (t.summary ? '<span class="ps-dw">' + esc(t.summary) + '</span>' : '') + '</span></li>'; };
+    if ((d.open || []).length) h += '<section><h3>Open</h3><ul class="ps-tasks">' + d.open.map(row).join('') + '</ul></section>';
+    if ((d.done || []).length) h += '<section><h3>Done so far</h3><ul class="ps-tasks">' + d.done.map(row).join('') + '</ul></section>';
+    if ((d.links || []).length) h += '<section><h3>Links its tasks cite most</h3><ul class="ps-tasks">' + d.links.map(function (l) { return '<li><a href="' + esc(l.link) + '" target="_blank" rel="noopener">' + esc(l.title || l.link) + '</a></li>'; }).join('') + '</ul></section>';
+    if ((d.people || []).length) h += '<section><h3>People</h3><p>' + d.people.map(function (x) { return esc(x.name); }).join(' · ') + '</p></section>';
+    if (d.state === 'open') h += '<div class="dlg-actions">' +
+      '<button type="button" class="btn" data-dvact="tier">' + (d.tier === 'active' ? 'Not this week' : 'Make it this week’s') + '</button>' +
+      '<button type="button" class="btn" data-dvact="done">It’s done</button><button type="button" class="btn" data-dvact="drop">Let it go</button></div>';
+    return h;
+  }
+  /* The deliverable sheet, from a "For …" line or the Lineup's Deliverables section */
+  V.openDeliverable = function (coreId, trigger) {
+    var d = Store.deliverable(+coreId); if (!d) return;
+    if (dsheet) dsheet.close();
+    var g = document.createElement('dialog');
+    g.className = 'dlg'; g.setAttribute('aria-labelledby', 'dv-title-h');
+    g.innerHTML = '<div class="dlg-in">' + sheetHTML(d) + '</div>';
+    document.body.appendChild(g); dsheet = g;
+    g.addEventListener('close', function () { g.remove(); if (dsheet === g) dsheet = null; if (trigger && document.body.contains(trigger)) trigger.focus(); });
+    g.addEventListener('click', function (e) {
+      if (e.target === g || e.target.closest('[data-close]')) { g.close(); return; }
+      var o = e.target.closest('[data-dvopen]'); if (o) { g.close(); var it = Store.item('t' + o.dataset.dvopen); if (it && keyFor(it)) open(it.id); else location.hash = '#/triage'; return; }
+      var a = e.target.closest('[data-dvact]'); if (!a) return;
+      var what = a.dataset.dvact, body = what === 'tier' ? { tier: d.tier === 'active' ? 'background' : 'active' } : {};
+      Store.deliverableAction(d.id, what, body).then(function () { Say.tell(what === 'tier' ? (body.tier === 'active' ? 'It’s one of this week’s now.' : 'Back in the background.') : what === 'done' ? 'Done. Nice delivery.' : 'Let go. Its open tasks come up to keep or let go.'); }, function (err) { Say.tell('That didn’t work: ' + err.message, { stay: true }); });
+      g.close();
+    });
+    g.showModal();
+  };
+
   function yoursRows() {
     var mine = Store.inState('review').filter(function (it) { return !Store.inQueue(it.id); });
     var r = mine.map(function (it) { return rowHTML(it, 'Needs your OK', 'warn', 'You set it aside'); });
@@ -137,6 +189,7 @@
       if (o) { Live.loadFinished(o.dataset.older).then(function (it) { open(it.id, o); }, function () { Say.tell('That task wouldn’t open. Try again.'); }); return; }
       var p = e.target.closest('[data-pick]');
       if (p) { Store.pick(p.dataset.pick); location.hash = '#/triage'; return; }
+      var dl = e.target.closest('[data-deliv]'); if (dl) { V.openDeliverable(dl.dataset.deliv, dl); return; }
       var b = e.target.closest('[data-open]'); if (!b) return;
       open(b.dataset.open, b);
     });
@@ -161,6 +214,7 @@
     var h = q ? '<a class="decide" href="#/triage"><span class="decide-n">' + q + '</span><span class="decide-t"><strong>To decide</strong>' + (q === 1 ? '1 card' : q + ' cards') + ' in Triage</span><span class="decide-go" aria-hidden="true">→</span></a>' + decideHTML(queue)
       : '<p class="decide decide--clear">Nothing to decide. Triage is clear.</p>';
     h += sectionHTML('yours', 'Yours', yoursRows(), 'Nothing is waiting on you right now.');
+    h += deliverablesHTML();
     h += laneHTML();
     h += sectionHTML('others', 'Waiting on others', Store.inState('waiting').map(function (it) { return rowHTML(it, it.waitingOn || 'Someone', 'warn', !it.nextCheck ? '' : /^Fuzz /.test(it.nextCheck) ? it.nextCheck : 'Checks back ' + it.nextCheck.charAt(0).toLowerCase() + it.nextCheck.slice(1)); }));
     var later = Store.inState('scheduled').map(function (it) { return rowHTML(it, 'Scheduled', 'muted', it.scheduledFor ? 'Back ' + it.scheduledFor : it.now); });
@@ -250,7 +304,7 @@
     var tab = keyFor(it) || 'current', c = cells(it, tab), acts = actionsFor(it);
     var draft = (it.state === 'review' || (it.state === 'waiting' && it.nudge)) && it.draft;
     var h = '<div class="dlg-top"><div class="dlg-titles"><div class="dlg-chips">' + UI.pill(c.c2, c.tone) + '<span class="meta">' + esc(it.source) + ' · ' + esc(TABS[tab].cols[1]) + ': ' + esc(c.c3) + '</span></div>' +
-      '<h2 id="dlg-title">' + esc(it.title) + '</h2>' + (Store.partOf(it) ? '<button type="button" class="partof" data-group="' + it.group + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(Store.partOf(it, true)) + '</button>' : '') + '</div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+      '<h2 id="dlg-title">' + esc(it.title) + '</h2>' + (Store.partOf(it) ? '<button type="button" class="partof" data-group="' + it.group + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/></svg>' + esc(Store.partOf(it, true)) + '</button>' : '') + (it.deliverable ? '<button type="button" class="partof forline" data-forline="' + it.deliverable.id + '">For ' + esc(it.deliverable.title) + '</button>' : '') + '</div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
       (draft ? draftHTML(it, acts) : '') +
       '<p class="dlg-what">' + esc(it.incoming) + '</p>';
     if (it.doneWhen) h += '<section class="donewhen"><h3>Done when</h3><p>' + esc(it.doneWhen.charAt(0).toUpperCase() + it.doneWhen.slice(1)) + '</p></section>';
@@ -302,6 +356,8 @@
       if (e.target === d || e.target.closest('[data-close]')) { d.close(); return; }
       var gp = e.target.closest('[data-group]');
       if (gp) { openGroup(gp.dataset.group, gp); return; }
+      var fl = e.target.closest('[data-forline]');
+      if (fl) { V.openDeliverable(fl.dataset.forline, fl); return; }
       var dm = d.querySelector('#dlg-menu'), mb = e.target.closest('[data-dmore]');
       if (mb) { dm.hidden = !dm.hidden; mb.setAttribute('aria-expanded', String(!dm.hidden)); if (!dm.hidden) dm.querySelector('button').focus(); return; }
       if (dm && !dm.hidden && !e.target.closest('#dlg-menu')) { dm.hidden = true; d.querySelector('[data-dmore]').setAttribute('aria-expanded', 'false'); }

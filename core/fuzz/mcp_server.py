@@ -198,6 +198,22 @@ def build(core, role, task_id=None):
             """Give up the lease. The task goes back to the queue for a later run."""
             return _call(tools.release, core, task_id)
 
+        @srv.tool()
+        def list_deliverables(since: str | None = None) -> dict:
+            """The person's open deliverables (named outcomes served by many tasks): tier, done-when, open tasks
+            and what moved on each since then (default a week). For a weekly report they asked for, and to
+            check done-whens."""
+            return _call(tools.list_deliverables, core, since)
+
+        @srv.tool()
+        def report_deliverable_done(deliverable_id: int, evidence: str | None = None,
+                                    cant_check: str | None = None) -> dict:
+            """For each of whoami's deliverables_to_check, look for its done-when's evidence with your lookup
+            tools. True: pass evidence, what you saw ("REP-118 is Done and in the release notes"); Fuzz closes it
+            and the person can undo. Can't reach it: pass cant_check with why; Fuzz asks them. Not true yet:
+            don't call this."""
+            return _call(tools.report_deliverable_done, core, deliverable_id, evidence, cant_check)
+
     elif role == "sender":
         @srv.tool()
         def claim_next_send() -> dict:

@@ -59,6 +59,9 @@ def ensure_token(home, user_id=1):
 def task_view(core, t, full=False):
     out = cards.task_summary(t)
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
+    if t.get("deliverable_id"):   # its "For …" line
+        d = core.one("SELECT id, title, tier, state FROM deliverables WHERE id=?", (t["deliverable_id"],))
+        out["deliverable"] = d
     if t["state"] in ("review", "sending"):   # answered in one reply with another task of its group
         d = drafts.covering(core, t["id"])
         if d:
@@ -123,6 +126,12 @@ class App:
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
             ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back|find_out)", self.task_action),
+            ("GET", r"/deliverables", self.list_deliverables),
+            ("POST", r"/deliverables", self.create_deliverable),
+            ("GET", r"/deliverables/(\d+)", self.get_deliverable),
+            ("POST", r"/deliverables/(\d+)/(tier|done|drop|rename)", self.deliverable_action),
+            ("GET", r"/tasks/(\d+)/part_of", self.part_of_choices),
+            ("POST", r"/tasks/(\d+)/part_of", self.part_of),
             ("GET", r"/tasks/(\d+)/same_as", self.same_as_choices),
             ("POST", r"/tasks/(\d+)/same_as", self.same_as),
             ("POST", r"/tasks/(\d+)/open", self.open_session),
@@ -378,6 +387,62 @@ class App:
                   "key": body.get("key") or timeres.moment_key(body["label"]), "cancelled": bool(body.get("cancelled"))}
         label = scheduler.suggest_schedule(core, tid, anchor, body.get("reason"), actor="human")
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
+
+    # ---- deliverables: named outcomes served by tasks from any channel
+    def list_deliverables(self, core, m, body, q):
+        from . import deliverables
+        rows = core.all("SELECT * FROM deliverables WHERE user_id=? ORDER BY state='open' DESC, tier='active' DESC, id",
+                        (core.user_id,)) if q.get("all") == "1" else deliverables.open_ones(core)
+        return {"deliverables": [deliverables.view(core, d) for d in rows],
+                "active_max": deliverables._cfg(core)["active_max"]}
+
+    def get_deliverable(self, core, m, body, q):
+        from . import deliverables
+        return deliverables.view(core, deliverables.require(core, int(m.group(1))))
+
+    def create_deliverable(self, core, m, body, q):
+        from . import deliverables
+        ids = body.get("task_ids") or []
+        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+            raise FuzzError("task_ids is a list of task ids", "task_ids")
+        did = deliverables.create(core, body.get("title"), body.get("done_when"), ids, body.get("checked_by") or "fuzz",
+                                  body.get("for"), body.get("due"), body.get("tier") or "background")
+        return deliverables.view(core, deliverables.get(core, did)), 201
+
+    def deliverable_action(self, core, m, body, q):
+        from . import deliverables
+        did, act = int(m.group(1)), m.group(2)
+        d = deliverables.require(core, did)
+        if act == "tier":   # swap an active one from its sheet, any day
+            deliverables.set_tier(core, did, body.get("tier"))
+        elif act == "done":
+            deliverables._close(core, d, "done", (body.get("evidence") or "You said it's done.").strip()[:300], "human")
+        elif act == "drop":
+            deliverables._close(core, d, "dropped", None, "human")
+        else:
+            title = (body.get("title") or d["title"]).strip()[:deliverables.TITLE_MAX]
+            done_when = deliverables.check_done_when(body.get("done_when") or d["done_when"])
+            with core.tx("human"):
+                ch = events.Changes()
+                ch.deliverable(did, title=title, done_when=done_when, checked_by=body.get("checked_by") or d["checked_by"])
+                events.emit(core, "deliverable.renamed", changes=ch, data={"deliverable_id": did, "from": d["title"], "to": title})
+        return deliverables.view(core, deliverables.get(core, did))
+
+    def part_of_choices(self, core, m, body, q):
+        from . import deliverables
+        return {"choices": deliverables.choices(core, int(m.group(1)))}
+
+    def part_of(self, core, m, body, q):
+        """{deliverable_id}: "Part of…" from task detail; null takes it out again."""
+        from . import deliverables
+        tid = int(m.group(1))
+        if body.get("deliverable_id") is None:
+            deliverables.unlink(core, tid)
+        elif isinstance(body["deliverable_id"], int):
+            deliverables.link(core, tid, body["deliverable_id"])
+        else:
+            raise FuzzError("deliverable_id is the deliverable this task is part of, or null", "deliverable_id")
+        return task_view(core, tasks.require(core, tid))
 
     def same_as_choices(self, core, m, body, q):
         """The open tasks this one is most likely the same as, for "Same as…" in task detail."""

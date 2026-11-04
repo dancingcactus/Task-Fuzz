@@ -43,7 +43,13 @@ def whoami(core, role, prompt_version=None, client=None):
             "tz": timeres.tz_name(core), "run_id": (core.run or {}).get("id"),
             **({"can_ask_for": _askable(core)} if role == "executor" else {}),
             **({"calendar": _calendar_ask(core)} if role == "executor" else {}),
+            **({"deliverables_to_check": _to_check(core)} if role == "executor" else {}),
             **({"output_folder": outputs.folder(core)} if role == "executor" and outputs.folder(core) else {})}
+
+
+def _to_check(core):
+    from . import deliverables
+    return deliverables.to_check(core)
 
 
 def _calendar_ask(core):
@@ -436,7 +442,31 @@ def submit_verdicts(core, verdicts):
 
 EXECUTOR = ("whoami", "claim_next_task", "get_task", "read_source", "add_source", "log_step", "save_notes", "save_draft",
             "hand_back", "create_task", "request_permission", "suggest_schedule", "update_brief", "finish_gathering",
-            "release")
+            "release", "list_deliverables", "report_deliverable_done")
+
+
+def list_deliverables(core, since=None):
+    """Open deliverables with their tier, done-when and what moved on each since then: for the weekly report
+    (a task the person asks for) and the Monday look-back."""
+    from . import deliverables
+    if since is not None:
+        from .db import parse_iso
+        try:
+            parse_iso(since)
+        except ValueError:
+            raise FuzzError("since is an ISO time, like 2026-10-26T00:00:00Z", "since")
+    return {"deliverables": deliverables.list_for_report(core, since)}
+
+
+def report_deliverable_done(core, deliverable_id, evidence=None, cant_check=None):
+    """You checked a deliverable's done-when (whoami's deliverables_to_check). It's true: evidence says what you
+    saw, and Fuzz closes it (the person can undo). You couldn't reach the evidence: cant_check says why, and
+    Fuzz asks the person instead. It isn't true yet: don't call this."""
+    from . import deliverables
+    if cant_check:
+        deliverables.cant_check(core, deliverable_id, cant_check)
+        return {"state": "open", "asked": True}
+    return deliverables.report_done(core, deliverable_id, evidence)
 
 
 def report_calendar(core, slots, holds=None):

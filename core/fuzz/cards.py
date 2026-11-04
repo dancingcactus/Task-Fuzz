@@ -9,7 +9,9 @@ from .db import FuzzError
 
 FAMILY = {"task": "routing", "duplicate": "question", "entity_person": "question", "entity_term": "question",
           "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval",
-          "hold": "approval"}   # a hold on your calendar for booked time (or taking one off)
+          "hold": "approval",   # a hold on your calendar for booked time (or taking one off)
+          "part_of": "deliverables", "deliverable": "deliverables", "deliverable_new": "deliverables",
+          "week_plan": "deliverables"}
 
 OPTIONS = {
     "duplicate": ["merge", "keep_separate", "not_sure"],
@@ -20,6 +22,10 @@ OPTIONS = {
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
     "hold": ["approve", "always_allow", "skip"],
+    "part_of": ["yes", "no", "not_sure"],
+    "deliverable": ["keep_going", "make_active", "its_done", "let_go", "not_sure"],   # the card's own ask narrows them
+    "deliverable_new": ["track", "no", "not_sure"],
+    "week_plan": ["keep_these", "keep_steps", "not_now"],
 }
 # schedule is Later (bring it back then); book is Book time (hold the time). do_now, after_others and
 # first_step are a big task's choices with book; decide and draft_it answer "What's in the way?"
@@ -36,7 +42,8 @@ PUT_OFF_OPTIONS = ["unclear", "now", "book", "schedule", "park", "drop"]
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
-             "draft": "approve", "nudge": "approve", "permission": "allow_once", "hold": "approve"}
+             "draft": "approve", "nudge": "approve", "permission": "allow_once", "hold": "approve",
+             "part_of": "yes", "deliverable": "keep_going", "deliverable_new": "track", "week_plan": "keep_these"}
 
 PROMPTS = {
     "task": "What should happen to this?",
@@ -48,6 +55,10 @@ PROMPTS = {
     "nudge": "Can Fuzz chase this reply?",
     "permission": "Can Fuzz use {resource}?",
     "hold": "Add a hold for this to your calendar?",
+    "part_of": "Is this part of that deliverable?",
+    "deliverable": "Where is this deliverable?",
+    "deliverable_new": "Track these tasks as one deliverable?",
+    "week_plan": "Which are this week’s active ones?",
 }
 PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
@@ -254,6 +265,10 @@ def options(card, task):
         return opts
     if card["kind"] in ("draft", "nudge"):   # the kind's options now, so a card made before Schedule can use it
         return OPTIONS[card["kind"]]
+    if card["kind"] == "deliverable" and (card.get("payload") or {}).get("options"):
+        return list(card["payload"]["options"])
+    if card["kind"] == "week_plan":
+        return ["keep_steps", "not_now"] if (card.get("payload") or {}).get("steps") else ["keep_these", "not_now"]
     return card.get("options") or OPTIONS[card["kind"]]
 
 
@@ -285,8 +300,9 @@ def queue(core, front=None):
         elif m == "low":
             fits = 0 if (t and t.get("energy") == "low") else 1
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
-        # the working card (Do it now, or a booked block that started) is first, ahead of deadlines
-        doing = 0 if "doing" in tags and c["kind"] == "task" else 1
+        # the working card (Do it now, or a booked block that started) is first, ahead of deadlines; so are
+        # Monday's deliverable cards, that day
+        doing = 0 if ("doing" in tags and c["kind"] == "task") or (c.get("payload") or {}).get("monday") else 1
         infocus = 0 if t and t["id"] in fids else 1
         k = (doing, at_end, urgent, infocus, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))

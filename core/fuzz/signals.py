@@ -77,6 +77,7 @@ VERDICT = {
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "new_ask": {"type": "boolean"},
         "new_title": {"type": ["string", "null"]},
+        "deliverable_id": {"type": ["integer", "null"]},   # part of this deliverable (from the item's deliverables)
         "reason": {"type": "string"},
     },
     "additionalProperties": False,

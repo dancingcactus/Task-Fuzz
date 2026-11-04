@@ -103,6 +103,21 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_user_state ON tasks (user_id, state);
 CREATE INDEX IF NOT EXISTS tasks_user_closed ON tasks (user_id, state, state_changed_at);
+CREATE TABLE IF NOT EXISTS deliverables (   -- a named outcome served by tasks from any channel (see Deliverables)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  done_when TEXT NOT NULL,         -- evidence Fuzz can check with its tools
+  checked_by TEXT NOT NULL,        -- fuzz | you
+  for_name TEXT,                   -- who it's for: a customer or a team
+  due TEXT,
+  tier TEXT NOT NULL,              -- active (this week's) | background
+  state TEXT NOT NULL,             -- open | done | dropped
+  evidence TEXT,                   -- what Fuzz saw when it closed it
+  check_due INTEGER,               -- 1: Fuzz checks the done-when on its next run
+  reviewed_at TEXT,
+  created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -362,6 +377,7 @@ MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
                         ("reschedules", "INTEGER"), ("step_count", "INTEGER"), ("gaps", "TEXT"), ("find_out", "TEXT"),
                         ("pushes", "INTEGER"), ("missed_blocks", "INTEGER"),
+                        ("deliverable_id", "INTEGER"), ("maybe_deliverable_id", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 

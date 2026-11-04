@@ -354,6 +354,9 @@ def _judgment_item(ctx, cand, keep, hits, escore, shared, sem):
         "link": s.get("link"), "quote": s.get("quote"),
         "needs_new_ask_test": any(x["state"] in states.CLOSED for x in short),
         "shortlist": short,
+        # what you're delivering: a verdict may say deliverable_id when the ask is part of one
+        "deliverables": [{"id": d["id"], "title": d["title"], "state": d["state"]} for d in ctx.core.all(
+            "SELECT id, title, state FROM deliverables WHERE user_id=? AND state!='dropped' ORDER BY id", (_uid(ctx),))],
     }
 
 
@@ -611,6 +614,12 @@ def apply_verdicts(ctx, verdicts):
         res = record(ctx, cand, "judge", outcome, tid, verdict=verdict, confidence=conf,
                      reason=reason, scores={"judge": conf}, new_title=v.get("new_title"))
         stats[res["outcome"]] = stats.get(res["outcome"], 0) + 1
+        if v.get("deliverable_id") is not None:   # "part of deliverable D": linked, asked, or kept for its card
+            from .. import deliverables
+            d = core.one("SELECT task_id FROM decisions WHERE id=?", (res["decision_id"],))
+            t = tasks.live(core, (d or {}).get("task_id")) if d else None
+            if t:
+                deliverables.from_verdict(core, t["id"], v["deliverable_id"], conf, MERGE_CONF)
     return stats
 
 

@@ -130,7 +130,7 @@ class Install(FakeHome):
         self.assertTrue(out["engine_set"], "the first client installed becomes the engine")
         self.assertEqual(self.core.config["engine"]["client"], "claude-code")
         skill = Path(self.fake, ".claude", "skills", "fuzz-executor", "SKILL.md")
-        self.assertIn("prompt_version: executor-0.16", skill.read_text())
+        self.assertIn("prompt_version: executor-0.17", skill.read_text())
         reg = self.stub_registry()
         self.assertEqual(sorted(reg), ["fuzz-executor", "fuzz-extractor", "fuzz-sender"])
         self.assertEqual(reg["fuzz-executor"]["args"], ["-m", "fuzz", "mcp", "--role", "executor"])
@@ -183,12 +183,12 @@ class Doctor(FakeHome):
         st = {c["client"]: c for c in doctor.status(self.core, refresh=True)["clients"]}
         c = st["claude-code"]
         self.assertEqual(c["summary"], "ready", c["fixes"])
-        self.assertEqual([m["tools"] for m in c["mcp"]], [15, 5, 4], "each role's server starts with its tools")
+        self.assertEqual([m["tools"] for m in c["mcp"]], [17, 5, 4], "each role's server starts with its tools")
         skill = Path(self.fake, ".claude", "skills", "fuzz-extract", "SKILL.md")
-        skill.write_text(skill.read_text().replace("extract-0.9", "extract-0.0"))
+        skill.write_text(skill.read_text().replace("extract-0.10", "extract-0.0"))
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "needs_attention")
-        self.assertIn("extract-0.0 → extract-0.9", c["first_fix"])
+        self.assertIn("extract-0.0 → extract-0.10", c["first_fix"])
         engine.action(self.core, "claude-code", "update")
         c = {c["client"]: c for c in doctor.status(self.core, refresh=True, check_start=False)["clients"]}["claude-code"]
         self.assertEqual(c["summary"], "ready")

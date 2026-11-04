@@ -340,6 +340,22 @@ that can only pick from the open tasks it was given; an unknown id is refused, a
 leaves the instant order, and the phrase is kept so it's instant next time. `GET /cards?front=<card>`
 keeps the card on screen first. Stepping away (`wake`) ends the session's focus.
 
+### Deliverables
+
+`deliverables` is a projected table like `groups` (`GET/POST /deliverables`, `GET /deliverables/{id}`
+for the sheet, `POST /deliverables/{id}/tier|done|drop|rename`, `GET/POST /tasks/{id}/part_of`). A
+done-when must be a state, not an activity; `checked_by: you` means Fuzz never closes it. A verdict's
+`deliverable_id` links a task quietly when confident, asks (`part_of`) for an active one, and keeps it
+for the next card (`maybe_deliverable_id`) for a background one. When one of its tasks closes, the
+deliverable is `check_due` and shows in the executor's `whoami.deliverables_to_check`;
+`report_deliverable_done(id, evidence)` closes it (Undo works on it), or `cant_check` asks you. On
+`deliverables.review_day` after your first check-in, the clock brings last week per active one, the
+pick (`week_plan`), this week's steps and new-and-loose suggestions (three or more tasks sharing a
+ticket or document), all first in the queue; a rough Monday only the pick, the rest Tuesday. Other
+weekdays, background ones get a card each, sized by the check-in. The active ones' tasks are the
+week's focus. The executor has 17 tools now: the design names `list_deliverables` and
+`report_deliverable_done`.
+
 ### Looking into a task you scheduled
 
 Schedule a task with instructions (`schedule` with `{anchor, instructions}`) and Fuzz gathers on it

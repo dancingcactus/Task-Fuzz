@@ -246,6 +246,8 @@
       block: tags.indexOf('block') > -1 && state === 'triage', blockEnd: tags.indexOf('block_end') > -1 && state === 'triage',
       holdPrompt: c && c.kind === 'hold' ? c.prompt : '', holdWhen: c && c.kind === 'hold' ? c.reason || '' : '',
       holdRemove: !!(c && c.kind === 'hold' && c.payload && c.payload.kind === 'calendar_remove'),
+      /* its deliverable ("For …"), and a part_of card asking whether it belongs to one */
+      deliverable: t.deliverable || null, partOfPrompt: c && c.kind === 'part_of' ? c.prompt : '',
       group: t.group_id ? 'g' + t.group_id : null
     };
     if (f.foundOut) f.aiHeading = 'You asked: ' + (t.find_out || 'what you needed');
@@ -304,7 +306,9 @@
     syncing = true; var g = gen;
     return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'),
       /* A core from before groups has no /groups: the queue still loads, just without "From …" lines */
-      api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
+      api('GET', '/groups').catch(function () { return { groups: [] }; }),
+      api('GET', '/deliverables').catch(function () { return { deliverables: [] }; })]).then(function (r) {
+      Store.get().deliverables = r[4].deliverables || [];   /* the Lineup's Deliverables section and sheet */
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
       if (r[0].work_in) Store.workIn = r[0].work_in;
@@ -370,9 +374,18 @@
       keep[id] = true;
     });
     /* Captures still on their way to the core stay */
-    st.items.forEach(function (i) { if (!i.coreId && !keep[i.id]) items.push(i); });
+    st.items.forEach(function (i) { if (!i.coreId && !keep[i.id] && i.kind !== 'deliv') items.push(i); });
+    /* Deliverable cards about no single task (last week, this week's pick and steps, a new one to track) */
+    cards.forEach(function (c) {
+      if (c.task || ['deliverable', 'week_plan', 'deliverable_new'].indexOf(c.kind) < 0) return;
+      var id = 'c' + c.id;
+      items.push({ id: id, kind: 'deliv', cardKind: c.kind, cardId: c.id, cardOptions: c.options || [], state: 'triage',
+        title: c.prompt, ask: c.prompt, incoming: c.reason || '', payload: c.payload || {}, suggested: c.suggested,
+        source: 'Your deliverables', who: '', age: '', log: [], sources: [], people: [], context: [], conversation: [], code: [] });
+      keep[id] = true;
+    });
     var order = [], seen = {};
-    cards.forEach(function (c) { var id = c.task && 't' + c.task.id; if (id && !seen[id] && keep[id]) { seen[id] = true; order.push(id); } });
+    cards.forEach(function (c) { var id = c.task ? 't' + c.task.id : 'c' + c.id; if (id && !seen[id] && keep[id]) { seen[id] = true; order.push(id); } });
     /* The card on screen stays first, so nothing jumps while you read it */
     var restart = unpin, front = unpin ? null : st.queue[0];
     unpin = false;
@@ -535,6 +548,12 @@
     /* Booking time: the end of a block, and the hold on your calendar */
     wrap('keepGoing', function (id) { var it = S.item(id); return it && decide(it, 'keep_going'); });
     wrap('answerHold', function (id, opt) { var it = S.item(id); return it && decide(it, opt); });
+    /* Deliverables: any of their cards' answers, and the sheet's actions */
+    wrap('answerCard', function (id, opt, value) { var it = S.item(id); return it && decide(it, opt, value); });
+    S.deliverableAction = function (coreId, what, body) {
+      gen++;
+      return write(function () { return api('POST', '/deliverables/' + coreId + '/' + what, body || {}); }).then(syncThenRefresh);
+    };
     /* "Same as…": this task merges into the one you picked; Undo splits it back out */
     wrap('sameAs', function (id, otherCoreId) {
       var tid = (S.item(id) || {}).coreId;

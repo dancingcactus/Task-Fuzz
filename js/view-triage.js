@@ -458,7 +458,7 @@
     return '<h2 class="ask" id="ask" tabindex="-1"><span class="sr">The one thing to decide: </span>' + esc(text) + '</h2>';
   }
   function titleHTML(it) {
-    return '<div class="title-block"><h3 class="task-title">' + esc(it.title) + '</h3><div class="chips">' + ageChip(it) + '<span class="meta">' + esc(it.meta || '') + '</span>' + (it.sizeLabel ? '<span class="sizechip' + (Store.isBig(it) ? ' big' : '') + '">' + esc(it.sizeLabel) + '</span>' : '') + '</div>' + partOfHTML(it) + '</div>';
+    return '<div class="title-block"><h3 class="task-title">' + esc(it.title) + '</h3><div class="chips">' + ageChip(it) + '<span class="meta">' + esc(it.meta || '') + '</span>' + (it.sizeLabel ? '<span class="sizechip' + (Store.isBig(it) ? ' big' : '') + '">' + esc(it.sizeLabel) + '</span>' : '') + '</div>' + partOfHTML(it) + forHTML(it) + '</div>';
   }
   /* A group is context on the card, never a card of its own: one line, which opens the group sheet */
   function partOfHTML(it) {
@@ -608,7 +608,54 @@
       (it.holdRemove ? '' : '<button type="button" class="btn" data-act="hold-always">Always allow for my calendar</button>') +
       '<button type="button" class="btn" data-act="hold-skip">' + (it.holdRemove ? 'Keep it' : 'Skip') + '</button></div></div>';
   }
+  /* Deliverable cards: one decision each, like any question card */
+  var DV_LABEL = { keep_going: 'Keep going', make_active: 'Make it active', its_done: 'It’s done', let_go: 'Let it go',
+    not_sure: 'Not sure yet', reopen: 'Reopen it', new_one: 'Start a new one', keep_these: 'Keep these', keep_steps: 'Keep these steps',
+    not_now: 'Not now', track: 'Track it', no: 'No', yes: 'Yes' };
+  function dvButtons(it, opts) {
+    return '<div id="actions"><div class="actions">' + opts.map(function (o, i) {
+      return '<button type="button" class="btn' + (o === it.suggested ? ' primary' : '') + '" data-dv="' + o + '" aria-keyshortcuts="' + (i + 1) + '">' + esc(DV_LABEL[o] || o) + kbd(i + 1) + '</button>';
+    }).join('') + '</div></div>';
+  }
+  function delivHTML(it) {
+    var p = it.payload || {}, h = '<div class="tagrow"><span class="src">Your deliverables</span></div>' + askHTML(it.ask);
+    if (it.incoming) h += '<p class="dlg-what">' + esc(it.incoming) + '</p>';
+    if (it.cardKind === 'week_plan' && p.steps) {
+      h += (p.all || []).map(function (d) {
+        return '<section class="dv-steps"><h3>' + esc(d.title) + '</h3>' + (d.open && d.open.length ? '<p class="meta">Open: ' + esc(d.open.slice(0, 4).join(' · ')) + '</p>' : '') +
+          '<label class="sr" for="dv-s-' + d.id + '">Next tasks for ' + esc(d.title) + ', one per line</label><textarea id="dv-s-' + d.id + '" data-dvsteps="' + d.id + '" rows="2" placeholder="One per line"></textarea></section>';
+      }).join('');
+    } else if (it.cardKind === 'week_plan') {
+      h += '<fieldset class="asks"><legend>This week’s active ones (up to three)</legend><ul class="mentions">' + (p.all || []).map(function (d) {
+        return '<li><label class="check"><input type="checkbox" data-dvpick="' + d.id + '"' + ((p.suggested || []).indexOf(d.id) > -1 ? ' checked' : '') + '> <span>' + esc(d.title) + '</span></label></li>';
+      }).join('') + '</ul></fieldset>';
+    } else if (it.cardKind === 'deliverable_new') {
+      h += '<div class="dv-new"><label for="dv-title">Name</label><input id="dv-title" type="text" value="' + esc(p.title || '') + '">' +
+        '<label for="dv-dw">Done when</label><input id="dv-dw" type="text" value="' + esc(p.done_when || '') + '" placeholder="REP-118 is Done and in the release notes">' +
+        '<p class="meta">A state Fuzz can check: a ticket’s status, a document, a sent message. Or tick the box and you’ll check it yourself.</p>' +
+        '<label class="check"><input type="checkbox" id="dv-you"> <span>I’ll check it myself</span></label></div>';
+    }
+    return h + dvButtons(it, it.cardOptions || []);
+  }
+  function partOfQHTML(it) {
+    return tagrow(it) + askHTML(it.partOfPrompt || 'Is this part of that deliverable?') + titleHTML(it) + dvButtons(it, it.cardOptions || ['yes', 'no', 'not_sure']);
+  }
+  function dvValue(it, opt) {
+    if (opt === 'keep_these') return [].map.call(card.querySelectorAll('[data-dvpick]:checked'), function (b) { return +b.dataset.dvpick; });
+    if (opt === 'keep_steps') {
+      var v = {}; card.querySelectorAll('[data-dvsteps]').forEach(function (ta) { var lines = ta.value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); if (lines.length) v[ta.dataset.dvsteps] = lines; }); return v;
+    }
+    if (opt === 'track') return { title: ($('#dv-title') || {}).value, done_when: ($('#dv-dw') || {}).value, checked_by: $('#dv-you') && $('#dv-you').checked ? 'you' : 'fuzz' };
+    return undefined;
+  }
+  /* "For …": its deliverable, which opens the deliverable sheet */
+  function forHTML(it) {
+    if (!it.deliverable) return '';
+    return '<button type="button" class="partof forline" data-act="forline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>For ' + esc(it.deliverable.title) + '</button>';
+  }
   function cardHTML(it) {
+    if (it.kind === 'deliv') return delivHTML(it);
+    if (it.cardKind === 'part_of') return partOfQHTML(it);
     if (it.cardKind === 'hold') return holdHTML(it);
     if (it.state === 'review') return reviewHTML(it);
     var isTask = it.kind === 'task';
@@ -1688,6 +1735,15 @@
         var first = refPick[ci.id] && card.querySelector('#refpick input'); (first || card.querySelector('[data-act="plus"]')).focus();
         return;
       }
+      var dv = e.target.closest('[data-dv]');
+      if (dv && card.contains(dv)) {
+        var dit = cur(), dopt = dv.dataset.dv, dval = dvValue(dit, dopt);
+        if (dopt === 'track' && !(dval.title || '').trim()) { var dtl = $('#dv-title'); if (dtl) dtl.focus(); Fuzz.say('Give it a name first.', { type: false }); return; }
+        if (dopt === 'track' && dval.checked_by === 'fuzz' && !(dval.done_when || '').trim()) { var ddw = $('#dv-dw'); if (ddw) ddw.focus(); Fuzz.say('How will we know it’s done? Or tick the box and you check it.', { type: false }); return; }
+        if (dopt === 'track' && !(dval.done_when || '').trim()) dval.done_when = 'You say it’s done';
+        moment(function () { return quickClear('Answered:', (DV_LABEL[dopt] || dopt) + ': “' + (dit.title || '') + '”.', function (i) { Store.answerCard(i.id, dopt, dval); }, dopt === 'not_sure' ? 'Okay, I’ll ask again later.' : 'Got it.'); });
+        return;
+      }
       var t = e.target.closest('[data-act],[data-when],[data-tab],[data-quick],[data-sched],[data-who],[data-book]');
       if (!t || !card.contains(t)) return;
       if (t.dataset.who) { waitOn(t.dataset.who); return; }
@@ -1729,6 +1785,7 @@
       else if (a === 'book') { booking = true; pausing = false; wayOpen = false; renderCardKeep(); var bh = $('#book-h'); if (bh) bh.focus(); Fuzz.setMood('eager'); Fuzz.say('When will you do it? I’ll hold the time.', { type: false }); }
       else if (a === 'book-cancel') { booking = false; renderCardKeep(); Fuzz.setMood('idle'); }
       else if (a === 'donow') moment(doNow);
+      else if (a === 'forline') { var fi = cur(); if (fi && fi.deliverable && window.TasksView && TasksView.openDeliverable) TasksView.openDeliverable(fi.deliverable.id, t); }
       else if (a === 'keepgoing') moment(function () { return quickClear('Kept going on', 'Kept going: the block runs on a little, if your calendar is free.', function (i) { Store.keepGoing(i.id); }, 'Nice. I’ll stretch the block.'); });
       else if (a === 'hold-approve' || a === 'hold-always' || a === 'hold-skip') moment(function () {
         var opt = { 'hold-approve': 'approve', 'hold-always': 'always_allow', 'hold-skip': 'skip' }[a], hit = cur();
@@ -1838,6 +1895,8 @@
         else if (k === 'escape' && !$('#ci-skip').hidden) b = $('#ci-skip');
       } else if (card.style.display === 'none') {
         return;
+      } else if (card.querySelector('[data-dv]') && n > -1) {
+        b = card.querySelectorAll('[data-dv]')[n];
       } else if (booking) {
         if (n > -1) b = card.querySelectorAll('[data-book]')[n];
       } else if (wayOpen || (cur() && cur().inTheWay)) {
@@ -1903,6 +1962,13 @@
     });
 
     $('#dropbtn').addEventListener('click', function () {
+      var di = cur();
+      /* a deliverable card has no task to drop: dismissing it is "Not sure yet" (or "Not now"), asked again later */
+      if (di && (di.kind === 'deliv' || di.cardKind === 'part_of')) {
+        var later = (di.cardOptions || []).indexOf('not_sure') > -1 ? 'not_sure' : 'not_now';
+        moment(function () { return quickClear('Dismissed', 'Dismissed for now. Fuzz asks again later.', function (i) { Store.answerCard(i.id, later); }, 'Okay, later.', 'idle'); });
+        return;
+      }
       moment(function () { return quickClear(cur().kind === 'task' ? 'Dropped' : 'Dismissed', 'Dropped. Undo if that was a slip.', function (i) { if (i.kind === 'task') Store.drop(i.id); else Store.resolve(i.id, 'dismissed'); }, 'Dropped. One less thing.', 'idle'); });
     });
     $('#parkbtn').addEventListener('click', function (e) {

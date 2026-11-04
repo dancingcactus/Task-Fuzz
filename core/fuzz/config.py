@@ -45,6 +45,10 @@ DEFAULTS = {
     # reads the calendar when what it last reported is refresh_hours old. prep_minutes before a block,
     # Fuzz turns what it found into a checklist; Keep going extends the hold by extend_minutes.
     # ui_url: where a hold's link to the task points.
+    # Deliverables: the Monday review comes on review_day after your first check-in; active_max of them
+    # are this week's; per_day is how many background ones get a weekday card, by check-in. new_min tasks
+    # sharing a ticket or a document make Fuzz suggest a deliverable.
+    "deliverables": {"review_day": "monday", "active_max": 3, "per_day": {"good": 3, "okay": 1}, "new_min": 3},
     "booking": {"slot_titles": ["Focus time"], "refresh_hours": 12, "prep_minutes": 30, "extend_minutes": 30,
                 "ui_url": "http://127.0.0.1:8765/"},
     # The connector tools the sender may call to send an approved draft, per client, as that client

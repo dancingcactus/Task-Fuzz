@@ -344,6 +344,13 @@
       if (S.live) { S.leave(id); it.state = 'ai-queued'; it.gathering = true; return; }
       it.doing = true; it.firstStepMode = true; it.firstStep = it.firstStep || 'Open what you need and write the first line (two minutes).'; S.pick(id);
     },
+    /* ---- deliverables ----
+       Named outcomes served by many tasks. Live mode keeps the core's list in state.deliverables. */
+    deliverables: function () { return (state && state.deliverables) || []; },
+    deliverable: function (coreId) { return S.deliverables().filter(function (d) { return d.id === coreId; })[0] || null; },
+    /* A deliverable card's answer (last week, this week's pick or steps, track a new one, part of …) */
+    answerCard: function (id, opt) { var it = S.item(id); if (!it) return; S.leave(id); if (it.kind === 'deliv') it.state = 'resolved'; else it.cardKind = null; },
+    deliverableAction: function () { return Promise.resolve(); },
     /* The end of a booked block: Keep going (the block runs on, if the calendar is free) */
     keepGoing: function (id) { var it = S.item(id); if (!it) return; it.blockEnd = false; S.log(it, 'status', 'You kept going.'); S.pick(id); },
     /* A hold on your calendar for booked time: approve, always allow, or skip (still booked in Fuzz) */

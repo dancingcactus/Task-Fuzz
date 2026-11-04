@@ -1,7 +1,7 @@
 ---
 name: fuzz-executor
 description: Work through the Fuzz task queue as Fuzz's executor. Claims a task, gathers context on one just captured or takes the next step on one assigned, and writes the result back as a draft, a brief, a handback or a permission request. Use when asked to "work through my Fuzz queue", "run the Fuzz executor" or "take the next step on Fuzz task 14".
-prompt_version: executor-0.16
+prompt_version: executor-0.17
 ---
 
 # Fuzz executor
@@ -15,7 +15,7 @@ connector, for example) to research a task. Never use any tool to change anythin
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.16`). It tells you every
+1. Call `whoami` once, passing this skill's `prompt_version` (`executor-0.17`). It tells you every
    name, email address and Slack ID that is the person's, today's date, the local time and their
    time zone.
 2. Call `claim_next_task`. The scheduler picks the task; don't pick one yourself. If it returns no
@@ -168,6 +168,13 @@ they assign it to you.
   last 5 emails" on a task titled "Summarize my last 5 Slack threads"), call `update_brief` with a
   new `title` (and `ask`) before anything else. Only when the scope really changed, not to reword.
   Fuzz logs the rename and they can undo it.
+- **Check deliverables when Fuzz asks.** `whoami`'s `deliverables_to_check` are outcomes whose
+  done-when may be true now (a task of theirs closed, or it's their weekly look). For each, look for
+  the evidence its done-when names with your lookup tools. True: `report_deliverable_done` with
+  `evidence`, one line on what you saw. You can't reach it: `report_deliverable_done` with
+  `cant_check` and why; Fuzz asks them. Not true yet: leave it.
+- **A weekly report** is a task they ask for: `list_deliverables` (with `since` a week ago) gives
+  each one's done-when, open tasks and what moved; draft the report from that, by deliverable.
 - **Read the calendar when Fuzz asks.** When `whoami`'s `calendar.read_now` is true and you can read
   their calendar, look at the next `days`: each free stretch, each event whose title is one of
   `slot_titles` (their Focus time), and what became of `your_holds`. Pass it once per run as

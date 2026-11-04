@@ -573,6 +573,8 @@ def tick(core):
     from . import booking, groups
     out["groups_collected"] = groups.collect_quiet(core)   # you stopped partway through a group a while ago
     out["blocks"] = booking.tick(core)   # prep before a block, its end or a missed one, holds no longer needed
+    from . import deliverables
+    out["deliverables"] = deliverables.release(core)   # Monday's review, and the weekday cards
     return out
 
 

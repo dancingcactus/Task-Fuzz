@@ -115,6 +115,8 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
     if t["state"] != to:
         f["state_changed_at"] = core.now_iso()
         cards.withdraw(core, ch, t["id"], keep=card["id"] if card else None)
+        if to in ("done", "letgo") and t.get("deliverable_id"):   # Fuzz checks its deliverable's done-when next run
+            ch.deliverable(t["deliverable_id"], check_due=1)
     if to not in ("working",):
         f.setdefault("lease_owner", None)
         f.setdefault("lease_until", None)

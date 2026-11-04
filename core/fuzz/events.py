@@ -27,6 +27,8 @@ EVENT_TYPES = {
     "task.block_started", "task.block_ended", "task.block_missed", "task.block_extended",   # booked time
     "calendar.reported",   # the executor read the calendar: Focus time slots, free time and Fuzz's holds
     "focus.set", "focus.refined", "focus.cleared",
+    "deliverable.created", "deliverable.linked", "deliverable.unlinked", "deliverable.renamed", "deliverable.tier_set",
+    "deliverable.reviewed", "deliverable.done", "deliverable.reopened", "deliverable.dropped",
     "group.created", "group.linked", "group.unlinked", "group.renamed", "group.wrapped",
     "group.collected", "group.working",   # working through a group: Fuzz has the answers / the run goes on
     "entity.merged", "entity.kept_separate", "entity.defined",
@@ -38,7 +40,8 @@ EVENT_TYPES = {
 }
 
 # Projected tables and their key column. user_state is keyed by (user_id, key).
-TABLES = {"tasks": "id", "groups": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key"}
+TABLES = {"tasks": "id", "groups": "id", "cards": "id", "drafts": "id", "grants": "id", "user_state": "key",
+          "deliverables": "id"}
 
 ACTORS = ("human", "fuzz:extractor", "fuzz:executor", "fuzz:sender", "fuzz:session", "fuzz:onboarding", "system")
 
@@ -70,6 +73,9 @@ class Changes:
 
     def grant(self, gid, **fields):
         return self._put("grants", gid, fields)
+
+    def deliverable(self, did, **fields):
+        return self._put("deliverables", did, fields)
 
     def state(self, key, value):
         return self._put("user_state", key, {"value": value})
@@ -248,8 +254,8 @@ def check_replay(core, user_id=None):
 
 # ---------------------------------------------------------------- undo
 
-# The AI's own changes you can take back, like a rename.
-AI_UNDOABLE = {"task.retitled"}
+# The AI's own changes you can take back, like a rename, or Fuzz closing a deliverable it checked.
+AI_UNDOABLE = {"task.retitled", "deliverable.done"}
 NOT_UNDOABLE = {"task.restored", "run.started", "run.finished", "engine.installed", "engine.removed",
                 "task.sent", "source.read", "task.file_attached", "task.file_deleted", "task.link_added"}
 
@@ -287,7 +293,8 @@ def _groups(core, limit=200):
 # renewals...) are bookkeeping: undo keeps whatever later events set them to.
 DECISIVE = {"tasks": {"state", "assignee", "lease_owner", "notes", "question", "schedule_anchor", "title",
                       "merged_into", "waiting_on", "quick_answers"},
-            "groups": {"title", "state"}, "cards": {"status"}, "drafts": {"status", "body"}, "grants": {"kind"}, "user_state": {"value"}}
+            "groups": {"title", "state"}, "cards": {"status"}, "drafts": {"status", "body"}, "grants": {"kind"}, "user_state": {"value"},
+            "deliverables": {"state", "tier", "title", "done_when"}}
 
 
 def _restore_plan(evs):
@@ -395,4 +402,6 @@ def _absent(table, created):
         return {"status": "withdrawn"}
     if table == "grants":
         return {"kind": "revoked"}
+    if table == "deliverables":
+        return {"state": "dropped"}
     return {"value": None}
