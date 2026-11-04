@@ -44,7 +44,7 @@
         dark: { code: '#0E0E0E', head: '#262626', line: '#383838', hl: '#222222', k: '#F2F2EE', s: '#B4B4B0', n: '#C6C6C2', f: '#E0E0DC', t: '#CACAC6', p: '#D6D6D2', c: '#8E8E8B', rem: '#2E2524', add: '#232A24', remInk: '#C6A8A4', addInk: '#A8B6AA' }
       } },
     /* Technicolor: early colour film. Warm cream stock, saturated carmine and teal (the two strips), golden
-       highlights, a warm vignette and a little grain from the stylesheet. Random never picks it either. */
+       highlights, and faint warm scan lines, a warm vignette and a little grain from the stylesheet. Random never picks it either. */
     { id: 'technicolor', name: 'Technicolor', note: 'Early colour film', special: true,
       l: ['#B8202B', '#FFF6E8', '#14706A'], d: ['#FF6A55', '#2A0A06', '#56C9BC'], hl: ['#8C1018', '#FFFFFF', '#0B524D'], hd: ['#FF8A78', '#1C0503', '#7FE0D4'],
       foundation: {
