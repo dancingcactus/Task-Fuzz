@@ -8,7 +8,7 @@ ambiguous aliases is left out of the spike: an ambiguous name stays provisional.
 """
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 TICKET_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d+)\b")
 GDOC_RE = re.compile(r"/d/([A-Za-z0-9_-]{10,})")
@@ -24,6 +24,9 @@ def normalize_url(url):
     m = re.search(r"/browse/([A-Z][A-Z0-9]+-\d+)", p.path)
     if m:
         return "ticket:" + m.group(1)
+    page = parse_qs(p.query).get("pageId")   # a wiki page by id: the address alone is the same for every page
+    if page:
+        return f"{host}{p.path.rstrip('/')}?pageId={page[0]}"
     return host + p.path.rstrip("/")
 
 

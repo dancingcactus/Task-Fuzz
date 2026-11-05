@@ -291,6 +291,12 @@ html.dragging-file .drop.over .dropbtn { border-color: var(--accent); background
 .split .done-btn { flex: 1; border-radius: 12px 0 0 12px; border-right-width: 1px; }
 .split .done-btn svg { color: var(--ok); }
 .split .more-btn { flex: none; width: 44px; padding: 0; border-radius: 0 12px 12px 0; border-left-width: 1px; }
+.split .split-main { flex: 1; min-width: 0; border-radius: 12px 0 0 12px; border-right-width: 1px; }
+/* A task card's four: Assign (Find out… behind it) across the whole row under the instructions,
+   then Work in Claude, Later (Book time behind it) and Done share the row below. */
+.actions:not(.working-actions):has(> .split-assign) { grid-template-columns: repeat(3, 1fr); }
+.actions:not(.working-actions) > .split-assign { grid-column: 1 / -1; }
+.split-assign .menu, .split-later .menu { left: 0; right: auto; } /* they start their row: open toward the card */
 /* A draft waiting for your OK: who it goes to, the editable text, then the decision */
 .draft { display: flex; flex-direction: column; gap: 8px; }
 .draft-to { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14.5px; }
@@ -714,10 +720,18 @@ dialog.dlg::backdrop { background: color-mix(in srgb, var(--ink) 48%, transparen
   .actions .split { grid-column: auto; }
   #actions > .actions:not(.ent):not(.review):not(.result) { grid-template-columns: 3fr 2fr; grid-template-areas: "assign done" "claude sched"; }
   #actions kbd { display: none; } /* no room for key hints in two tight rows */
-  #actions > .actions [data-act="assign"] { grid-area: assign; min-height: 46px; }
-  #actions > .actions .split { grid-area: done; }
-  #actions > .actions [data-act="claude"] { grid-area: claude; }
-  #actions > .actions [data-act="schedule"] { grid-area: sched; }
+  #actions > .actions > .split-assign, #actions > .actions > [data-act="assign"] { grid-area: assign; }
+  #actions > .actions [data-act="assign"] { min-height: 46px; }
+  #actions > .actions > .split-done { grid-area: done; }
+  #actions > .actions > [data-act="claude"] { grid-area: claude; }
+  #actions > .actions > .split-later, #actions > .actions > [data-act="schedule"] { grid-area: sched; }
+  #actions > .actions > .split-later .menu { left: auto; right: 0; }
+  /* Three of the four are split buttons: equal columns, a slimmer arrow, and words that never break mid-word */
+  #actions > .actions:not(.ent):not(.review):not(.result):not(.working-actions):has(> .split-assign) { grid-template-columns: 1fr 1fr; }
+  #actions .split .more-btn { width: 38px; }
+  #actions .split .split-main, #actions .split .done-btn { padding-left: 8px; padding-right: 8px; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  /* The actions stick to the bottom of the screen, so their menus open upward */
+  #actions .split .menu { top: auto; bottom: calc(100% + 8px); }
   /* The card's actions stay within thumb reach while you read on down the card */
   #actions:has(> .actions) {
     position: sticky; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 2; margin: 0 -8px; padding: 8px; border-radius: 16px;
@@ -793,6 +807,57 @@ html[data-contrast="high"] .dbar { box-shadow: inset 0 0 0 1px var(--line); }
 .ps-open { padding: 0; border: 0; background: none; color: var(--link); text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 .ps-dw { font-size: 12.5px; color: var(--muted); }
 .ps-side { flex: none; display: flex; align-items: center; gap: 8px; }
+/* Working through a group in Triage: a band above the card (its name and a dot per ask) and a tray under it
+   with what you've answered, which Fuzz is collecting. Dots fill as you go and never count down. */
+.gband { position: relative; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 22px 0 34px; padding: 8px 8px 8px 14px; border: var(--bw) solid var(--accent); border-radius: 16px; background: var(--chip); }
+.gband-t { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14.5px; line-height: 1.35; }
+.gband-t svg { flex: none; color: var(--accent); }
+.gband-k { color: var(--muted); font-weight: 600; }
+.gdots { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.gdots li { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line); background: transparent; transition: background .25s, border-color .25s; }
+.gdots li.on { background: var(--accent); border-color: var(--accent); }
+.gdots li.now { border-color: var(--accent); }
+.gband .linkbtn { min-height: 40px; padding: 8px 10px; }
+.ghost.bound { border-color: var(--accent); border-style: dashed; }
+.gtray { margin-top: 14px; }
+.gtray-h { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.gtray-av { width: 22px; height: 22px; flex: none; }
+.gchips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gchip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 40px; padding: 6px 12px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 13.5px; text-align: left; }
+.gchip:hover:not(:disabled) { border-color: var(--accent); }
+.gchip:disabled { opacity: .7; }
+.gchip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+.gchip-a { flex: none; padding-left: 8px; border-left: var(--bw) solid var(--line); color: var(--muted); font-weight: 700; }
+html.calm .gdots li { transition: none; }
+.gband[hidden], .gtray[hidden] { display: none; }
+
+/* What Fuzz couldn't find, on the card: Find out… asks for it */
+.gaps { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--chip); font-size: 14px; line-height: 1.45; }
+
+/* A choice that leads the card's actions (join a waiting reply; a big task's four choices) */
+.lead-choice { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px 14px; border: var(--bw) solid var(--accent); border-radius: 16px; background: var(--chip); }
+.lead-choice .meta { margin: 0; }
+.lead-choice .btn { align-self: flex-start; }
+
+/* Working sessions: the size on every card, a big task's four choices, and the working card */
+.sizechip { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border: var(--bw) solid var(--line); border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.sizechip.big { border-color: var(--wait); color: var(--ink); }
+.lead-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.lead-choice .lead-btns .btn { align-self: auto; }
+.card.working { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.working-actions { flex-wrap: wrap; }
+.way .when-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+/* Focus: the session question and the line under the perch */
+.focusline { position: relative; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 4px; margin: 18px 0 -6px; font-size: 14px; color: var(--muted); }
+.focusline b { color: var(--ink); }
+.focuscard #fo-form { margin-top: 12px; }
+.focuscard #fo-prev { margin-top: 12px; }
+.focuscard .ps-tasks li.off .ps-name { text-decoration: line-through; color: var(--muted); }
+
+/* "Same as…" in task detail: a quiet way to say two tasks are one */
+.sameas { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.sameas .ps-tasks { align-self: stretch; }
 @media (max-width: 560px) {
   .ps-tasks > li { flex-wrap: wrap; }
   .ps-side { width: 100%; justify-content: space-between; }

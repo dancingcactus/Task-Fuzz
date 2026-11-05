@@ -12,13 +12,17 @@ from . import cards, events, tasks
 from .db import FuzzError, iso
 
 DRAFT_KINDS = ("email.reply", "email.new", "slack.message", "calendar.invite", "nudge.email", "nudge.slack", "note")
+HOLD_KINDS = ("calendar_hold", "calendar_remove")   # made by the core when you book time (booking.ask_hold)
 IN_THREAD = ("email.reply", "slack.message", "nudge.email", "nudge.slack")   # kinds that can go in a source's thread
 BODY_MAX = 32 * 1024
 
 
-def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor", attach=None, reply_to=None):
+def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:executor", attach=None, reply_to=None,
+               covers=None):
     """attach: file names in the task's output folder, for the sender to attach when it sends.
-    reply_to: the id of the task's source whose thread it goes in. target is only who it's to."""
+    reply_to: the id of the task's source whose thread it goes in. target is only who it's to.
+    covers: the other tasks of a group claim this one reply answers. They wait in review with it, and
+    approving it (or sending it yourself) closes them all."""
     if kind not in DRAFT_KINDS:
         raise FuzzError(f"kind must be one of {', '.join(DRAFT_KINDS)}", "kind")
     if not final and kind != "note":
@@ -30,24 +34,101 @@ def save_draft(core, task_id, kind, target, body, final=True, actor="fuzz:execut
     t = tasks.require(core, task_id)
     attach = _attachments(core, t["id"], kind, attach)
     reply_to = _thread(core, t["id"], kind, reply_to)
+    covered = _covered(core, t, covers, final)
     if not final and _comes_back(core, t)[0] is None:
         raise FuzzError("A prep note needs to know when the real step is due. Call suggest_schedule with that "
                         "time (or update_brief with due), then save the note again", "final")
     with core.tx(actor):
         did = core.new_id("drafts")
         ch = events.Changes()
-        for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
+        for d in core.all("SELECT id FROM drafts WHERE task_id=? AND status='pending' "
+                          "AND kind NOT IN ('calendar_hold', 'calendar_remove')", (t["id"],)):
             ch.draft(d["id"], status="withdrawn")
         ch.draft(did, task_id=t["id"], kind=kind, target=target, body=body, status="pending",
                  created_at=core.now_iso(), final=1 if final else 0, attachments=attach or None,
-                 reply_to=reply_to)
+                 reply_to=reply_to, covers=[c["id"] for c in covered] or None)
         tasks.move(core, ch, t, "review")
+        for c in covered:   # answered in this one reply: they wait for your OK with it, with no card of their own
+            tasks.move(core, ch, c, "review", question=None)
         if not t.get("question"):
             ch.task(t["id"], question="Is this draft okay?")
-        events.emit(core, "task.draft_ready", task_id=t["id"], changes=ch, data={"draft_id": did, "kind": kind},
-                    log=("action", "The draft is ready. Nothing is sent until you approve it."))
+        log = "The draft is ready. Nothing is sent until you approve it."
+        if covered:
+            log = f"One draft answers this and {len(covered)} more from the same place. Nothing is sent until you approve it."
+        events.emit(core, "task.draft_ready", task_id=t["id"], changes=ch,
+                    data={"draft_id": did, "kind": kind, **({"covers": [c["id"] for c in covered]} if covered else {})},
+                    log=("action", log))
         cards.sync(core, t["id"])
     return did
+
+
+def _covered(core, t, covers, final):
+    """The tasks a group reply also answers: others in this run's group claim, each once."""
+    if not covers:
+        return []
+    from . import groups
+    if not final:
+        raise FuzzError("covers is for a reply that answers several asks, not a prep note", "covers")
+    mates = {m["id"]: m for m in groups.claimed_with(core, t)}
+    out = []
+    for cid in dict.fromkeys(covers):
+        if cid not in mates:
+            raise FuzzError(f"Task {cid} isn't one you hold with task {t['id']} (get_task's group.together lists them)",
+                            "covers")
+        out.append(mates[cid])
+    return out
+
+
+def covering(core, task_id):
+    """The pending or approved draft on another task that answers this one too, or None."""
+    for d in core.all("SELECT * FROM drafts WHERE user_id=? AND status IN ('pending', 'approved') AND covers IS NOT NULL",
+                      (core.user_id,)):
+        if task_id in (d.get("covers") or []):
+            return d
+    return None
+
+
+def group_reply(core, t):
+    """A reply to t's thread still waiting for your OK (on another task in its group), or None. A late ask
+    from the same thread can join it instead of getting a reply of its own."""
+    if not t or not t.get("group_id"):
+        return None
+    for d in core.all("SELECT d.* FROM drafts d JOIN tasks x ON x.id=d.task_id WHERE d.user_id=? AND x.group_id=? "
+                      "AND d.status='pending' AND d.task_id!=? ORDER BY d.id DESC", (core.user_id, t["group_id"], t["id"])):
+        if d.get("covers") or d["kind"] in IN_THREAD:
+            return d
+    return None
+
+
+def add_to_reply(core, card, t):
+    """Add this ask to the reply waiting for your OK: the draft goes back to Fuzz with it, and Fuzz writes one
+    reply covering every ask again (the tasks are claimed together)."""
+    d = group_reply(core, t)
+    if d is None:
+        raise FuzzError("That reply isn't waiting for your OK any more", "option", 409)
+    main = tasks.require(core, d["task_id"])
+    covered = [c for c in (tasks.get(core, i) for i in d.get("covers") or []) if c and c["state"] == "review"]
+    note = f"Add the new ask from the same thread to the reply: “{t['title']}”."
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.draft(d["id"], status="sent_back")
+        for x in [main] + covered:
+            fields = {"notes": ((x.get("notes") or "") + "\n" + note).strip()} if x["id"] == main["id"] else {}
+            tasks.move(core, ch, x, "queued", question=None, attempts=0, add_tags=("together",), **fields)
+        tasks.move(core, ch, t, "queued", card=card, question=None, attempts=0, add_tags=("together",))
+        cards.mark_answered(core, ch, card, "add_to_reply")
+        for c in cards.open_cards(core, main["id"]):
+            ch.card(c["id"], status="withdrawn")
+        events.emit(core, "task.sent_back", task_id=main["id"], changes=ch,
+                    data={"draft_id": d["id"], "added": t["id"]}, log=("guidance", f"You added “{t['title']}” to the reply."))
+
+
+def _close_covered(core, ch, d, log=None):
+    """Close the tasks a group reply answered, in the same event as the one it's on."""
+    for cid in d.get("covers") or []:
+        c = tasks.get(core, cid)
+        if c and c["state"] == "review":
+            tasks.move(core, ch, c, "done", question=None)
 
 
 def _thread(core, task_id, kind, source_id):
@@ -112,6 +193,10 @@ def is_prep(d):
 def after_approve(core, d, t):
     """What approving this draft does, in a line the card can show before you tap."""
     from . import timeres
+    if d["kind"] == "calendar_hold":
+        return "Fuzz puts the hold on your calendar. Your own events are never changed."
+    if d["kind"] == "calendar_remove":
+        return "Fuzz takes the hold off your calendar."
     if d["kind"] != "note":
         return f"Fuzz sends it in {_where(d['kind'])}."
     if not is_prep(d):
@@ -133,6 +218,7 @@ def approve(core, card):
         else:
             if d["kind"] == "note":
                 tasks.move(core, ch, t, "done", card=card, question=None)
+                _close_covered(core, ch, d, None)
                 log = "You approved this."
             else:
                 tasks.move(core, ch, t, "sending", card=card, question=None)
@@ -178,6 +264,8 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
     d = approved_draft(core, t["id"])
     if d is None or d["id"] != draft_id:
         raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    if d["kind"] in HOLD_KINDS:
+        return _hold_sent(core, t, d, where, link, actor)
     with core.tx(actor):
         ch = events.Changes()
         ch.draft(d["id"], status="sent")
@@ -185,6 +273,7 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
             tasks.move(core, ch, t, "waiting", schedule_anchor=None, schedule_fire_at=tasks.default_check_back(core))
         else:
             tasks.move(core, ch, t, "done")
+            _close_covered(core, ch, d, None)   # one reply answered them all
         to = f" to {d['target']}" if d.get("target") else ""
         events.emit(core, "task.sent", task_id=t["id"], changes=ch,
                     data={"draft_id": d["id"], "kind": d["kind"], "where": where.strip(), "link": link},
@@ -192,14 +281,44 @@ def mark_sent(core, task_id, draft_id, where, link=None, actor="fuzz:sender"):
     return {"state": "waiting" if d["kind"].startswith("nudge") else "done"}
 
 
+def _hold_sent(core, t, d, where, link, actor):
+    """The sender put the hold on your calendar (link: the event's id), or took it off. The task stays as it is."""
+    meta = dict(d.get("meta") or {})
+    with core.tx(actor):
+        ch = events.Changes()
+        ch.draft(d["id"], status="sent", meta=dict(meta, event_id=link or meta.get("event_id")))
+        a = dict(t.get("schedule_anchor") or {})
+        if d["kind"] == "calendar_hold" and a.get("type") == "block":
+            if not link and not a.get("event_id"):
+                raise FuzzError("link is the calendar event's id, so Fuzz can move or remove the hold later", "link")
+            ch.task(t["id"], schedule_anchor=dict(a, event_id=link or a.get("event_id")), lease_owner=None, lease_until=None)
+        else:
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+        text = "The hold is on your calendar." if d["kind"] == "calendar_hold" else "The hold is off your calendar."
+        events.emit(core, "task.sent", task_id=t["id"], changes=ch,
+                    data={"draft_id": d["id"], "kind": d["kind"], "where": where.strip(), "link": link}, log=("sent", text))
+    return {"state": t["state"]}
+
+
 def send_failed(core, task_id, draft_id, why, actor="fuzz:sender", log=None):
-    """It couldn't go out. The draft comes back to review with the reason as the question."""
+    """It couldn't go out. The draft comes back to review with the reason as the question. A hold that
+    couldn't be made comes back as its card, with the reason; the task stays booked in Fuzz."""
     if not (why or "").strip():
         raise FuzzError("why says what stopped it, in one line", "why")
     t = tasks.require(core, task_id)
     d = approved_draft(core, t["id"])
     if d is None or d["id"] != draft_id:
         raise FuzzError(f"Draft {draft_id} isn't the approved draft on task {t['id']}", "draft_id", 409)
+    if d["kind"] in HOLD_KINDS:
+        with core.tx(actor):
+            ch = events.Changes()
+            ch.draft(d["id"], status="pending")
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+            events.emit(core, "task.send_failed", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "why": why.strip()},
+                        log=("blocked", log or f"Couldn't change your calendar: {why.strip()}"))
+            cards.create(core, "hold", t["id"], payload={"draft_id": d["id"], "kind": d["kind"]},
+                         prompt=f"{why.strip()[:200]} Try again?", reason="The hold didn’t go on your calendar.")
+        return {"state": t["state"]}
     with core.tx(actor):
         ch = events.Changes()
         ch.draft(d["id"], status="pending")
@@ -234,7 +353,12 @@ def send_back(core, card, note):
         ch = events.Changes()
         ch.draft(d["id"], status="sent_back")
         notes = ((t.get("notes") or "") + f"\nYou sent the draft back: {note.strip()}").strip()
-        tasks.move(core, ch, t, "queued", card=card, notes=notes, question=None, attempts=0)
+        # a group reply goes back as the group: claimed together again, for one new draft
+        covered = [c for c in (tasks.get(core, i) for i in d.get("covers") or []) if c and c["state"] == "review"]
+        together = ("together",) if covered else ()
+        tasks.move(core, ch, t, "queued", card=card, notes=notes, question=None, attempts=0, add_tags=together)
+        for c in covered:
+            tasks.move(core, ch, c, "queued", question=None, attempts=0, add_tags=together)
         cards.mark_answered(core, ch, card, "send_back", note)
         events.emit(core, "task.sent_back", task_id=t["id"], changes=ch, data={"draft_id": d["id"]},
                     log=("guidance", f"You sent the draft back: {note.strip()}"))
@@ -248,6 +372,7 @@ def done_myself(core, card):
         ch = events.Changes()
         ch.draft(d["id"], status="withdrawn")
         tasks.move(core, ch, t, "done", card=card, question=None)
+        _close_covered(core, ch, d, None)
         cards.mark_answered(core, ch, card, "done")
         events.emit(core, "task.done", task_id=t["id"], changes=ch, data={"draft_id": d["id"], "by": "you"},
                     log=("status", "You marked this done. You're sending it yourself, so Fuzz didn't."))

@@ -52,7 +52,15 @@ def expire_leases(core):
             tasks.move(core, ch, t, "queued")
             events.emit(core, "task.released", task_id=t["id"], changes=ch, data={"why": "lease_expired"},
                         log=("status", "Fuzz's run stopped partway, so this went back to the queue."))
-    return len(rows) + len(sends)
+    # a calendar hold the sender claimed and never finished: free it for the next send run
+    holds = core.all("SELECT * FROM tasks WHERE user_id=? AND state NOT IN ('working', 'sending') AND lease_owner IS NOT NULL "
+                     "AND lease_until < ?", (core.user_id, core.now_iso()))
+    for t in holds:
+        with core.tx("system"):
+            ch = events.Changes()
+            ch.task(t["id"], lease_owner=None, lease_until=None)
+            events.emit(core, "task.released", task_id=t["id"], changes=ch, data={"why": "hold_lease_expired"})
+    return len(rows) + len(sends) + len(holds)
 
 
 RESULT_PROMPT = "Here’s what you asked for. Done?"
@@ -72,13 +80,19 @@ def hand_back(core, task_id, question, options=None, actor="fuzz:executor", log=
     t = tasks.require(core, task_id)
     if result and not t.get("context_md"):
         raise FuzzError("A result needs the brief first: write it with update_brief(context_md=…)", "result")
+    from . import groups
+    mates = groups.claimed_with(core, t)   # a group claim asks once: the others wait for your answer
     with core.tx(actor):
         ch = events.Changes()
         tasks.move(core, ch, t, "scheduled" if hold else "triage",
                    add_tags=("handed_back", "result") if result else ("handed_back",),
                    order_key=tasks.next_order(core), **tasks.handed_back_fields(question, options))
-        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch,
-                    data={"question": question.strip(), "result": bool(result)},
+        for m in mates:
+            tasks.move(core, ch, m, "queued", add_tags=("held",))
+        data = {"question": question.strip(), "result": bool(result)}
+        if mates:
+            data["held"] = [m["id"] for m in mates]
+        events.emit(core, "task.handed_back", task_id=t["id"], changes=ch, data=data,
                     log=("action", log or "Finished. The result is in the brief.") if result
                     else ("blocked", log or f"Handed back: {question.strip()}"))
         cards.sync(core, t["id"])
@@ -121,25 +135,58 @@ def finish_gathering(core, task_id, actor="fuzz:executor", log=None, result=Fals
     if "plan_wait" in (t.get("variant_tags") or []):
         return _done_planning(core, t, actor, log)
     held = hold and holding(core, t)
-    result = result and "review" not in (t.get("variant_tags") or [])   # a parked review only asks; you decide
+    tags = t.get("variant_tags") or []
+    if "finding_out" in tags or "first_step" in tags:   # a step for you: the task is still yours
+        return _found_out(core, t, actor, log)
+    result = result and "review" not in tags   # a parked review only asks; you decide
     back = f" It comes back {timeres.label(core, t['schedule_anchor']).lower()}." if held else ""
     if result:
         if not core.config["gather"]["finish_results"]:
             raise FuzzError("Finishing tasks while gathering is turned off: call finish_gathering without result",
                             "result")
-        return hand_back(core, t["id"], None, options, actor=actor, result=True, hold=held,
-                         log=(log or "Finished while gathering. The result is in the brief.") + back)
+        hand_back(core, t["id"], None, options, actor=actor, result=True, hold=held,
+                  log=(log or "Finished while gathering. The result is in the brief.") + back)
+        _match_captured(core, t)
+        return t["id"]
     with core.tx(actor):
         ch = events.Changes()
-        if held:
-            tasks.move(core, ch, t, "scheduled")
+        if held:   # prep before a booked block: the checklist's in, and it waits for the block
+            prepped = "prep" in (t.get("variant_tags") or [])
+            tasks.move(core, ch, t, "scheduled", **({"add_tags": ("prepped",), "remove_tags": ("prep",)} if prepped else {}))
         else:
             tasks.move(core, ch, t, "triage", schedule_anchor=None, schedule_fire_at=None)
         events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
                     log=("status", (log or ("Fuzz gathered what it could find." if t.get("context_md")
                                             else "Fuzz found nothing more to add.")) + back))
         cards.sync(core, t["id"])
+    _match_captured(core, t)
     return t["id"]
+
+
+def _found_out(core, t, actor, log=None):
+    """The answer to your Find out… is in the brief: the card comes back next, right after the one in front.
+    Just the first step: the checklist is in, and the task comes back next as the working card, on step 1."""
+    first = "first_step" in (t.get("variant_tags") or [])
+    with core.tx(actor):
+        ch = events.Changes()
+        tasks.move(core, ch, t, "triage", remove_tags=("finding_out",),
+                   add_tags=("doing", "first_step") if first else ("found_out",),
+                   schedule_anchor=None, schedule_fire_at=None)
+        events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                    data={"first_step": True} if first else {"found_out": t.get("find_out")},
+                    log=("status", log or ("The checklist is in. Step 1 is yours now." if first else
+                                           f"Fuzz found out: {t.get('find_out') or 'what you asked'}. It's back for you.")))
+        cards.sync(core, t["id"], "next")
+    return t["id"]
+
+
+def _match_captured(core, t):
+    """A task you captured goes through matching once Fuzz has looked it up, with the links it found. Only
+    the first look: a parked task back for review was matched when it was captured."""
+    if "review" in (t.get("variant_tags") or []):
+        return
+    from .matching import dupes
+    dupes.check_captured(core, t["id"])
 
 
 def _done_planning(core, t, actor, log=None):
@@ -194,10 +241,14 @@ def _eligible(core, task_id=None):
     rows = core.all(sql, (core.user_id, task_id) if task_id else (core.user_id,))
     mine = _released_by_me(core)
     # kickoff: the onboarding's "find your asks" task, which Fuzz works without the executor
-    rows = [t for t in rows if not {"needs_permission", "kickoff"} & set(t.get("variant_tags") or []) and t["id"] not in mine
-            and not files.waiting(core, t)]
-    # a task waiting to be gathered goes first: you're about to see it in triage
-    rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["order_key"] or 0, t["created_at"] or ""))
+    # held: you're still working through its group, and Fuzz starts once it has every answer
+    rows = [t for t in rows if not {"needs_permission", "kickoff", "held"} & set(t.get("variant_tags") or [])
+            and t["id"] not in mine and not files.waiting(core, t)]
+    # a task waiting to be gathered goes first: you're about to see it in triage; then by deadline, then your focus
+    from . import focus
+    fids = focus.focus_ids(core)
+    rows.sort(key=lambda t: (not gathering(t), -tasks.due_level(core, t), t["id"] not in fids, t["order_key"] or 0,
+                             t["created_at"] or ""))
     return rows
 
 
@@ -207,7 +258,7 @@ def claim_next(core, task_id=None):
     expire_leases(core)
     while True:
         with core.tx("fuzz:executor"):
-            working = core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='working'", (core.user_id,))["n"]
+            working = _slots_used(core)
             if working >= b["max_working"]:
                 return None, f"{b['max_working']} tasks are already running"
             rows = _eligible(core, task_id)
@@ -223,11 +274,42 @@ def claim_next(core, task_id=None):
                           actor="system", log=f"Claimed {t['attempts']} times with no progress, so it came back to you.")
                 continue
             ch = events.Changes()
-            tasks.move(core, ch, t, "working", lease_owner=caller(core), lease_until=lease_until(core),
-                       attempts=t["attempts"] + 1)
-            events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data={"by": caller(core)},
-                        log=("status", "Fuzz is gathering context." if gathering(t) else "Fuzz started on this."))
+            # A group you answered together is one claim: Fuzz holds them all, for one lookup and one reply
+            mates = _together(core, t)
+            for x in [t] + mates:
+                tasks.move(core, ch, x, "working", lease_owner=caller(core), lease_until=lease_until(core),
+                           attempts=x["attempts"] + 1, remove_tags=("together",))
+            data = {"by": caller(core)}
+            if mates:
+                data["together"] = [x["id"] for x in mates]
+            events.emit(core, "task.claimed", task_id=t["id"], changes=ch, data=data,
+                        log=("status", "Fuzz is gathering context." if gathering(t) else
+                             f"Fuzz started on this, together with {len(mates)} more from the same place." if mates
+                             else "Fuzz started on this."))
             return tasks.get(core, t["id"]), None
+
+
+def _together(core, t):
+    """The other tasks collected with t from its group, waiting to be claimed with it."""
+    if "together" not in (t.get("variant_tags") or []) or not t.get("group_id"):
+        return []
+    rows = core.all("SELECT * FROM tasks WHERE user_id=? AND group_id=? AND state='queued' AND assignee='fuzz' "
+                    "AND id!=? ORDER BY id", (core.user_id, t["group_id"], t["id"]))
+    return [x for x in rows if "together" in (x.get("variant_tags") or [])
+            and not {"needs_permission", "held"} & set(x.get("variant_tags") or [])]
+
+
+def _slots_used(core):
+    """Tasks running now, a group claim counting once."""
+    rows = core.all("SELECT group_id, lease_owner FROM tasks WHERE user_id=? AND state='working'", (core.user_id,))
+    seen, n = set(), 0
+    for r in rows:
+        key = (r["group_id"], r["lease_owner"]) if r["group_id"] else None
+        if key is None or key not in seen:
+            n += 1
+        if key:
+            seen.add(key)
+    return n
 
 
 def work_waiting(core, task_id=None):
@@ -248,18 +330,28 @@ def extract_hours(core, now=None):
     return h[0] <= loc.hour + loc.minute / 60 < h[1]
 
 
+def _holds_waiting(core):
+    """Tasks with an approved calendar hold (or removal) for the sender, not already being sent."""
+    return core.all("SELECT t.* FROM tasks t JOIN drafts d ON d.task_id=t.id WHERE t.user_id=? AND d.status='approved' "
+                    "AND d.kind IN ('calendar_hold', 'calendar_remove') AND t.lease_owner IS NULL AND t.state!='sending' "
+                    "ORDER BY d.id", (core.user_id,))
+
+
 def sends_waiting(core):
     return core.one("SELECT COUNT(*) n FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL",
-                    (core.user_id,))["n"]
+                    (core.user_id,))["n"] + len(_holds_waiting(core))
 
 
 def claim_next_send(core):
-    """Lease the oldest approved draft waiting to go out. Returns (task, draft), or (None, why)."""
+    """Lease the oldest approved draft waiting to go out (a calendar hold too). Returns (task, draft), or (None, why)."""
     from . import drafts
     expire_leases(core)
     with core.tx("fuzz:sender"):
         t = core.one("SELECT * FROM tasks WHERE user_id=? AND state='sending' AND lease_owner IS NULL "
                      "ORDER BY state_changed_at, id LIMIT 1", (core.user_id,))
+        if t is None:
+            held = _holds_waiting(core)
+            t = held[0] if held else None
         if t is None:
             return None, "Nothing is waiting to be sent"
         ch = events.Changes()
@@ -270,7 +362,8 @@ def claim_next_send(core):
 
 def require_send_lease(core, task_id):
     t = tasks.require(core, task_id)
-    if t["state"] != "sending" or t["lease_owner"] != caller(core):
+    if t["lease_owner"] != caller(core) or (t["state"] != "sending" and not core.one(
+            "SELECT id FROM drafts WHERE task_id=? AND status='approved' AND kind IN ('calendar_hold', 'calendar_remove')", (t["id"],))):
         raise FuzzError(f"You don't hold task {t['id']}. Call claim_next_send first.", "task_id", 409)
     if parse_iso(t["lease_until"]) < core.now():
         raise FuzzError(f"Your lease on task {t['id']} ran out, so it went back to the human.", "task_id", 409)
@@ -406,6 +499,13 @@ def tick(core):
         if t.get("schedule_anchor"):   # you scheduled it: Fuzz has until its time
             if not t.get("schedule_fire_at") or t["schedule_fire_at"] > now:
                 continue
+            if "prep" in (t.get("variant_tags") or []):   # the block is starting: it comes as it was, below
+                with core.tx("system"):
+                    ch = events.Changes()
+                    tasks.move(core, ch, t, "scheduled", add_tags=("prepped",), remove_tags=("prep",))
+                    events.emit(core, "task.gathered", task_id=t["id"], changes=ch,
+                                log=("status", "Fuzz didn't get to the checklist before your block."))
+                continue
             lab = timeres.label(core, t["schedule_anchor"])
             log = f"Fuzz didn't get to this before {lab[0].lower() + lab[1:]}, so it came back as it was."
         elif "plan_wait" in (t.get("variant_tags") or []):   # working out when to check back: the default stands
@@ -416,6 +516,10 @@ def tick(core):
             if (t.get("reviewed_at") or "") >= late:
                 continue
             log = "Fuzz didn't get to look before asking, so it came back as it was."
+        elif {"finding_out", "first_step"} & set(t.get("variant_tags") or []):   # a Find out… or a first step: its clock starts when you asked
+            if (t.get("state_changed_at") or "") >= late:
+                continue
+            log = "Fuzz didn't get to find that out in time, so it came back as it was."
         elif t["created_at"] < late:
             log = "Fuzz didn't get to this in time, so it came to you as captured."
         else:
@@ -425,7 +529,10 @@ def tick(core):
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='scheduled' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
         lab = timeres.label(core, t["schedule_anchor"] or {"type": "exact"})
-        tasks.bring_back(core, t["id"], reason=f"You scheduled this for {lab[0].lower() + lab[1:]}.", actor="system")
+        if "booked" in (t.get("variant_tags") or []):   # your block starts: first in the list, in work mode
+            tasks.bring_back(core, t["id"], reason="Your booked time starts now.", type="task.block_started", actor="system")
+        else:
+            tasks.bring_back(core, t["id"], reason=f"You scheduled this for {lab[0].lower() + lab[1:]}.", actor="system")
         out["came_back"] += 1
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='waiting' AND schedule_fire_at IS NOT NULL "
                       "AND schedule_fire_at <= ?", (core.user_id, now)):
@@ -463,12 +570,30 @@ def tick(core):
                 cards.sync(core, t["id"])
     out["review"] = review.release(core)
     out["quiet_sessions"] = sessions.quiet(core)
+    from . import booking, groups
+    out["groups_collected"] = groups.collect_quiet(core)   # you stopped partway through a group a while ago
+    out["blocks"] = booking.tick(core)   # prep before a block, its end or a missed one, holds no longer needed
+    from . import deliverables
+    out["deliverables"] = deliverables.release(core)   # Monday's review, and the weekday cards
     return out
 
 
 def wake(core):
-    """You're back at your desk: everything scheduled for that comes back."""
+    """You're back at your desk: everything scheduled for that comes back. It's a new session, so what you
+    put After the others last time asks whether to book time for it, and the last session's focus is over."""
     n = 0
+    from . import focus
+    focus.clear(core, "away")
+    for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='triage'", (core.user_id,)):
+        if "after_others" in (t.get("variant_tags") or []):
+            with core.tx("system"):
+                ch = events.Changes()
+                ch.task(t["id"], variant_tags=tasks._tags(t, add=("ask_book",), remove=("after_others",)),
+                        reason="You didn’t get to this last time. Book time for it?")
+                for c in cards.open_cards(core, t["id"]):
+                    if c["kind"] == "task":
+                        ch.card(c["id"], suggested="book", payload={k: v for k, v in (c.get("payload") or {}).items() if k != "at_end"})
+                events.emit(core, "card.updated", task_id=t["id"], changes=ch, data={"kind": "task", "ask_book": True})
     for t in core.all("SELECT * FROM tasks WHERE user_id=? AND state='queued'", (core.user_id,)):
         if gathering(t) and (t.get("schedule_anchor") or {}).get("type") == "at_desk":
             finish_gathering(core, t["id"], actor="system", hold=False,

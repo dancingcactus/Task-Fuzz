@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import answers, cards, config, engine, events, groups, people, scheduler, sessions, tasks
+from . import answers, cards, config, drafts, engine, events, groups, matching, people, scheduler, sessions, states, tasks
 from .db import Core, FuzzError, iso
 
 UI_ROOT = Path(__file__).resolve().parents[2]  # the repo root: index.html, js/, css/, assets/
@@ -59,6 +59,13 @@ def ensure_token(home, user_id=1):
 def task_view(core, t, full=False):
     out = cards.task_summary(t)
     out["log_head"] = (events.task_log(core, t["id"], 1) or [None])[0]
+    if t.get("deliverable_id"):   # its "For …" line
+        d = core.one("SELECT id, title, tier, state FROM deliverables WHERE id=?", (t["deliverable_id"],))
+        out["deliverable"] = d
+    if t["state"] in ("review", "sending"):   # answered in one reply with another task of its group
+        d = drafts.covering(core, t["id"])
+        if d:
+            out["covered_by"] = d["task_id"]
     if full:
         out["log"] = events.task_log(core, t["id"])
         # newest first, each with its own time: the message's, or else when the run that found it started
@@ -67,7 +74,8 @@ def task_view(core, t, full=False):
                                   "COALESCE(g.ts, r.started_at) ts, g.source || ':' || g.source_id msg, s.path IS NOT NULL has_file FROM sources s "
                                   "LEFT JOIN signals g ON g.key=s.signal_key AND g.user_id=s.user_id "
                                   "LEFT JOIN runs r ON r.id=s.added_run AND r.user_id=s.user_id "
-                                  "WHERE s.task_id=? AND s.user_id=? ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
+                                  "WHERE s.task_id=? AND s.user_id=? AND COALESCE(s.signal_key, '') NOT LIKE 'capture:%' "
+                                  "ORDER BY ts IS NULL, ts DESC, s.id DESC", (t["id"], core.user_id)))
         out["people"] = people.for_task(core, t)
         out["cards"] = [cards.view(core, c, t) for c in cards.open_cards(core, t["id"])]
         from . import files
@@ -89,6 +97,7 @@ class App:
         self.send_kicked = {}
         self.gather_kicked = {}
         self.discovering = {}   # (user, client) -> {"state": running | error, "error"}
+        self.refining = {}      # (user, focus phrase) -> True while its AI pass runs
         self.boot = f"{os.getpid()}-{int(time.time() * 1000)}"
         self._mu = threading.Lock()
         self.changed = threading.Condition()
@@ -116,7 +125,15 @@ class App:
             ("POST", r"/tasks", self.capture),
             ("GET", r"/tasks/search", self.search_tasks),
             ("GET", r"/tasks/(\d+)", self.get_task),
-            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back)", self.task_action),
+            ("POST", r"/tasks/(\d+)/(assign|done|park|wait|theirs|letgo|session|reopen|schedule|back|find_out)", self.task_action),
+            ("GET", r"/deliverables", self.list_deliverables),
+            ("POST", r"/deliverables", self.create_deliverable),
+            ("GET", r"/deliverables/(\d+)", self.get_deliverable),
+            ("POST", r"/deliverables/(\d+)/(tier|done|drop|rename)", self.deliverable_action),
+            ("GET", r"/tasks/(\d+)/part_of", self.part_of_choices),
+            ("POST", r"/tasks/(\d+)/part_of", self.part_of),
+            ("GET", r"/tasks/(\d+)/same_as", self.same_as_choices),
+            ("POST", r"/tasks/(\d+)/same_as", self.same_as),
             ("POST", r"/tasks/(\d+)/open", self.open_session),
             ("POST", r"/tasks/(\d+)/moments", self.add_moment),
             ("POST", r"/tasks/(\d+)/files", self.upload),
@@ -138,13 +155,18 @@ class App:
             ("GET", r"/hours", self.hours_get),
             ("PUT", r"/hours", self.hours_put),
             ("GET", r"/groups", self.list_groups),
-            ("POST", r"/groups/(\d+)/(rename|take_out|wrap)", self.group_action),
+            ("POST", r"/groups/(\d+)/(rename|take_out|wrap|finish_later)", self.group_action),
             ("GET", r"/cards", self.list_cards),
             ("POST", r"/cards/(\d+)/answer", self.answer),
             ("GET", r"/undo", self.undo_list),
             ("POST", r"/undo", self.undo),
             ("GET", r"/events", self.events_since),
             ("POST", r"/checkin", self.checkin),
+            ("GET", r"/focus", self.focus_get),
+            ("GET", r"/focus/preview", self.focus_preview),
+            ("POST", r"/focus", self.focus_set),
+            ("POST", r"/screen", self.screen_time),
+            ("GET", r"/screen", self.screen_times),
             ("POST", r"/signals/at_desk", self.at_desk),
             ("POST", r"/tick", self.tick),
             ("GET", r"/me", self.me_get),
@@ -206,6 +228,9 @@ class App:
             kick_executor(self, core)
         elif act == "back":
             tasks.to_back(core, tid)
+        elif act == "find_out":
+            tasks.find_out(core, tid, body.get("question"))
+            start_find_out(core, tid)
         elif act == "reopen":
             where = body.get("where", "front")
             if where not in ("front", "back"):
@@ -363,6 +388,79 @@ class App:
         label = scheduler.suggest_schedule(core, tid, anchor, body.get("reason"), actor="human")
         return {"task_id": tid, "label": label, "key": anchor["key"]}, 201
 
+    # ---- deliverables: named outcomes served by tasks from any channel
+    def list_deliverables(self, core, m, body, q):
+        from . import deliverables
+        rows = core.all("SELECT * FROM deliverables WHERE user_id=? ORDER BY state='open' DESC, tier='active' DESC, id",
+                        (core.user_id,)) if q.get("all") == "1" else deliverables.open_ones(core)
+        return {"deliverables": [deliverables.view(core, d) for d in rows],
+                "active_max": deliverables._cfg(core)["active_max"]}
+
+    def get_deliverable(self, core, m, body, q):
+        from . import deliverables
+        return deliverables.view(core, deliverables.require(core, int(m.group(1))))
+
+    def create_deliverable(self, core, m, body, q):
+        from . import deliverables
+        ids = body.get("task_ids") or []
+        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+            raise FuzzError("task_ids is a list of task ids", "task_ids")
+        did = deliverables.create(core, body.get("title"), body.get("done_when"), ids, body.get("checked_by") or "fuzz",
+                                  body.get("for"), body.get("due"), body.get("tier") or "background")
+        return deliverables.view(core, deliverables.get(core, did)), 201
+
+    def deliverable_action(self, core, m, body, q):
+        from . import deliverables
+        did, act = int(m.group(1)), m.group(2)
+        d = deliverables.require(core, did)
+        if act == "tier":   # swap an active one from its sheet, any day
+            deliverables.set_tier(core, did, body.get("tier"))
+        elif act == "done":
+            deliverables._close(core, d, "done", (body.get("evidence") or "You said it's done.").strip()[:300], "human")
+        elif act == "drop":
+            deliverables._close(core, d, "dropped", None, "human")
+        else:
+            title = (body.get("title") or d["title"]).strip()[:deliverables.TITLE_MAX]
+            done_when = deliverables.check_done_when(body.get("done_when") or d["done_when"])
+            with core.tx("human"):
+                ch = events.Changes()
+                ch.deliverable(did, title=title, done_when=done_when, checked_by=body.get("checked_by") or d["checked_by"])
+                events.emit(core, "deliverable.renamed", changes=ch, data={"deliverable_id": did, "from": d["title"], "to": title})
+        return deliverables.view(core, deliverables.get(core, did))
+
+    def part_of_choices(self, core, m, body, q):
+        from . import deliverables
+        return {"choices": deliverables.choices(core, int(m.group(1)))}
+
+    def part_of(self, core, m, body, q):
+        """{deliverable_id}: "Part of…" from task detail; null takes it out again."""
+        from . import deliverables
+        tid = int(m.group(1))
+        if body.get("deliverable_id") is None:
+            deliverables.unlink(core, tid)
+        elif isinstance(body["deliverable_id"], int):
+            deliverables.link(core, tid, body["deliverable_id"])
+        else:
+            raise FuzzError("deliverable_id is the deliverable this task is part of, or null", "deliverable_id")
+        return task_view(core, tasks.require(core, tid))
+
+    def same_as_choices(self, core, m, body, q):
+        """The open tasks this one is most likely the same as, for "Same as…" in task detail."""
+        from .matching import dupes
+        return {"choices": dupes.same_as_choices(core, int(m.group(1)))}
+
+    def same_as(self, core, m, body, q):
+        """{other_id}: this task is the same as that one, so it merges into it. Undo splits it back out."""
+        if not isinstance(body.get("other_id"), int):
+            raise FuzzError("other_id is the task this one is the same as", "other_id")
+        tid = int(m.group(1))
+        if tasks.require(core, tid)["state"] not in states.LIVE:
+            raise FuzzError("Only an open task can be merged", "task_id", 409)
+        dup = next((c for c in cards.open_cards(core, tid) if c["kind"] == "duplicate" and c["other_id"] == body["other_id"]),
+                   None)
+        mid = matching.merge(core, tid, body["other_id"], card=dup)
+        return {"task_id": tid, "into": tasks.live(core, tid)["id"], "merge_id": mid}
+
     def list_groups(self, core, m, body, q):
         return {"groups": groups.list_groups(core, None if q.get("all") == "1" else tasks.finished_cutoff(core))}
 
@@ -374,12 +472,23 @@ class App:
             if not isinstance(body.get("task_id"), int):
                 raise FuzzError("task_id is the task to take out", "task_id")
             groups.take_out(core, gid, body["task_id"])
+        elif act == "finish_later":   # you stopped partway: Fuzz goes ahead with the answers it has
+            line = groups.finish_later(core, gid)
+            start_group_run(core)
+            return dict(groups.view(core, groups.require(core, gid)), collected=line)
         else:
             groups.wrap(core, gid)
         return groups.view(core, groups.require(core, gid))
 
     def list_cards(self, core, m, body, q):
-        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core)], "moment": cards.moment(core)}
+        """group_run: the group you're working through, so the UI can show its band (see groups.run)."""
+        cur = groups.run(core)
+        from . import focus
+        front = int(q["front"]) if (q.get("front") or "").isdigit() else None   # the card on screen stays first
+        return {"cards": [cards.view(core, c, t) for c, t in cards.queue(core, front)], "moment": cards.moment(core),
+                "focus": focus.current(core), "focus_chips": focus.chips(core),
+                "group_run": {"group_id": cur["group_id"], "tasks": cur["tasks"]} if cur else None,
+                "work": core.config.get("work")}
 
     def answer(self, core, m, body, q):
         if "option" not in body:
@@ -397,6 +506,10 @@ class App:
             onboarding.after_answer(core, card["task_id"])
         if body["option"] in ("schedule", "wait", "keep_waiting", "nudge"):   # Fuzz has something to look into or draft
             kick_executor(self, core)
+        if out.get("collected") or option == "add_to_reply":   # Fuzz can start on the ones you handed it
+            start_group_run(core)
+        if option == "find_out":   # at once, not at the next scheduled run: the card comes back as soon as it lands
+            start_find_out(core, card["task_id"])
         return out
 
     def undo_list(self, core, m, body, q):
@@ -412,6 +525,64 @@ class App:
         """The UI asked how you're doing: {answer, follow_up?}. It decides when to ask; the core keeps the answer."""
         from . import checkins
         return checkins.record(core, body.get("answer"), body.get("follow_up")), 201
+
+    # ---- Focus: what you're working on this session
+    def focus_get(self, core, m, body, q):
+        """The session's focus, and the chips the session question offers."""
+        from . import focus
+        return {"focus": focus.current(core), "chips": focus.chips(core)}
+
+    def focus_preview(self, core, m, body, q):
+        """What a phrase would match right now (the instant pass), before you confirm. It also starts the AI
+        pass in the background, so it's often done by the time you press Enter."""
+        from . import focus
+        text = (q.get("q") or "").strip()
+        out = focus.match(core, text)
+        if text and not out["quick"]:
+            self.refine_soon(core, text)
+        return out
+
+    def focus_set(self, core, m, body, q):
+        """{text, task_ids?} or {skip: true}. The queue reorders at once; the AI pass refines it later."""
+        from . import focus
+        cur = focus.set_focus(core, body.get("text"), body.get("task_ids"), skip=bool(body.get("skip")))
+        if cur and cur.get("text") and not cur.get("quick"):
+            self.refine_soon(core, cur["text"])
+        return {"focus": cur}
+
+    def refine_soon(self, core, text):
+        """One AI pass per phrase at a time, off the request thread."""
+        from . import focus
+        key = (core.user_id, focus.norm(text))
+        if self.refining.get(key) or not config.role_engine(core.config, "executor")[0]:
+            return False
+        self.refining[key] = True
+
+        def work():
+            try:
+                focus.ai_pass(core, text, lock=core.lock)
+            finally:
+                self.refining.pop(key, None)
+                self._notify()
+        threading.Thread(target=work, daemon=True).start()
+        return True
+
+    def screen_time(self, core, m, body, q):
+        """The UI says how long a card was on screen and how long you were away meanwhile: {card_id?, task_id?,
+        mode: sort|work, shown_at, left_at?, away_s?, how?}. Kept for tuning the stuck thresholds; not an event."""
+        if not isinstance(body.get("shown_at"), str):
+            raise FuzzError("shown_at is when the card came on screen (ISO time)", "shown_at")
+        if body.get("mode") not in (None, "sort", "work"):
+            raise FuzzError("mode is sort or work", "mode")
+        rid = core.q("INSERT INTO screen_times (user_id, card_id, task_id, mode, shown_at, left_at, away_s, how) "
+                     "VALUES (?,?,?,?,?,?,?,?)", (core.user_id, body.get("card_id"), body.get("task_id"), body.get("mode"),
+                                                  body["shown_at"], body.get("left_at"), int(body.get("away_s") or 0),
+                                                  (body.get("how") or "")[:40] or None)).lastrowid
+        return {"id": rid}, 201
+
+    def screen_times(self, core, m, body, q):
+        return {"times": core.all("SELECT card_id, task_id, mode, shown_at, left_at, away_s, how FROM screen_times "
+                                  "WHERE user_id=? ORDER BY id DESC LIMIT ?", (core.user_id, min(int(q.get("limit") or 200), 2000)))}
 
     def at_desk(self, core, m, body, q):
         return {"came_back": scheduler.wake(core)}
@@ -657,6 +828,25 @@ def kick_executor(app, core, now=None, wait=None):
     if now - app.gather_kicked.get(core.user_id, 0) < (wait or GATHER_KICK_SECONDS):
         return False
     app.gather_kicked[core.user_id] = now
+    engine.run_now(core, "executor")
+    return True
+
+
+def start_find_out(core, task_id):
+    """Find out… starts an executor run on that task now. One already running claims it next (gathering goes
+    first), so no second run is started."""
+    if not config.role_engine(core.config, "executor")[0] or executor_running(core):
+        return False
+    engine.run_now(core, "executor", task_id)
+    return True
+
+
+def start_group_run(core):
+    """A group was collected: start an executor run for its claim, unless one is going (it claims next)."""
+    if not config.role_engine(core.config, "executor")[0] or executor_running(core):
+        return False
+    if not scheduler.work_waiting(core):
+        return False
     engine.run_now(core, "executor")
     return True
 

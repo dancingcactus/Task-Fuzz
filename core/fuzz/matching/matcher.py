@@ -10,6 +10,7 @@ The thresholds and floors are the spike's.
 
 import json
 import math
+import re
 from datetime import timedelta
 
 from .. import cards, events, groups, states, tasks
@@ -40,7 +41,7 @@ DUP_CONF = 0.60
 
 UNCHANGING = ("email",)   # sources whose messages are never edited: one signal each, whatever the version
 SOURCE_LABEL = {"email": "Email", "slack": "Slack", "meeting": "Meeting", "calendar": "Calendar", "fuzz": "Fuzz"}
-BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy")
+BRIEF_KEYS = ("context_md", "question", "effort_mins", "energy", "steps")
 
 
 def _family(model):
@@ -186,11 +187,16 @@ def eligible_tasks(ctx):
 
 
 def _sibling_tasks(ctx, cand):
-    """Tasks born from the same signal: separate asks in one message never match each other."""
+    """Tasks born from the same signal: separate asks in one message never match each other. An ask Fuzz
+    split off never matches the task it came from either."""
     rows = ctx.core.q(
         "SELECT s.task_id FROM sources s JOIN candidates c ON c.id=s.candidate_id "
         "WHERE c.user_id=? AND c.signal_key=? AND s.role='origin'", (_uid(ctx), cand["signal_key"])).fetchall()
-    return {r["task_id"] for r in rows}
+    out = {r["task_id"] for r in rows}
+    m = re.match(r"^fuzz:task(\d+):", candidate_signal(ctx, cand).get("anchor") or "")
+    if m and cand["signal_key"].startswith("fuzz:"):
+        out.add(int(m.group(1)))
+    return out
 
 
 def stage1_anchor(ctx, cand, eligible):
@@ -272,6 +278,8 @@ def propose(ctx):
     cands = ctx.core.q("SELECT * FROM candidates WHERE user_id=? AND status='new' ORDER BY id", (_uid(ctx),)).fetchall()
     stats = {}
     fam = _family(ctx.embedder.model) if ctx.embedder else "hash"
+    # tasks matching makes from here on are this run's: a rule-made new task is checked against them too
+    ctx.run_start = ctx.core.one("SELECT COALESCE(MAX(id), 0) m FROM decisions WHERE user_id=?", (_uid(ctx),))["m"]
     for cand in cands:
         eligible = eligible_tasks(ctx)
         hits = stage1_anchor(ctx, cand, eligible)
@@ -303,7 +311,8 @@ def _decide(ctx, cand, eligible, hits, fam):
     if ctx.embed_ok:
         short = {t for t in short if escore[t] >= STRONG_ENTITY or sem.get(t, 0) >= SEM_MIN_ENTITY[fam]}
         if not short and not hits:
-            open_ids = [t for t, r in eligible.items() if r["state"] in states.LIVE]
+            siblings = _sibling_tasks(ctx, cand)
+            open_ids = [t for t, r in eligible.items() if r["state"] in states.LIVE and t not in siblings]
             sem_all = stage3_semantic(ctx, cand, open_ids) or {}
             short = {t for t, s in sem_all.items() if s >= SEM_FLOOR[fam]}
             sem.update(sem_all)
@@ -314,6 +323,10 @@ def _decide(ctx, cand, eligible, hits, fam):
     if not keep:
         if cand["owner"] not in ("me", "unclear", None):
             return record(ctx, cand, "rule", "discarded", reason=f"Ask is for {cand['owner']}, no related task")
+        from . import dupes   # an ask made earlier in this run may be the same one (with no older task to judge against)
+        mate = dupes.same_run(ctx, cand, getattr(ctx, "run_start", None))
+        if mate:
+            return record(ctx, cand, "rule", "possible_duplicate", mate[0], confidence=mate[2], reason=mate[1])
         return record(ctx, cand, "semantic" if ctx.embed_ok else "entity", "new", reason="No anchor, entity or meaning match")
 
     item = _judgment_item(ctx, cand, keep, hits, escore, shared, sem)
@@ -333,12 +346,17 @@ def _judgment_item(ctx, cand, keep, hits, escore, shared, sem):
             "title_history": t.get("title_history") or [],
             "recent_history": [x["text"] for x in events.task_log(ctx.core, tid, 5)],
         })
+    frozen = ctx.core.one("SELECT COALESCE(MAX(id), 0) m FROM decisions WHERE user_id=?", (_uid(ctx),))["m"]
     return {
         "candidate_id": cand["id"], "ask": cand["ask"], "owner": cand["owner"], "due": cand["due"],
+        "frozen_after": frozen,   # tasks matching makes after this aren't on the shortlist (see dupes.same_run)
         "source": s["source"], "from": (s.get("from") or {}).get("name"), "ts": s.get("ts"),
         "link": s.get("link"), "quote": s.get("quote"),
         "needs_new_ask_test": any(x["state"] in states.CLOSED for x in short),
         "shortlist": short,
+        # what you're delivering: a verdict may say deliverable_id when the ask is part of one
+        "deliverables": [{"id": d["id"], "title": d["title"], "state": d["state"]} for d in ctx.core.all(
+            "SELECT id, title, state FROM deliverables WHERE user_id=? AND state!='dropped' ORDER BY id", (_uid(ctx),))],
     }
 
 
@@ -399,8 +417,9 @@ def record(ctx, cand, stage, outcome, task_id=None, other_task_id=None, verdict=
 
 
 def _brief(cand):
+    """The brief an ask came with, as task fields (the extractor's steps estimate is the task's step_count)."""
     c = json.loads(cand["payload"]) if isinstance(cand["payload"], str) else (cand["payload"] or {})
-    return {k: c[k] for k in BRIEF_KEYS if c.get(k) is not None}
+    return {("step_count" if k == "steps" else k): c[k] for k in BRIEF_KEYS if c.get(k) is not None}
 
 
 def create_task(ctx, cand, decision_id):
@@ -585,9 +604,22 @@ def apply_verdicts(ctx, verdicts):
             outcome = "context" if other else "related"
         else:
             outcome, tid = ("discarded", None) if other else ("new", None)
+        reason = v.get("reason")
+        if outcome == "new":   # asks judged in one run never saw each other's tasks
+            from . import dupes
+            item = json.loads(cand["pending_item"]) if cand["pending_item"] else {}
+            mate = dupes.same_run(ctx, cand, item.get("frozen_after"))
+            if mate:
+                outcome, tid, reason = "possible_duplicate", mate[0], mate[1]
         res = record(ctx, cand, "judge", outcome, tid, verdict=verdict, confidence=conf,
-                     reason=v.get("reason"), scores={"judge": conf}, new_title=v.get("new_title"))
+                     reason=reason, scores={"judge": conf}, new_title=v.get("new_title"))
         stats[res["outcome"]] = stats.get(res["outcome"], 0) + 1
+        if v.get("deliverable_id") is not None:   # "part of deliverable D": linked, asked, or kept for its card
+            from .. import deliverables
+            d = core.one("SELECT task_id FROM decisions WHERE id=?", (res["decision_id"],))
+            t = tasks.live(core, (d or {}).get("task_id")) if d else None
+            if t:
+                deliverables.from_verdict(core, t["id"], v["deliverable_id"], conf, MERGE_CONF)
     return stats
 
 

@@ -1,7 +1,7 @@
 ---
 name: fuzz-send
 description: Send the drafts the person approved in Fuzz, with your own connector tools, exactly as written. Use when asked to "send my approved Fuzz drafts" or "run the Fuzz sender".
-prompt_version: sender-0.3
+prompt_version: sender-0.4
 ---
 
 # Fuzz sender
@@ -15,7 +15,7 @@ delete anything else.
 
 ## The loop
 
-1. Call `whoami` once, passing this skill's `prompt_version` (`sender-0.3`).
+1. Call `whoami` once, passing this skill's `prompt_version` (`sender-0.4`).
 2. Call `claim_next_send`. If it returns nothing, stop and say why in one line.
 3. Send `body` to `target` with the connector tool that fits `kind`:
    - `email.reply`: reply in `thread`, the message it answers (find it by its `anchor` or `link`).
@@ -23,6 +23,11 @@ delete anything else.
    - `slack.message`: post in the channel or DM the target names, in `thread` when there is one.
    - `calendar.invite`: create the event the body describes, with the target's attendees.
    - `nudge.email`, `nudge.slack`: a follow-up in `thread`.
+   - `calendar_hold`: a hold for time they booked. With `hold.event_id`, move that event to
+     `hold.start`–`hold.end`; without one, create a new event of their own (no attendees) titled
+     `hold.title`, at `hold.start`–`hold.end`, with `body` as its description. Then `mark_sent` with
+     `link` set to the event's id. Never change any other event.
+   - `calendar_remove`: delete the event `hold.event_id` (it's Fuzz's own hold), then `mark_sent`.
    If the draft has `attachments`, attach each file (its `path`) to the message. If your tool for this
    kind can't attach files, call `send_failed` and say so; don't send it without them.
 4. When the tool succeeds, call `mark_sent` with `where` (like "Slack, #offsite-planning") and the

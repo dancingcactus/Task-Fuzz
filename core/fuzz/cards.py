@@ -8,7 +8,10 @@ from . import events, timeres
 from .db import FuzzError
 
 FAMILY = {"task": "routing", "duplicate": "question", "entity_person": "question", "entity_term": "question",
-          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval"}
+          "is_task": "question", "draft": "approval", "nudge": "approval", "permission": "approval",
+          "hold": "approval",   # a hold on your calendar for booked time (or taking one off)
+          "part_of": "deliverables", "deliverable": "deliverables", "deliverable_new": "deliverables",
+          "week_plan": "deliverables"}
 
 OPTIONS = {
     "duplicate": ["merge", "keep_separate", "not_sure"],
@@ -18,17 +21,29 @@ OPTIONS = {
     "draft": ["approve", "edit", "send_back", "schedule", "done"],
     "nudge": ["approve", "edit", "not_yet", "schedule"],
     "permission": ["allow_once", "always_allow", "deny"],
+    "hold": ["approve", "always_allow", "skip"],
+    "part_of": ["yes", "no", "not_sure"],
+    "deliverable": ["keep_going", "make_active", "its_done", "let_go", "not_sure"],   # the card's own ask narrows them
+    "deliverable_new": ["track", "no", "not_sure"],
+    "week_plan": ["keep_these", "keep_steps", "not_now"],
 }
-TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop"]
+# schedule is Later (bring it back then); book is Book time (hold the time). do_now, after_others and
+# first_step are a big task's choices with book; decide and draft_it answer "What's in the way?"
+TASK_OPTIONS = ["assign", "session", "schedule", "done", "park", "wait", "someone_else", "drop", "find_out",
+                "book", "do_now", "after_others", "first_step", "decide", "draft_it"]
+BIG_LEAD = ["do_now", "book", "after_others", "first_step"]   # a big task's card leads with these
+DOING_OPTIONS = ["done", "pause", "assign", "session", "book", "find_out"]   # the working card's ways out
+WAY_OPTIONS = ["find_out", "do_now", "book", "first_step", "decide", "draft_it", "after_others", "drop"]
 REVIEW_OPTIONS = ["keep_parked", "now", "schedule", "drop"]   # a parked task back to ask "Still want this?"
 CHECK_BACK_OPTIONS = ["got_it", "nudge", "keep_waiting", "drop"]   # a waiting task back to ask "Did they get back to you?"
 # a task you've scheduled again and again, back to ask what's in the way: unclear (Fuzz works out the
 # first step), now (it still matters: an ordinary card), or park, let go, or one more time
-PUT_OFF_OPTIONS = ["unclear", "now", "schedule", "park", "drop"]
+PUT_OFF_OPTIONS = ["unclear", "now", "book", "schedule", "park", "drop"]
 SCHEDULED = ("task", "draft", "nudge")   # cards that carry Schedule options ("Not now" on a draft picks a time)
 
 SUGGESTED = {"duplicate": "merge", "entity_person": "same", "entity_term": "define", "is_task": "mine",
-             "draft": "approve", "nudge": "approve", "permission": "allow_once"}
+             "draft": "approve", "nudge": "approve", "permission": "allow_once", "hold": "approve",
+             "part_of": "yes", "deliverable": "keep_going", "deliverable_new": "track", "week_plan": "keep_these"}
 
 PROMPTS = {
     "task": "What should happen to this?",
@@ -39,11 +54,18 @@ PROMPTS = {
     "draft": "Is this draft okay?",
     "nudge": "Can Fuzz chase this reply?",
     "permission": "Can Fuzz use {resource}?",
+    "hold": "Add a hold for this to your calendar?",
+    "part_of": "Is this part of that deliverable?",
+    "deliverable": "Where is this deliverable?",
+    "deliverable_new": "Track these tasks as one deliverable?",
+    "week_plan": "Which are this week’s active ones?",
 }
 PUT_OFF_PROMPT = "This keeps coming back. Is something in the way?"
 
 # Variant tags that only make sense while the task sits in triage.
-TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off"}
+TRIAGE_TAGS = {"handed_back", "result", "returning", "reopened", "stale", "review", "check_back", "put_off",
+               "found_out", "doing", "block", "after_others", "ask_book", "in_the_way", "first_step",
+               "block_end", "missed_block"}
 
 
 def open_cards(core, task_id):
@@ -83,9 +105,13 @@ def create(core, kind, task_id=None, other_id=None, prompt=None, reason=None, su
     from . import tasks
     cid = core.new_id("cards")
     ch = events.Changes()
+    payload = dict(payload or {})
+    if where == "next":   # right after the card in front (a Find out… answer that just landed)
+        front = queue(core)
+        payload.update(next=True, after=front[0][0]["id"] if front else None)
     fields = dict(kind=kind, task_id=task_id, other_id=other_id, prompt=prompt, reason=reason,
-                  suggested=suggested or SUGGESTED.get(kind), payload=payload or {}, status="open",
-                  postponed=0, order_key=next_order(core, where),
+                  suggested=suggested or SUGGESTED.get(kind), payload=payload, status="open",
+                  postponed=0, order_key=next_order(core, "back" if where == "next" else where),
                   created_at=core.now_iso())
     if kind != "task":
         fields["options"] = OPTIONS[kind]
@@ -99,7 +125,8 @@ def create(core, kind, task_id=None, other_id=None, prompt=None, reason=None, su
 def sync(core, task_id, where="back"):
     """Make sure a task has the card its state calls for. Call at the end of any command that moves a task.
 
-    where: "front" puts a new card at the head of the queue (you pulled it back, a reply came in)."""
+    where: "front" puts a new card at the head of the queue (you pulled it back, a reply came in); "next"
+    right after the card in front (a Find out… answer)."""
     from . import tasks
     t = tasks.get(core, task_id)
     if t is None:
@@ -119,14 +146,43 @@ def sync(core, task_id, where="back"):
                         data={"kind": "is_task", "card_id": c["id"], "added": task_id})
         return c["id"]
     if t["state"] == "triage" and not open_:
+        from . import drafts
+        reply = not tags and drafts.group_reply(core, t)   # a late ask from a thread whose reply waits for your OK
+        if reply:
+            return create(core, "task", task_id, payload={"reply_draft": reply["id"]}, suggested="add_to_reply",
+                          reason=f"A reply to {_group_title(core, t)} is waiting for your OK. Add this to it?", where=where)
+        from . import booking
+        if "block_end" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"), prompt="How far did you get?", suggested="done",
+                          where="front" if where == "back" else where)
+        if "missed_block" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"), prompt="The block for this went by. Find another time?",
+                          suggested="book", where=where)
+        if "doing" in tags:   # the working card: Do it now, a booked block starting, or step 1 of a big one
+            return create(core, "task", task_id, reason=t.get("reason"), suggested="done",
+                          prompt="Step 1 is about two minutes. Then book the rest." if "first_step" in tags
+                          else "You’re on this one.", where="front" if where == "back" else where)
+        if "in_the_way" in tags:
+            from .tasks import WAY_PROMPT
+            return create(core, "task", task_id, reason=t.get("reason"), prompt=WAY_PROMPT, suggested="find_out",
+                          payload={"at_end": True}, where=where)
+        if "ask_book" in tags or "after_others" in tags:
+            return create(core, "task", task_id, reason=t.get("reason"),
+                          suggested="book" if "ask_book" in tags else "do_now",
+                          payload={"at_end": True} if "after_others" in tags else None, where=where)
         return create(core, "task", task_id, reason=t.get("reason"),
                       prompt=PUT_OFF_PROMPT if "put_off" in tags else None,
-                      suggested=review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
+                      suggested="book" if booking.is_big(core, t) and not t.get("gaps") and not (
+                          {"review", "check_back", "put_off", "stale", "result", "handed_back"} & set(tags))
+                      else review_suggests(core, t) if "review" in tags else "nudge" if "check_back" in tags
                       else "unclear" if "put_off" in tags else "keep" if "stale" in tags else "done" if "result" in tags
+                      # the brief has gaps: finding out comes first
+                      else "find_out" if t.get("gaps") and "found_out" not in tags
                       else ("quick" if t.get("quick_answers") else "assign"),
                       where="back" if "handed_back" in tags else where)
     if t["state"] == "review" and not any(c["kind"] in ("draft", "nudge") for c in open_):
-        d = core.one("SELECT * FROM drafts WHERE task_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (task_id,))
+        d = core.one("SELECT * FROM drafts WHERE task_id=? AND status='pending' AND kind NOT IN ('calendar_hold', "
+                     "'calendar_remove') ORDER BY id DESC LIMIT 1", (task_id,))
         if d:
             kind = "nudge" if d["kind"].startswith("nudge") else "draft"
             return create(core, kind, task_id, payload={"draft_id": d["id"]})
@@ -173,6 +229,15 @@ def review_suggests(core, t):
 
 def task_options(task):
     tags = task.get("variant_tags") or []
+    from .booking import BLOCK_END_OPTIONS, MISSED_OPTIONS
+    if "block_end" in tags:   # "How far did you get?"
+        return list(BLOCK_END_OPTIONS)
+    if "missed_block" in tags:   # "The block for this went by. Find another time?"
+        return list(MISSED_OPTIONS)
+    if "doing" in tags:
+        return list(DOING_OPTIONS)
+    if "in_the_way" in tags:
+        return list(WAY_OPTIONS)
     if "review" in tags:
         return list(REVIEW_OPTIONS)
     if "check_back" in tags:
@@ -187,11 +252,23 @@ def task_options(task):
     return opts
 
 
+def _group_title(core, t):
+    g = core.one("SELECT title FROM groups WHERE id=?", (t["group_id"],))
+    return f"“{g['title']}”" if g else "this thread"
+
+
 def options(card, task):
     if card["kind"] == "task":
-        return task_options(task)
+        opts = task_options(task)
+        if (card.get("payload") or {}).get("reply_draft"):
+            opts.insert(0, "add_to_reply")
+        return opts
     if card["kind"] in ("draft", "nudge"):   # the kind's options now, so a card made before Schedule can use it
         return OPTIONS[card["kind"]]
+    if card["kind"] == "deliverable" and (card.get("payload") or {}).get("options"):
+        return list(card["payload"]["options"])
+    if card["kind"] == "week_plan":
+        return ["keep_steps", "not_now"] if (card.get("payload") or {}).get("steps") else ["keep_these", "not_now"]
     return card.get("options") or OPTIONS[card["kind"]]
 
 
@@ -202,11 +279,14 @@ def moment(core):
     return (row or {}).get("value") or "any"
 
 
-def queue(core):
-    """Open cards in triage order: time-sensitive first, handbacks and postponed last, then the moment, then order.
-    A card you sent to the end of the list waits behind all of them, deadline or not."""
-    from . import tasks
+def queue(core, front=None):
+    """Open cards in triage order: the working card (a booked block), then time-sensitive, then your focus,
+    handbacks and postponed last, then the moment, then order. A card you sent to the end of the list waits
+    behind all of them, deadline or not. front: the card on screen, which stays first while it's open (a
+    focus or a refined focus never changes the card in front)."""
+    from . import focus, tasks
     m = moment(core)
+    fids = focus.focus_ids(core)
     cards = core.all("SELECT * FROM cards WHERE user_id=? AND status='open'", (core.user_id,))
     keyed = []
     for c in cards:
@@ -220,10 +300,49 @@ def queue(core):
         elif m == "low":
             fits = 0 if (t and t.get("energy") == "low") else 1
         at_end = 1 if (c.get("payload") or {}).get("at_end") else 0
-        k = (at_end, urgent, back, fits, c["order_key"] or 0)
+        # the working card (Do it now, or a booked block that started) is first, ahead of deadlines; so are
+        # Monday's deliverable cards, that day
+        doing = 0 if ("doing" in tags and c["kind"] == "task") or (c.get("payload") or {}).get("monday") else 1
+        infocus = 0 if t and t["id"] in fids else 1
+        k = (doing, at_end, urgent, infocus, back, fits, c["order_key"] or 0)
         keyed.append((k, c, t))
-    keyed.sort(key=lambda x: x[0])
-    return [(c, t) for _, c, t in keyed]
+    out = [(c, t) for _, c, t in sorted(_back_to_back(core, keyed), key=lambda x: x[0])]
+    # A Find out… answer that landed comes next, right after the card in front, which never changes under you
+    # (and once that card is answered, it's the one in front)
+    nxt = [x for x in out if (x[0].get("payload") or {}).get("next")]
+    if nxt:
+        rest = [x for x in out if not (x[0].get("payload") or {}).get("next")]
+        behind = rest[:1] if rest and any((x[0].get("payload") or {}).get("after") == rest[0][0]["id"] for x in nxt) else []
+        out = behind + nxt + rest[len(behind):]
+    if front is not None:   # the card on screen stays first
+        pin = [x for x in out if x[0]["id"] == front]
+        out = pin + [x for x in out if x[0]["id"] != front]
+    return out
+
+
+def _back_to_back(core, keyed):
+    """A group's cards come one after another, where its first one would be; the group you're working
+    through comes before everything else, new arrivals and deadlines too. A card you sent to the end
+    stays there. Returns the rows with their final keys."""
+    from . import groups
+    run = groups.run(core)
+    lead = {}
+    for k, c, t in keyed:
+        gid = (t or {}).get("group_id")
+        if gid and k[0] and not k[1] and c["kind"] in groups.ROUTING:
+            lead.setdefault(gid, []).append(k)
+    lead = {g: min(ks) for g, ks in lead.items() if len(ks) > 1 or (run and run["group_id"] == g)}
+    out = []
+    for k, c, t in keyed:
+        gid = (t or {}).get("group_id")
+        if not k[0]:   # the working card stays first
+            out.append(((-1,) + k + (0,) + k, c, t))
+        elif gid in lead and not k[1] and c["kind"] in groups.ROUTING:
+            first = 0 if run and run["group_id"] == gid else 1
+            out.append(((first,) + lead[gid] + (gid,) + k, c, t))
+        else:
+            out.append(((1,) + k + (0,) + k, c, t))
+    return out
 
 
 def task_summary(t):
@@ -232,7 +351,7 @@ def task_summary(t):
     keys = ("id", "state", "assignee", "title", "ask", "owner", "due", "context_md", "summary", "question",
             "quick_answers", "variant_tags", "reason", "effort_mins", "energy", "deadline_level", "notes", "waiting_on",
             "schedule_anchor", "schedule_fire_at", "created_at", "state_changed_at", "group_id", "next_step",
-            "reschedules")
+            "reschedules", "step_count", "gaps", "find_out")
     return {k: t.get(k) for k in keys}
 
 
@@ -261,6 +380,16 @@ def view(core, card, task=None):
         out["asks"] = [task_summary(a) for a in many]
     if card["kind"] == "task":
         out["schedule_options"] = card.get("schedule_options") or []
+        if task:   # its size, a big task's four choices, and the times Book time offers
+            from . import booking
+            sz = booking.size(core, task)
+            if sz:
+                out["size"] = sz
+            plain = not ({"review", "check_back", "put_off", "doing", "result", "handed_back"} & set(task.get("variant_tags") or []))
+            if sz and sz["big"] and plain:
+                out["lead"] = list(BIG_LEAD)
+            if "book" in out["options"]:
+                out["book_options"] = booking.options(core, task)
     elif card["kind"] in SCHEDULED:   # a draft card made before it had Schedule options works them out now
         out["schedule_options"] = card.get("schedule_options") or (timeres.build_options(core, task) if task else [])
     if other:

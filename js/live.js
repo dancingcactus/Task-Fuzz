@@ -15,7 +15,7 @@
   var KEY = 'fuzz.token', WHO = 'fuzz.account', NOTE = 'fuzz.account.note';
   var token = null, on = false, quiet = 0, gen = 0, pending = 0, chain = Promise.resolve(), recording = null;
   var unpin = false, extra = null, syncing = false, again = false, syncTimer = 0, detail = {}, sig = '', undoBlocked = {}, lastId = 0, said = {};
-  var base = {}, listeners = [], served = false;
+  var base = {}, listeners = [], served = false, collected = null;
 
   var STATE = { queued: 'ai-queued', working: 'ai', merged: 'resolved' };
   var VIA = { email: 'Email', slack: 'Slack', calendar: 'Calendar invite', nudge: 'The same thread' };
@@ -102,7 +102,9 @@
   function decide(it, option, value, action, body) {
     var cardId = it.cardId, opts = it.cardOptions || [], tid = it.coreId;
     return function () {
-      if (cardId && opts.indexOf(option) > -1) return api('POST', '/cards/' + cardId + '/answer', value === undefined ? { option: option } : { option: option, value: value });
+      /* the last card of a group comes back with Fuzz's plan for it ("Got all 4. …"), for Triage to say */
+      if (cardId && opts.indexOf(option) > -1) return api('POST', '/cards/' + cardId + '/answer', value === undefined ? { option: option } : { option: option, value: value })
+        .then(function (r) { if (r && r.collected) collected = r.collected; return r; });
       if (!action) throw new Error('This card can’t do that any more. Refresh the page.');
       return api('POST', '/tasks/' + tid + '/' + action, body || {});
     };
@@ -228,8 +230,28 @@
       steps: t.steps_used || 0, needsPermission: tags.indexOf('needs_permission') > -1,
       cardId: c ? c.id : null, cardKind: c ? c.kind : null, cardOptions: c ? c.options : [],
       scheduleOptions: c && c.schedule_options && c.schedule_options.length ? c.schedule_options : null,
+      /* a late ask from a thread whose reply is waiting for your OK: it can join that reply */
+      joinReply: !!(c && (c.options || []).indexOf('add_to_reply') > -1), joinReason: c && c.options && c.options.indexOf('add_to_reply') > -1 ? c.reason : '',
+      /* its size, "≈ 1½ h · 6 steps", and whether it's big (the core's call) */
+      effortMins: t.effort_mins || null, stepCount: t.step_count || null, gaps: t.gaps || [],
+      /* Find out…: the answer is in, at the top of the card; or the brief has gaps, so it's suggested */
+      foundOut: tags.indexOf('found_out') > -1 && state === 'triage', findOutQ: t.find_out || '',
+      suggestFindOut: !!(c && c.suggested === 'find_out'),
+      /* working sessions: the size and whether it's big, Book time's options, the working card, "What's in the way?" */
+      size: c && c.size || null, sizeLabel: c && c.size ? c.size.label : '', suggested: c ? c.suggested : null,
+      bookOptions: c && c.book_options ? c.book_options : null,
+      doing: tags.indexOf('doing') > -1 && state === 'triage', firstStepMode: tags.indexOf('first_step') > -1 && state === 'triage',
+      inTheWay: tags.indexOf('in_the_way') > -1 && state === 'triage', afterOthers: tags.indexOf('after_others') > -1,
+      /* booked time: in the block, at its end ("How far did you get?"), and a hold for your OK */
+      block: tags.indexOf('block') > -1 && state === 'triage', blockEnd: tags.indexOf('block_end') > -1 && state === 'triage',
+      holdPrompt: c && c.kind === 'hold' ? c.prompt : '', holdWhen: c && c.kind === 'hold' ? c.reason || '' : '',
+      holdRemove: !!(c && c.kind === 'hold' && c.payload && c.payload.kind === 'calendar_remove'),
+      /* its deliverable ("For …"), and a part_of card asking whether it belongs to one */
+      deliverable: t.deliverable || null, partOfPrompt: c && c.kind === 'part_of' ? c.prompt : '',
       group: t.group_id ? 'g' + t.group_id : null
     };
+    if (f.foundOut) f.aiHeading = 'You asked: ' + (t.find_out || 'what you needed');
+    if (tags.indexOf('finding_out') > -1) f.now = 'Finding out: ' + (t.find_out || '');
     /* Waiting on someone while Fuzz works out when to check back: it's already with them, not with Fuzz */
     if (tags.indexOf('plan_wait') > -1) { f.state = 'waiting'; f.gathering = false; f.nextCheck = 'Fuzz is picking a time'; }
     /* Time-sensitive tasks get the rush treatment; others with a date get the due bar */
@@ -284,7 +306,9 @@
     syncing = true; var g = gen;
     return Promise.all([api('GET', '/tasks'), api('GET', '/cards'), api('GET', '/undo'),
       /* A core from before groups has no /groups: the queue still loads, just without "From …" lines */
-      api('GET', '/groups').catch(function () { return { groups: [] }; })]).then(function (r) {
+      api('GET', '/groups').catch(function () { return { groups: [] }; }),
+      api('GET', '/deliverables').catch(function () { return { deliverables: [] }; })]).then(function (r) {
+      Store.get().deliverables = r[4].deliverables || [];   /* the Lineup's Deliverables section and sheet */
       var list = r[0].tasks, cards = r[1].cards, groups = r[3].groups;
       if (r[0].max_working) Store.setSlots(r[0].max_working);
       if (r[0].work_in) Store.workIn = r[0].work_in;
@@ -300,6 +324,9 @@
         var listed = {}; list.forEach(function (t) { listed[t.id] = true; });
         Object.keys(detail).forEach(function (id) { if (!listed[id]) delete detail[id]; });
         Store.get().finishedOlder = r[0].finished_older || 0;
+        Store.get().work = r[1].work || null;   /* the stuck thresholds and what counts as big */
+        Store.get().focus = r[1].focus || null;   /* this session's focus (the core orders the cards by it) */
+        Store.get().focusChips = r[1].focus_chips || [];
         apply(list, cards, r[1].moment, groups);
       });
     }).catch(function (e) {
@@ -332,6 +359,7 @@
   /* The tasks that came from the same place. A meeting's notes are a file, which a browser page can't open. */
   function toGroup(g) {
     return { id: 'g' + g.id, coreId: g.id, title: g.title, source: g.source, link: webUrl(g.link), closed: g.wrapped,
+      closedLine: g.closed_line || null,
       members: (g.tasks || []).map(function (t) { return { id: 't' + t.id, state: STATE[t.state] || t.state }; }) };
   }
 
@@ -346,9 +374,18 @@
       keep[id] = true;
     });
     /* Captures still on their way to the core stay */
-    st.items.forEach(function (i) { if (!i.coreId && !keep[i.id]) items.push(i); });
+    st.items.forEach(function (i) { if (!i.coreId && !keep[i.id] && i.kind !== 'deliv') items.push(i); });
+    /* Deliverable cards about no single task (last week, this week's pick and steps, a new one to track) */
+    cards.forEach(function (c) {
+      if (c.task || ['deliverable', 'week_plan', 'deliverable_new'].indexOf(c.kind) < 0) return;
+      var id = 'c' + c.id;
+      items.push({ id: id, kind: 'deliv', cardKind: c.kind, cardId: c.id, cardOptions: c.options || [], state: 'triage',
+        title: c.prompt, ask: c.prompt, incoming: c.reason || '', payload: c.payload || {}, suggested: c.suggested,
+        source: 'Your deliverables', who: '', age: '', log: [], sources: [], people: [], context: [], conversation: [], code: [] });
+      keep[id] = true;
+    });
     var order = [], seen = {};
-    cards.forEach(function (c) { var id = c.task && 't' + c.task.id; if (id && !seen[id] && keep[id]) { seen[id] = true; order.push(id); } });
+    cards.forEach(function (c) { var id = c.task ? 't' + c.task.id : 'c' + c.id; if (id && !seen[id] && keep[id]) { seen[id] = true; order.push(id); } });
     /* The card on screen stays first, so nothing jumps while you read it */
     var restart = unpin, front = unpin ? null : st.queue[0];
     unpin = false;
@@ -482,6 +519,46 @@
     wrap('renameGroup', function (id, title) { return groupCall(S.group(id), 'rename', { title: (title || '').trim() }); });
     wrap('takeOut', function (id) { var it = S.item(id); return groupCall(S.groupOf(it), 'take_out', { task_id: it && it.coreId }); });
     wrap('wrapUp', function (id) { return groupCall(S.group(id), 'wrap'); });
+    /* A late ask joins the thread's reply waiting for your OK: Fuzz rewrites it to cover this too */
+    wrap('joinReply', function (id) { var it = S.item(id); return it && decide(it, 'add_to_reply'); });
+    /* Find out…: Fuzz looks it up now (the core starts the run); the card comes back right after the front one */
+    wrap('findOut', function (id, q) { var it = S.item(id); return it && decide(it, 'find_out', q, 'find_out', { question: q }); });
+    /* Working sessions: Book time, Do it now, Pause, After the others, Just the first step, and two
+       answers to "What's in the way?" (lay out the options; draft it for my OK) */
+    wrap('book', function (id, opt) { var it = S.item(id); return it && opt && decide(it, 'book', { anchor: opt.anchor }); });
+    wrap('doNow', function (id) { var it = S.item(id); return it && decide(it, 'do_now'); });
+    wrap('pause', function (id, note) { var it = S.item(id); return it && decide(it, 'pause', (note || '').trim() || undefined); });
+    wrap('afterOthers', function (id) { var it = S.item(id); return it && decide(it, 'after_others'); });
+    wrap('firstStep', function (id) { var it = S.item(id); return it && decide(it, 'first_step'); });
+    wrap('decideFor', function (id) { var it = S.item(id); return it && decide(it, 'decide'); });
+    wrap('draftIt', function (id) { var it = S.item(id); return it && decide(it, 'draft_it'); });
+    /* Focus: the core's instant pass for the preview, and setting it (the core reorders, then refines) */
+    S.focusPreview = function (text) {
+      return api('GET', '/focus/preview?q=' + encodeURIComponent(text)).then(function (m) {
+        m.tasks = (m.tasks || []).map(function (x) { return { task_id: x.task_id, title: x.title, why: x.why }; });
+        return m;
+      }, function () { return { tasks: [], quick: false }; });
+    };
+    var setFocus = S.setFocus;
+    S.setFocus = function (text, ids, skip) {
+      setFocus.call(S, text, ids, skip);
+      gen++;
+      write(function () { return api('POST', '/focus', skip ? { skip: true } : { text: text, task_ids: ids || undefined }); }).then(syncThenRefresh, syncThenRefresh);
+    };
+    /* Booking time: the end of a block, and the hold on your calendar */
+    wrap('keepGoing', function (id) { var it = S.item(id); return it && decide(it, 'keep_going'); });
+    wrap('answerHold', function (id, opt) { var it = S.item(id); return it && decide(it, opt); });
+    /* Deliverables: any of their cards' answers, and the sheet's actions */
+    wrap('answerCard', function (id, opt, value) { var it = S.item(id); return it && decide(it, opt, value); });
+    S.deliverableAction = function (coreId, what, body) {
+      gen++;
+      return write(function () { return api('POST', '/deliverables/' + coreId + '/' + what, body || {}); }).then(syncThenRefresh);
+    };
+    /* "Same as…": this task merges into the one you picked; Undo splits it back out */
+    wrap('sameAs', function (id, otherCoreId) {
+      var tid = (S.item(id) || {}).coreId;
+      return tid && otherCoreId ? function () { return api('POST', '/tasks/' + tid + '/same_as', { other_id: otherCoreId }); } : null;
+    });
     /* The demo's resolve acts out its own duplicates; here the card just leaves and the core decides */
     S.resolve = function (id, which) {
       var it = S.item(id), q = it.kickoffAsk ? KICKOFF_ASK : QUESTION[it.cardKind];
@@ -632,6 +709,19 @@
     searchFinished: function (q) {
       return api('GET', '/tasks/search?q=' + encodeURIComponent(q)).then(function (r) { return r.tasks.map(function (t) { return toItem(t, null, null); }); });
     },
+    /* How long a card was on screen and how long you were away: kept for tuning, not in the event log */
+    screen: function (rec) { return api('POST', '/screen', rec).catch(function () {}); },
+    /* Working through a group: the core's plan once it has every answer ("Got all 4. …"), said once */
+    takeCollected: function () { var c = collected; collected = null; return c; },
+    /* You stopped partway through a group: Fuzz goes ahead with the answers so far, and the rest of the
+       group's cards go to the end of the list. Resolves to the core's plan line. */
+    finishLater: function (coreGroupId) {
+      gen++;
+      return write(function () { return api('POST', '/groups/' + coreGroupId + '/finish_later', {}); })
+        .then(function (r) { syncThenRefresh(); return r && r.collected; });
+    },
+    /* The open tasks one is most likely the same as, for "Same as…" in task detail: [{task_id, title, state, why}] */
+    sameAsChoices: function (coreId) { return api('GET', '/tasks/' + coreId + '/same_as').then(function (r) { return r.choices || []; }); },
     /* One of those, whole, so its dialog shows the log and sources */
     loadFinished: function (coreId) { return api('GET', '/tasks/' + coreId).then(function (t) { return Store.keepAside(toItem(t, null, null)); }); },
     onEvent: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },

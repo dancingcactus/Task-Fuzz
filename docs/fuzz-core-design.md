@@ -27,6 +27,22 @@ Decided before wiring the UI to the core (each is reflected in the sections belo
   narrow **sender** role sends exactly the approved body and writes `task.sent`. There are no
   actuators in the core. See [Approval gate and sending](#approval-gate-and-sending).
 
+Decided in November 2026, after the first week of real use (build-order steps 10 to 17; 10 and 11
+are built):
+
+- **Catching duplicates** for tasks you capture and across channels. See
+  [Catching duplicates](#catching-duplicates).
+- **Working through a group**: a group's cards come one at a time, back to back, and Fuzz acts on
+  all the answers together, with one reply for the thread. See
+  [Working through a group](#working-through-a-group).
+- **Deliverables**: named outcomes that span tasks from any channel, reviewed on Mondays and checked
+  off by Fuzz against their done-when. See [Deliverables](#deliverables).
+- **Focus**, said per session, with the queue reordered straight away and refined by a quick AI pass.
+  See [Focus](#focus).
+- **Working sessions**: Triage as sorting first, then working on purpose; **Find out…** for missing
+  information; a size on every card and four choices for big tasks; **Later** and **Book time** as
+  two actions, with booked blocks in your Focus time slots. See [Working sessions](#working-sessions).
+
 ## Summary
 
 Fuzz becomes a task system with a **core** at the centre: a store, an append-only event log and the
@@ -158,20 +174,25 @@ and log zones). The new parts are below.
 ```sql
 users        (id, name, created_at)                    -- one row for now
 events       (id, user_id, ts, actor, type, task_id, payload, caused_by, run_id, model, prompt_version)
-tasks        (id, user_id, state, assignee, title, ask, done_when, group_id, due, order_key, notes, context_md, question,
-              variant_tags, steps_used, attempts, lease_owner, lease_until,
+tasks        (id, user_id, state, assignee, title, ask, done_when, group_id, deliverable_id, due, order_key, notes,
+              context_md, question, variant_tags, steps_used, attempts, lease_owner, lease_until,
               schedule_anchor, schedule_fire_at, schedule_hints, updated_event_id)
 groups       (id, user_id, title, origin, link, state)   -- made by the core from the origin, see Groups
+deliverables (id, user_id, title, done_when, checked_by, for_name, due, tier, state, evidence,
+              reviewed_at, created_at)                  -- see Deliverables; tier active|background,
+                                                        -- state open|done|dropped, checked_by fuzz|you
 cards        (id, user_id, kind, task_id, other_id, prompt, reason, options, suggested,
               schedule_options, status, postponed, created_event_id, answered_event_id)
-drafts       (id, user_id, task_id, kind, body, target, status, approved_by, approved_at)
+drafts       (id, user_id, task_id, covers, kind, body, target, status, approved_by, approved_at)
+                                                        -- covers: the other task ids a group reply answers
 grants       (id, user_id, scope, resource, kind, created_event_id)   -- "always allow" answers
 runs         (id, user_id, role, client, model, prompt_version, trigger, started_at, finished_at, outcome)
 sources      (id, user_id, task_id, signal_key, role)  -- thin references, never full messages
 ```
 
 The spike's `signals`, `candidates`, `entities`, `identifiers`, `aliases`, `task_links`, `merges`,
-`vectors`, `decisions` and `feedback` tables carry over, each gaining `user_id`.
+`vectors`, `decisions` and `feedback` tables carry over, each gaining `user_id`. The session's focus
+lives in `user_state`, like the check-in's moment (see [Focus](#focus)).
 
 ### Events are the source of truth
 
@@ -225,6 +246,10 @@ task.reopened   task.reply_in    task.came_back   task.anchor_moved task.anchor_
 task.confirmed  task.draft_edited task.sent_back task.send_failed
 task.review_due task.kept_parked task.check_back_set
 group.created   group.linked     group.unlinked   group.renamed    group.wrapped
+group.collected
+deliverable.created deliverable.linked deliverable.unlinked deliverable.renamed deliverable.tier_set
+deliverable.reviewed deliverable.done deliverable.reopened deliverable.dropped
+focus.set       focus.refined    focus.cleared
 entity.merged   entity.kept_separate entity.defined
 card.created    card.answered    card.postponed   card.expired
 permission.asked permission.granted permission.denied
@@ -270,6 +295,11 @@ Kept small on purpose. Past about fifteen tools, a model starts choosing the wro
 | `suggest_schedule(id, anchor, reason, you_said?)` | Adds a human-time option for this task. With `you_said`, also schedules it there | Checked by the core. See [AI suggestions](#ai-suggestions) and [When Fuzz puts a task off](#when-fuzz-puts-a-task-off) |
 | `update_brief(id, context_md?, summary?, question?)` | Writes the Markdown brief, the summary above it and the one question shown to you | The task card's prompt is the question; answering clears it |
 | `release(id)` | Gives up the lease | A lease that runs out releases itself |
+| `list_deliverables(since?)` | Returns open deliverables with their tier, done-when and what moved on each since then | For the weekly report and the Monday look-back |
+| `report_deliverable_done(id, evidence)` | Says a deliverable's done-when is true, with the evidence | The core closes it with Undo. Refused when it's `checked_by = you` |
+
+On a group claim, `get_task` returns every task in the group with your answer and notes on each, and
+`save_draft` takes `covers`, the other task ids one reply answers.
 
 Every call checks that the caller holds the lease on that task and that the task belongs to the
 caller's user.
@@ -325,7 +355,10 @@ also works for cloud agents and the web app, where there is no local CLI.
 
 1. **Eligible**: `assignee = fuzz` and state `queued`, or a `working` task whose lease has run out.
 2. **At most five** tasks in `working` per user (the demo's limit). The rest show "Next up".
-3. **Order**: deadline level, then `order_key` (the same ordering triage uses), then age.
+3. **Order**: deadline level, then [focus](#focus), then `order_key` (the same ordering triage uses),
+   then age. Tasks held while their group is still being answered are skipped, and a group's tasks
+   are claimed together as one claim once it's collected (see
+   [Working through a group](#working-through-a-group)).
 4. **Lease**: 10 minutes by default and renewed by any tool call. A crashed worker's task goes back
    to `queued`.
 5. **Budget**: each claim and each step counts. After `max_steps` steps, or `max_attempts` claims
@@ -605,6 +638,20 @@ isn't a task yet. It's parked, or it gets an `is_task` card, and Fuzz can offer 
    takes effort to produce, it's a task. Approvals and handbacks are cards on a task.
 4. **No decision, no card.** "Fuzz finished the summary" and "thanks!" aren't tasks or cards.
 
+### Catching duplicates
+
+The first week of real use found three gaps. A task you captured and the same ask arriving later
+from Slack both stayed open. They pointed to the same ticket and the same three wiki pages, and no
+card asked. Two notification emails about the same design page in one extraction run made two
+identical tasks. The judge noticed in its reason and still had to answer `new`.
+
+| Gap | Fix |
+| --- | --- |
+| A captured task never goes through matching: `capture` creates it and stops, and it has no entities or anchors for a later signal to find | **Match after gathering.** When `finish_gathering` lands, the core runs the task through stages 1 to 3 as a candidate, with the links and people Fuzz found. A likely match becomes a `duplicate` card. With gathering off, it runs on the ask's text alone |
+| Asks in one run can't see each other: the shortlist is frozen before earlier candidates create their tasks | **Same-run tasks join the shortlist.** Tasks created earlier in the run are eligible. Asks from the same signal still never match each other |
+| Channels only meet through entities and meaning | **A shared link is an anchor.** A ticket key or document link on two live tasks raises a `duplicate` card, whichever channels they came from. Ticket keys and document links are what stay the same across email, Slack and meetings. A link on many tasks (a wiki home page) doesn't count |
+| Merging two tasks you've spotted is only on the CLI (`fuzz merge`) | **"Same as…" in task detail** offers the matcher's likely matches for that task and merges as the `duplicate` card does. Undo is the existing split |
+
 ### Groups
 
 One email, Slack message or meeting often brings several asks at once: the action items from a
@@ -614,8 +661,8 @@ that came from the same place.
 
 A group is made from **where the tasks came from**, never from a guess about what they're for. The
 core makes groups itself, as code, from the signal's fields. No AI decides, so grouping can't be
-wrong in a way you have to correct. (Grouping by shared goal, such as "Priya can brief her team by
-Tuesday", is left for later. See [Open questions](#open-questions).)
+wrong in a way you have to correct. (Tasks from different places that serve one outcome, such as
+"Priya can brief her team by Tuesday", share a [deliverable](#deliverables), not a group.)
 
 1. **Fuzz makes groups. You never have to.** New task stays one field with no categories.
 2. **Two or more, or none.** A group forms when a second task of yours comes from the same origin.
@@ -624,7 +671,9 @@ Tuesday", is left for later. See [Open questions](#open-questions).)
    every task in a group is done or let go, the group is finished, and a new ask from the same
    thread starts fresh.
 4. **One group per task. No groups inside groups.** A task already in a group stays in it.
-5. **Triage stays one task per card.** A group is context on a card, never a card to work through.
+5. **One card at a time, worked together.** Each task in a group keeps its own card, with every
+   routing answer. The cards come back to back, and Fuzz acts on all the answers together once it has
+   them. See [Working through a group](#working-through-a-group).
 6. **Each task keeps its own deadline and done-when.** The asks from one meeting don't share a goal,
    so the group has neither.
 7. **Groups only grow towards done.** There's no percentage of what's left and nothing in red.
@@ -656,14 +705,82 @@ The word "group" doesn't appear in the UI. A group shows up as a **"From …" li
 
 | Place | What changes |
 | --- | --- |
-| Triage card | One line under the tags. No new buttons. Tapping it opens the group sheet |
+| Triage card | While you work through a group: the group band above the card and the collected tray under it (see [Working through a group](#working-through-a-group)). A card from a group of one open task: one line under the tags, which opens the group sheet |
 | Lineup | Still grouped by who has it (Yours, Fuzz's lane, With others, Later). A row in a group gets the same "From …" line. The Lineup is never grouped by group, because that would hide what's waiting on you |
 | Task detail | The "From …" line, which opens the group sheet, and the task's done-when |
-| Group sheet | A dialog, like task detail: the name, a link back to the origin (Open the email, Open the meeting notes), each task with its state ("2 done, 1 with Fuzz"), and the latest steps from all its tasks in one log. Actions: Rename, Take a task out, It's wrapped up, each with Undo |
-| Fuzz | Celebrates when the last task in a group is done |
+| Group sheet | A dialog, like task detail: the name, a link back to the origin (Open the email, Open the meeting notes), each task with its state ("2 done, 1 with Fuzz"), what you answered on each card ("What you said"), and the latest steps from all its tasks in one log. Actions: Rename, Take a task out, It's wrapped up, each with Undo |
+| Lineup | A task held for its group reads "Waiting for the rest of Priya's email" until the group is collected |
+| Fuzz | A "thread closed" moment when a group finishes (see below) |
 
 What's left out on purpose: a groups page, a group picker, group colours or icons, progress bars,
-and group cards in Triage.
+and one card that decides a whole group at once.
+
+#### Working through a group
+
+The asks in one email are often easier to handle in one sitting, and in use they were: cards from
+the same group were answered seconds apart, often with the same answer, and Fuzz then looked up the
+same pages once per task. So a group is worked through as a run of ordinary cards, and Fuzz acts on
+the answers together.
+
+1. **The cards come back to back.** Once a group's first card is in front (a group with two or more
+   open tasks in triage), its siblings follow straight after it. New arrivals and the check-in wait
+   until the group is done. The run takes the place of its most urgent task, and counts as in focus
+   if any of its tasks is.
+2. **Each card is a full task card,** with every answer: Assign to Fuzz, Work in Claude, Schedule,
+   Done, Park, Waiting on someone, Not mine, Drop. A question about a sibling (`is_task`,
+   `duplicate`) takes its turn before that task's routing card.
+3. **Every answer is collected.** Your own answers take effect at once: a scheduled task is
+   scheduled. Assign to Fuzz is recorded, but the task is **held** (tag `held`) and Fuzz doesn't start
+   it yet. Every answer, and any instruction or note you add, goes into the group's set.
+4. **After the last card**, the core writes `group.collected` and Fuzz says the plan on the perch:
+   "Got all 4. I'll look into the two together and draft one reply to Priya. You've got the plan
+   review." Undo is there, and nothing leaves without your OK.
+5. **Fuzz works the group in one run.** The held tasks are released as one claim. `get_task` on a
+   group claim returns every task in the group with your answer and notes on each, and the executor
+   works out the next steps: one lookup shared across the tasks, the order between them, follow-up
+   tasks if any turn up, and one question if it's stuck (a handback for the group, not one per task).
+6. **One reply for the thread.** For an email thread or a Slack burst, the result is one draft
+   answering every ask (`drafts.covers`). It also uses your other answers:
+
+   | Your answer | In the reply |
+   | --- | --- |
+   | Assign to Fuzz | What Fuzz found or did |
+   | Schedule | When you'll get to it ("I'll have that to you next week") |
+   | Done | That it's done |
+   | Waiting on someone | That you're checking with them |
+   | Not mine | Who owns it, if you named someone |
+   | Park, Drop | Usually left out; at most a "not this one" line you can delete |
+   | Work in Claude | Left to that session, which gets the group's notes |
+
+   Approving the draft closes every task it covers. If nothing went to Fuzz and the thread asked
+   something of you directly, Fuzz may offer a short acknowledgment reply. Meeting groups get the
+   shared run but no single reply, since their action items have no one recipient.
+
+**Edge cases.**
+
+- **You stop partway:** "Finish later" in the group band, or the session ends. Fuzz goes ahead with
+  the answers it has. The rest come back later as ordinary cards; answered before the draft is
+  approved, they join it, otherwise they're handled on their own. A held answer never blocks work.
+- **A late ask joins the group** after it was collected: an ordinary card with the "From …" line. If
+  the group's draft is still waiting for your OK, Fuzz offers to add it.
+- **A group of one open task** is an ordinary card.
+
+**In the UI.** It's always clear you're working through a group:
+
+- **Entering:** Fuzz says so ("Priya's email has 4 asks. Let's go through them, then I'll pull it
+  together."), and the cards underneath show bound together instead of as anonymous ghosts.
+- **Working through:** a **group band** above the card names the group and shows step dots that fill
+  as you answer (never a countdown; announced as "Priya's email, ask 2 of 4"). A **collected tray**
+  under the card shows a chip per answered ask ("Find the ticket → Fuzz"); tapping a chip reopens that
+  card to change the answer. Fuzz shows the Scan mood while gathering. "Finish later" sits in the band;
+  Esc keeps its usual meaning.
+- **Leaving:** the tray folds into Fuzz (Rev up), the perch line says the plan, and the band goes.
+  Calm mode keeps the fade and drops the motion.
+
+**Thread closed.** When a group finishes, Fuzz marks it with a bigger moment than a single task, and
+one line on what happened ("All 4 of Priya's asks answered in one reply. That thread's done."). A
+group that's wrapped up or ends in let-gos gets a warm one too: a closed thread is progress either
+way.
 
 **Take out** removes one task from the group. A group of one isn't a group, so taking out the
 second-to-last task finishes the group and the last task stands on its own. **It's wrapped up**
@@ -679,6 +796,312 @@ all done or let go is finished without an event: that is worked out when it is r
 `group.renamed` and `group.wrapped` (you, from the group sheet, each undoable). The executor's
 `get_task` lists the other tasks in the group by title and state, so a run knows "these all came
 from the staff sync" and can reuse what the others found.
+
+Working through a group adds: the `held` tag, which `claim_next_task` skips; `group.collected`
+(system, when the last card is answered or the session ends), which releases the held tasks as one
+claim; a group claim's `get_task`, which returns every member with your answer and notes; `covers`
+on a draft, so approving one closes each task it answers; and a group handback, one card for the
+group's question. The queue keeps a group's cards together (see [Rules for the queue](#rules-for-the-queue)).
+
+## Deliverables
+
+Some work is bigger than a task: a feature for a customer, the strategy deck, the release readiness
+checklist. A **deliverable** is that: a named outcome with its own done-when, served by tasks that
+arrive from any channel over weeks. You run 10 to 20 at a time, and only 2 or 3 are urgent.
+
+| | Group | Deliverable |
+| --- | --- | --- |
+| Made from | One origin (an email thread, a meeting, a Slack burst) | One outcome, across origins |
+| Made by | The core, from the signal | Fuzz suggests it; you confirm and name it |
+| Finished | When its tasks are done or let go, or you wrap it up | When its done-when is true, checked by Fuzz |
+| Per task | At most one | At most one |
+
+A task can be in a group and a deliverable at once: "From Staff sync" and "For the report builder
+launch". New task stays one field: you never pick a deliverable when you capture.
+
+### The record
+
+A deliverable has a **title**, a **done-when**, optionally **who it's for** (a customer or team) and
+a **date**, a **tier** (`active` or `background`) and a state (`open`, `done`, `dropped`). Tasks
+point to it with `deliverable_id`. A task shows a "For …" line, like the "From …" line, which opens
+the deliverable sheet: its open tasks, what's done (each opening to its notes and result files), the
+links its tasks cite most, and the people involved.
+
+### Done when, checked by Fuzz
+
+A deliverable is finished when its done-when is true, and Fuzz checks it, so the done-when has to
+name **evidence Fuzz can see with its tools**. The rubric, for Fuzz when it drafts one and for you
+when you edit:
+
+1. **A state, not an activity.** "Work on", "support" and "drive" are out.
+2. **Where the evidence lives:** a ticket's status, a document at a link, a release page, a sent
+   message, a calendar event.
+3. **One sentence, one or two checks.** A list of conditions is two deliverables.
+4. **Name other people's confirmation** when it depends on them ("Northwind confirms the plan in
+   writing"), so Fuzz looks for the reply instead of judging.
+5. **No checkable version?** Then it's checked by you (`checked_by = you`). That's allowed, and it's
+   shown, so you know Fuzz won't close it.
+
+| Weak | Checkable |
+| --- | --- |
+| The report builder is done | REP-118 is Done and appears in the release notes |
+| Strategy deck finished | The deck is in the Strategy folder and Priya has replied to the review email |
+| Release readiness handled | Every row of the Nov 11 readiness checklist is complete before Nov 11 |
+| Help Northwind with always-on testing | NW-342 is accepted and Northwind confirms the plan in writing |
+
+When Fuzz suggests a deliverable and finds no evidence source, the card asks "How will we know it's
+done?" with likely answers.
+
+**Fuzz checks** on Mondays, on a deliverable's weekday card, and whenever one of its tasks closes.
+When the done-when is true, the executor reports it with the evidence
+(`report_deliverable_done(id, evidence)`); the core closes the deliverable (`deliverable.done`, with
+Undo) and Fuzz celebrates with the evidence line ("REP-118 is Done and in the release notes").
+Closing is reversible, so it needs no yes first. Open tasks left in it come up on the next card: keep
+each on its own, or let it go. When Fuzz can't reach the evidence, it asks you on the next card
+rather than guessing. A new ask that matches a finished deliverable comes up in that week's review:
+reopen it, or start a new deliverable ("Report builder v2").
+
+### Joining tasks to deliverables
+
+The judge's verdict gains an optional `deliverable_id`: "part of deliverable D". The core maps
+confidence as it does for tasks:
+
+- **Confident:** linked quietly (`deliverable.linked`), with Undo and the "For …" line.
+- **Unsure, active deliverable:** a `part_of` card now: "Is this part of the report builder launch?"
+- **Unsure, background deliverable:** no card in triage. It waits for that deliverable's next card.
+
+You can also say "Part of…" from task detail, which offers the likely deliverables.
+
+### Tiers and the Monday review
+
+| | Active (2 to 3; `deliverables.active_max`) | Background (the rest) |
+| --- | --- | --- |
+| Chosen | On Monday, by you | Everything else that's open |
+| Queue | Their tasks are this week's [focus](#focus) | Normal order |
+| Checked | Every Monday, and when a task of theirs closes | About once a week, a few each weekday |
+
+**Monday** (`deliverables.review_day`), after your first check-in, a short run of cards comes before
+the usual ones:
+
+1. **Last week, per active deliverable:** what moved and what's blocked, drafted from the logs.
+2. **Pick this week's active ones:** Fuzz suggests 2 or 3 from dates, movement and what's new. You
+   keep or swap.
+3. **This week's steps:** per active deliverable, Fuzz suggests the next tasks; the ones you keep are
+   created with `create_task`, linked to it.
+4. **New and loose:** "These 4 look like one thing you're delivering. Track them as …?", with a name
+   and done-when to edit, and tasks Fuzz was unsure belonged.
+
+On a rough Monday (check-in tired or overloaded) only step 2 comes; the rest moves to Tuesday.
+
+**Tuesday to Friday**, the background deliverables come one card each, longest-unchecked first,
+sized by your check-in like the parked review (`deliverables.per_day`). Each asks one thing: "Still moving?", "Is this part of it?" or "Looks
+done, close it?" A deliverable with nothing happening is asked, never shown as overdue. You can swap
+an active one from its sheet any day.
+
+**The weekly report** is on demand for now: ask Fuzz for one as a task. The executor reads the
+deliverables and what moved on each with `list_deliverables(since)` and drafts it. Nothing is drafted
+automatically on Mondays.
+
+**In the UI:** a Deliverables section in the Lineup (the active ones in full, the background ones
+collapsed), the "For …" line on tasks, and the deliverable sheet. No progress bars or percentages.
+
+## Focus
+
+Focus is what you're working on now, and it moves those tasks ahead of everything that isn't
+time-sensitive. It has two layers, under a booked block while one is on:
+
+```
+your booked block (during it)  >  time-sensitive  >  this session's focus  >  this week's active deliverables  >  everything else
+```
+
+During a block, a time-sensitive card is second, and Fuzz mentions it once ("1 time-sensitive
+waiting after this"); see [Booking time](#booking-time).
+
+### Saying it, per session
+
+**When.** At the start of a session, before the first card: when you open Triage, or come back
+after being away (`presence.away_minutes`). Fuzz asks from the perch: "What are we working on?" Like
+check-ins, when to ask is the UI's; the core records the answer (`POST /focus`, `focus.set`).
+
+**How.**
+
+- **Chips:** the active deliverables, last session's focus, and "Whatever's next".
+- **Free text or dictation:** "prep for the Northwind call", "report builder stuff", "clear the small
+  things" (which sets the quick moment instead).
+- **Esc** skips: the week's active deliverables are the focus, or plain order without them.
+
+Fuzz shows what it matched before it applies: "That's 4 tasks: the plan review, Marcus's
+question…", and you confirm or say "not that one". If nothing matches, Fuzz offers to capture it as
+a task.
+
+**Changing it.** A line under the perch, "Focus: Northwind call · change", or **F**. A session focus
+ends when you step away or leave Triage, and the week's focus comes back, so a one-day focus never
+lingers.
+
+### Resolving free text quickly
+
+The reorder never waits for the AI.
+
+1. **Instant, no AI** (well under a second): deliverable names, entities and their aliases, ticket
+   keys and words in titles and asks, plus the phrase's embedding against the tasks' stored vectors
+   (the local embedder matching already uses). The queue reorders as soon as you confirm. **The card
+   in front never changes under you**; only the cards behind it move.
+2. **Refined by the AI** (seconds, never blocking): one tools-free call to a small model, the same
+   shape as connector discovery (`-p`, no tools, no session). It gets the phrase and a compact list of
+   open tasks (id, title, deliverable, a few names, group) and returns
+   `{"in": [...], "maybe": [...], "terms": [...], "deliverables": [...]}`. It can only pick from the
+   ids it was given; the core checks them and reorders the cards not yet shown (`focus.refined`).
+   Fuzz says one line if it found more ("Found 2 more for the Northwind call") and drops false matches
+   quietly. The call starts when you pause typing (about 0.6 s), so it's often done by Enter. If it's
+   slow or fails, the instant result stands; a late answer still applies within the session.
+
+**No repeat calls.** The returned `terms` and `deliverables` become the session's focus profile:
+tasks arriving mid-session are scored against it locally. A phrase once resolved is kept ("report
+builder stuff" → that deliverable), so next time it's instant. Chips are worked out ahead.
+
+### In the queue
+
+Triage orders on `(at_end, urgent, focus, back, fits, order_key)`:
+
+- **Time-sensitive stays first.** A Friday deadline is a real consequence even outside the focus.
+- **Focus before handbacks.** For focus work, Fuzz waiting on your answer is the work being blocked.
+- **Focus before the moment.** On a tired day focus work still comes first, low-energy focus tasks
+  leading.
+
+`claim_next_task` orders the same way (deadline, then focus), so Fuzz spends its working slots on
+what matters now. Tasks outside the focus still arrive and get done, just not first, and the stale
+card still catches anything that sits too long.
+
+## Working sessions
+
+Triage gets used as a working session: sorting cards and doing the work, with nothing marking the
+switch. In the first week most answers came within a minute, but about one gap in five ran 3 to 30
+minutes. Those ended in Done (the work was done with the card in front) or in a stall and a
+postpone. The two causes were **missing information** and **a task that turns out to be big**. The
+rule for both: decide quickly on the card, never grind on it.
+
+### Two phases
+
+1. **Sort.** Quick decisions on new cards. A big task shows its size and gets booked or pushed;
+   missing information becomes a Find out… without stopping you.
+2. **Work.** The tasks you kept for yourself, then the ones you pushed to the end, each opened on
+   purpose with **Do it now**.
+
+A booked block opens straight into work mode (see [Booking time](#booking-time)).
+
+**Do it now** is a new answer on task cards. It opens the **working card**: the brief, the checklist,
+the sources and notes, with Fuzz beside it and the rest of the queue out of view. The task stays
+yours (tag `doing`). The ways out are Done · Pause (back to the list, with "where I left off" notes)
+· Hand to Fuzz · Work in Claude. In work mode the check-in runs on time, not on cleared cards (today
+it waits for two more cleared cards, so it never comes while you're stuck).
+
+### Find out…
+
+Missing information used to mean assigning the task to Fuzz with an instruction. That hands the task
+over, and Fuzz may take the question as the whole task: one task was renamed to the lookup asked
+for and handed back as finished, and the hour of work it stood for was lost. A lookup and a hand-off
+are different intents:
+
+| | **Find out…** | **Assign to Fuzz** |
+| --- | --- | --- |
+| You say | "What did Marcus say about the setup?" | "Do this" |
+| The task | Stays yours | Goes to Fuzz |
+| Fuzz | Answers the question into the brief, as a step | Works the task |
+| Title and done-when | Never change | Fuzz may sharpen them |
+| You | Keep sorting; the card steps aside | The task leaves triage |
+
+The task goes back to Fuzz tagged with your question (tag `finding_out`), reusing gathering: it
+returns when the executor calls `finish_gathering`, and the run starts at once (`run_now`), not at
+the next scheduled run. **The card comes back as soon as the answer lands**: next, right after the
+card in front, with the answer at the top. The card in front never changes under you. When the brief
+has gaps ("I couldn't find the test accounts"), the card says so and offers Find out… first.
+
+On the card, Find out… sits behind the arrow of a split **Assign to Fuzz** button: both ask Fuzz,
+and keeping the row to four buttons keeps sorting quick. **Q** works without opening the menu. When
+the brief has gaps, the two swap: Find out… is the button and Assign moves behind the arrow.
+
+**A piece of a task is a step.** For Find out… and for an instruction on Assign alike, the executor
+logs a request for one piece of a task as a step. It keeps the title and the done-when, and never
+finishes the task because the piece is done.
+
+### Size, and big tasks
+
+Every card shows a **size**: "≈ 1½ h · 6 steps". The executor always writes `effort_mins` and a step
+count when it writes a brief, and the extractor estimates them with the ask (until now almost no
+task had one). A task is **big** at `work.big_minutes` (45) or more, or five or more steps. A big
+task's card leads with four choices:
+
+| Choice | What happens |
+| --- | --- |
+| **Do it now** | Work mode, as above |
+| **Book time** | Into the next Focus time slot; see [Booking time](#booking-time) |
+| **After the others** | To the end of this session; picked up in the work phase if there's time. If the session ends first, Fuzz asks whether to book time for it |
+| **Just the first step** | Fuzz writes the checklist, you do step 1 now (two minutes), and the rest is booked |
+
+### What's in the way?
+
+When a card has been in front for `work.stuck_minutes` while you're at the desk (`presence`): 3
+minutes when sorting, 25 in work mode with no sign of progress (no notes, edits or answers), Fuzz
+asks "What's in the way?" once. Esc dismisses it, and Calm mode keeps it quiet.
+
+| Answer | What happens |
+| --- | --- |
+| I need to know something | Opens Find out… |
+| This is a big one | The four choices above |
+| Something else → Can't decide | Fuzz lays out the options with a suggested default |
+| Something else → I don't want to write it | Fuzz drafts it for your OK |
+| Something else → Not now | After the others, with no penalty |
+
+A task card sent to the end of the list twice comes back as this card, like a task that keeps getting
+a new time. The UI records when each card is on screen and when you're away (kept for tuning, not in
+the event log), so the thresholds can be set from real use.
+
+### Later and Book time
+
+Schedule did two jobs. Now they're two actions:
+
+| | **Later** (postpone) | **Book time** (schedule) |
+| --- | --- | --- |
+| Means | Not now; bring it back then | I'll do it then; hold the time |
+| Options | Today's: later today, back at my desk, tomorrow morning, Monday, next week, moments | Focus time slots first, then other free time |
+| Calendar | Nothing | A hold |
+| Comes back | To triage, as a card | First in the list, in work mode |
+| "Keeps coming back" | Counts | Doesn't; a missed block is its own signal |
+| Key | **S**, as now | **B** (the parked card's Bring back moves to a free key) |
+
+On the card, Book time sits behind the arrow of a split **Later** button, and **B** works without
+opening the menu. A big task already leads with Book time in its four choices, so Later stands alone
+there. Fuzz pre-fills Book time on big tasks and Later on the rest. "Keeps coming back" splits its "Give it
+a time" into both, Book time first for big tasks. Fuzz putting a task off, and the check-in's Hold
+the rest, are Later.
+
+### Booking time
+
+**Slots.** You keep "Focus time" events on your calendar (`booking.slot_titles`). The executor reads
+the calendar with its connector, as for moments (the core still never reads it), and returns
+candidate slots. The core ranks them: inside a Focus time slot, before the due date and long enough;
+then inside one but only part fits ("block 1 of 2"); then other free time, labelled "Not a focus
+slot". Two shorter tasks can share a slot, and the core knows its own holds, so it never
+double-books.
+
+**The hold** is a separate event inside the slot; Fuzz never edits your events. Its title is the
+task's title, and its body is a link to the task in Fuzz (`#tasks/<id>`) and the done-when. It's an
+outside action, so it's a draft (kind `calendar_hold`) through the approval gate, made by the sender
+with the calendar tools in `send.tools`. Always allow is offered for your own calendar. Without a
+calendar tool, Fuzz shows the slot for you to add, and the task is still booked in Fuzz. The task is
+`scheduled` with the anchor `block {start, end, event_id}`.
+
+**Before the block** (`booking.prep_minutes`, 30), Fuzz turns what it found into a step-by-step
+checklist in the brief, so you start on step 1.
+
+**During the block**, opening Fuzz goes straight to the task in work mode. The focus question is
+skipped: the block is the focus. A time-sensitive card is second, mentioned once.
+
+**At the end**, "How far did you get?": Done · Keep going (extends the hold if the calendar is free)
+· Another block (the checklist remembers where you stopped) · Pause. **A missed block** gets a card:
+"The block for this went by. Find another time?"; repeated misses bring the "keeps coming back"
+card. **Finished early**, Fuzz offers to remove the holds you no longer need, and asks first. An
+event you move or cancel is handled as moments are.
 
 ## Cards and actions
 
@@ -702,6 +1125,10 @@ replied" are not cards. They are things Fuzz says, through the
 | **Approvals** | `draft` | Can this leave the system? | Approve and send · Edit · Send back with a note |
 | | `nudge` | Can Fuzz chase this reply? | Approve and send nudge · Edit · Not yet |
 | | `permission` | Can Fuzz use this? | Allow once · Always allow · No |
+| **Deliverables** | `part_of` | Is this task part of that deliverable? | Yes · No · Not sure yet |
+| | `deliverable` | Where is this deliverable? (Monday look-back, weekday check, "Looks done?") | Keep going · Make it active · It's done · Let it go · Not sure yet |
+| | `deliverable_new` | Track these tasks as one deliverable? | Track it `{title, done_when}` · No · Not sure yet |
+| | `week_plan` | Which deliverables are active this week, and their next steps? | Keep these `{ids}` · Keep these steps `{tasks}` · Not now |
 
 - **Routing** cards have the most answers, because work can go many places.
 - **Question** cards need one fact so something else can carry on. Answering resolves the question and
@@ -797,6 +1224,15 @@ option does for that kind and writes the events. So one Undo and one log cover e
 | `permission` | Allow once | `permission.granted` | The task carries on |
 | | Always allow | `permission.granted` | A row in `grants`. The task carries on |
 | | No | `permission.denied` | The executor works without it, or hands back |
+| `part_of` | Yes | `deliverable.linked` | The task shows the "For …" line |
+| | No | `card.answered` | Not asked again for this pair. Logged in `feedback` |
+| `deliverable` | Keep going | `deliverable.reviewed` | Not asked again until next week |
+| | Make it active | `deliverable.tier_set` | Active; its tasks join the week's focus |
+| | It's done | `deliverable.done` | Closed with your word as the evidence |
+| | Let it go | `deliverable.dropped` | Closed; its open tasks come up next to keep or let go |
+| `deliverable_new` | Track it `{title, done_when}` | `deliverable.created`, `deliverable.linked` | A background deliverable with those tasks |
+| `week_plan` | Keep these `{ids}` | `deliverable.tier_set` | Those are active, the rest background |
+| | Keep these steps `{tasks}` | `task.captured` per step, `deliverable.linked` | New tasks in triage, linked |
 | any question | Not sure yet | `card.postponed` | See below |
 
 ### What the AI may and may not do
@@ -811,6 +1247,11 @@ option does for that kind and writes the events. So one Undo and one log cover e
 
 - **One card per task at a time, questions first.** A task can't be routed before you know whether
   it's a duplicate, so a question card about a task comes before its routing card.
+- **A group's cards come back to back.** Once one is in front, its siblings come next, ahead of new
+  arrivals, and the check-in waits until the group is done. See
+  [Working through a group](#working-through-a-group).
+- **Monday's deliverable cards come first that day,** after the first check-in. See
+  [Tiers and the Monday review](#tiers-and-the-monday-review).
 - **"Not sure yet" postpones, it doesn't fail.** The card comes back later at the end of the queue.
   After two postpones the core takes the safe answer itself (keep separate, stay provisional, keep it
   as a task) and writes `card.expired`. A question you don't answer never blocks the work behind it.
@@ -1087,6 +1528,18 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
   tools, passes the run's MCP config and model, and a run against a scripted MCP server records its
   run ID on every event. A new client is supported when it passes these.
 - **Role scoping**: the executor role can't see extractor tools, and the reverse.
+- **Duplicates**: a captured task and the same ask from a signal, two asks in one run, and two tasks
+  sharing a ticket key from different channels each raise a `duplicate` card; asks from the same
+  signal never do.
+- **Group runs**: held tasks aren't claimed until `group.collected`; a partial run goes ahead at
+  session end; approving a draft with `covers` closes every task it covers, and one Undo restores them.
+- **Focus ordering**: time-sensitive stays first, the card in front never changes, a refined result
+  with an unknown id is refused, and a slow or failed AI pass leaves the instant order.
+- **Deliverables**: `report_deliverable_done` closes and undoes; it's refused for `checked_by = you`.
+- **Working sessions**: a Find out… answer brings the card back next without changing the card in
+  front, and never retitles or finishes the task; a big task leads with the four choices; Later
+  counts toward "keeps coming back" and Book time doesn't; during a block its task is first and a
+  time-sensitive card second.
 - The spike's existing tests carry over.
 
 ## Build order
@@ -1108,6 +1561,29 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
 7. **Calendar anchors and AI schedule suggestions**, once the core can read the calendar.
 8. **The sender in real runs**: list each client's send tools and try one kind at a time, email reply first.
 9. Web hosting and multiple users, when wanted.
+10. **Catching duplicates**: matching after gathering, same-run tasks on the shortlist, shared links as
+    anchors, and "Same as…" in task detail.
+11. **Working through a group**: back-to-back cards, held answers, `group.collected` and the group
+    claim, drafts that cover several tasks, then the group band, collected tray and thread-closed
+    moment in the UI.
+12. **Foundations**: effort and step estimates on every brief and extracted ask; a piece of a task is
+    a step (no retitling or finishing on a piece); the same-run duplicate check on the rule-made `new`
+    path too, not only after the judge; and step 11's leftovers (offer a late ask to a group draft
+    still waiting for your OK; covered tasks follow their draft when it's put off).
+13. **Find out…**: the answer, `finding_out` and the gathering run started at once, the card back next
+    when the answer lands, and gaps shown on the card.
+14. **Working sessions**: the size on cards and the four choices for big tasks; Later and Book time as
+    two actions (Book time picks a time in Fuzz until step 15); Do it now and the working card; After
+    the others; What's in the way?; the check-in on time; recording time on screen.
+15. **Booking time**: Focus time slots from the calendar, the `block` anchor, `calendar_hold` drafts
+    through the sender, prep before the block, the block first in the list, the end and missed-block
+    cards, and removing holds no longer needed.
+16. **Focus**: the session question, the instant pass and the new queue and claim order (with the block
+    on top), then the AI pass and the saved phrases. Until step 17 the weekly layer is empty, so focus
+    is per session only.
+17. **Deliverables**: the table and events, `part_of` verdicts and cards, the Monday review and
+    weekday cards, `list_deliverables` and `report_deliverable_done`, then the Lineup section and the
+    deliverable sheet.
 
 ## Open questions
 
@@ -1135,7 +1611,20 @@ found by `doctor`. Judge it on spreadsheet questions and real Office files; deci
 10. **Token cost.** MCP was chosen over the CLI for safety, not cost. A quick measurement (one
     scripted extraction through `tm.py` and through MCP) would show whether the difference is as
     small as expected.
-11. **Grouping by goal.** Groups come only from a shared origin for now. Tasks from different places
-    that serve one outcome (the Priya reply and the deck she asked for on Slack) could share a group
-    through a third answer on the duplicate card, "Same goal, separate tasks". Worth adding once
-    origin groups have been used for a while.
+11. **Grouping by goal.** Settled: tasks from different places that serve one outcome share a
+    [deliverable](#deliverables).
+12. **Fuzz's plan after a group.** A line on the perch (the current design: no extra decision, and
+    nothing leaves without your OK) or a "Here's the plan" card to confirm before Fuzz starts, which
+    would let you ask for separate replies before any work is done.
+13. **Tasks that keep cycling.** In use, most handbacks were "Here's what you asked for. Done?"
+    answered with a follow-up, so iterative work goes round the queue one turn at a time. Decided:
+    a piece of a task is a step, and Find out… runs at once (see [Working sessions](#working-sessions)).
+    Still open: run every follow-up straight away, offer Work in Claude after two rounds, stop asking
+    for a file after one failed read, and offer "Done, and start a new task" when a follow-up changes
+    the done-when.
+14. **How fast the focus AI pass is on each client.** A tools-free one-shot's start-up time hasn't
+    been measured, on Copilot especially. The design doesn't depend on it, since the instant pass
+    carries the reorder.
+15. **Names that are on everything.** A product name that appears on most tasks makes a focus phrase,
+    or a suggested deliverable, match too much. Possibly: ignore names on most live tasks, as shared
+    links do.

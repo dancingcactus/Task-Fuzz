@@ -107,6 +107,7 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
         fields.setdefault("quick_answers", None)
     if to not in ("queued", "working"):
         remove.add("gather")   # gathering ends however the task leaves Fuzz's hands
+        remove |= {"held", "together"}   # and so does waiting for, or working with, the rest of its group
     base = dict(t, **pend)
     f = dict(state=to, variant_tags=_tags(base, add_tags, remove), **fields)
     if "assignee" not in fields:
@@ -114,6 +115,8 @@ def move(core, ch, t, to, card=None, add_tags=(), remove_tags=(), **fields):
     if t["state"] != to:
         f["state_changed_at"] = core.now_iso()
         cards.withdraw(core, ch, t["id"], keep=card["id"] if card else None)
+        if to in ("done", "letgo") and t.get("deliverable_id"):   # Fuzz checks its deliverable's done-when next run
+            ch.deliverable(t["deliverable_id"], check_due=1)
     if to not in ("working",):
         f.setdefault("lease_owner", None)
         f.setdefault("lease_until", None)
@@ -162,6 +165,9 @@ def capture(core, text, docs=None, actor="human", due=None, gather=False, upload
             core.q("INSERT INTO sources (user_id, task_id, role, title) VALUES (?,?,?,?)",
                    (core.user_id, tid, "attachment", d))
         cards.sync(core, tid)
+    if not gather and actor == "human":   # with gathering, it's matched once Fuzz has looked it up
+        from .matching import dupes
+        dupes.check_captured(core, tid)
     return tid
 
 
@@ -182,8 +188,10 @@ def pointed(core, t, refs):
     return out
 
 
-def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human", refs=None):
-    """refs: sources you pointed Fuzz to with this ask (see pointed). They go in the notes with your words."""
+def assign(core, task_id, instructions=None, card=None, option="assign", value=None, actor="human", refs=None,
+           hold=False):
+    """refs: sources you pointed Fuzz to with this ask (see pointed). They go in the notes with your words.
+    hold: you're working through its group, so it waits (tag held) until the group is collected."""
     t = require(core, task_id)
     extra = {}
     log = ("status", "You assigned this to Fuzz.")
@@ -197,10 +205,29 @@ def assign(core, task_id, instructions=None, card=None, option="assign", value=N
         log = ("guidance", f"You said: {said}")
     with core.tx(actor):
         ch = events.Changes()
-        move(core, ch, t, "queued", card=card, attempts=0, question=None, **extra)
+        move(core, ch, t, "queued", card=card, attempts=0, question=None, add_tags=("held",) if hold else (), **extra)
         _answered(core, ch, card, option, value)
-        events.emit(core, "task.assigned", task_id=t["id"], changes=ch, log=log, data={"to": "fuzz"})
+        events.emit(core, "task.assigned", task_id=t["id"], changes=ch, log=log,
+                    data={"to": "fuzz", "held": True} if hold else {"to": "fuzz"})
     return t["id"]
+
+
+def find_out(core, task_id, question, card=None, actor="human"):
+    """Find out…: you need to know something before you can decide. The task goes to Fuzz with your
+    question (tag finding_out, gathered like a capture) but stays yours: Fuzz answers into the brief as a
+    step, never retitles or finishes it, and the card comes back next, right after the one in front."""
+    t = require(core, task_id)
+    q = (question if isinstance(question, str) else (question or {}).get("question") or "").strip()
+    if not q:
+        raise FuzzError("What do you need to know? A question, like “What did Marcus say about the setup?”", "value")
+    with core.tx(actor):
+        ch = events.Changes()
+        move(core, ch, t, "queued", card=card, add_tags=("gather", "finding_out"), attempts=0, question=None,
+             find_out=q[:300], notes=((t.get("notes") or "") + f"\nYou asked Fuzz to find out: {q}").strip())
+        _answered(core, ch, card, "find_out", q)
+        eid = events.emit(core, "task.find_out", task_id=t["id"], changes=ch, data={"question": q},
+                          log=("guidance", f"You asked Fuzz to find out: {q}"))
+    return eid
 
 
 def session(core, task_id, card=None):
@@ -323,15 +350,113 @@ def schedule(core, task_id, anchor, card=None, offered_only=True, instructions=N
     keep = ("result",) if "result" in (t.get("variant_tags") or []) and not look else ()
     with core.tx("human"):
         ch = events.Changes()
+        fire = fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         move(core, ch, t, "queued" if look else "scheduled", card=card, add_tags=("gather",) if look else keep,
-             schedule_anchor=anchor, schedule_fire_at=fire_at and fire_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-             question=None, attempts=0, **extra)
+             schedule_anchor=anchor, schedule_fire_at=fire, question=None, attempts=0, **extra)
+        # a group reply put off takes the tasks it answers with it; they come back to review together
+        d = core.one("SELECT covers FROM drafts WHERE task_id=? AND user_id=? AND status='pending' AND covers IS NOT NULL",
+                     (t["id"], core.user_id))
+        for cid in (d or {}).get("covers") or []:
+            c = get(core, cid)
+            if c and c["state"] == "review":
+                move(core, ch, c, "scheduled", schedule_anchor=anchor, schedule_fire_at=fire)
         _answered(core, ch, card, "schedule", {"anchor": anchor, "instructions": said} if said else {"anchor": anchor})
         events.emit(core, "task.scheduled", task_id=t["id"], changes=ch, log=log,
                     data={"anchor": anchor, "source": source, "line": timeres.line(core, anchor), "gather": look})
         core.q("INSERT INTO feedback (user_id, ts, kind, a, note) VALUES (?,?,?,?,?)",
                (core.user_id, core.now_iso(), "schedule", t["id"], f"{anchor['type']}:{source}"))
     return t["id"]
+
+
+def book(core, task_id, anchor, card=None):
+    """Book time: you'll do it then, so the time is held. Scheduled on a block; it comes back first in the
+    list, in work mode, when the block starts. Unlike Later, it doesn't count toward "keeps coming back"."""
+    from . import booking, timeres
+    t = require(core, task_id)
+    if isinstance(anchor, dict) and "anchor" in anchor:
+        anchor = anchor["anchor"]
+    s, e = booking.check(core, t, anchor)
+    anchor = {k: anchor[k] for k in ("type", "start", "end", "event_id") if anchor.get(k)}
+    lab = timeres.block_label(core, anchor)
+    with core.tx("human"):
+        ch = events.Changes()
+        move(core, ch, t, "scheduled", card=card, add_tags=("booked",), schedule_anchor=anchor,
+             schedule_fire_at=iso(s), question=None, attempts=0, remove_tags=("after_others", "ask_book", "in_the_way"))
+        _answered(core, ch, card, "book", {"anchor": anchor})
+        hold = booking.can_hold(core)
+        eid = events.emit(core, "task.scheduled", task_id=t["id"], changes=ch,
+                          log=("status", f"You booked time: {lab}." + ("" if hold else " Add it to your calendar yourself; it’s booked in Fuzz.")),
+                          data={"anchor": anchor, "source": "book", "booked": True, "line": f"It’s yours {lab}.",
+                                "hold": "draft" if hold else "manual"})
+        booking.ask_hold(core, get(core, t["id"]), anchor)   # the hold on your calendar, through the approval gate
+    return eid
+
+
+def do_now(core, task_id, card=None):
+    """Do it now: the task stays yours and opens as the working card (tag doing), the rest of the queue out
+    of view. Its ways out are Done, Pause, Hand to Fuzz and Work in Claude."""
+    t = require(core, task_id)
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], variant_tags=_tags(t, add=("doing",), remove=("after_others", "ask_book", "in_the_way")),
+                reason=None, pushes=0)
+        _answered(core, ch, card, "do_now")
+        eid = events.emit(core, "task.doing", task_id=t["id"], changes=ch, log=("status", "You started on this."))
+        cards.sync(core, t["id"], "front")
+    return eid
+
+
+def pause(core, task_id, card=None, left_off=None):
+    """Pause the working card: back to the list, with "where I left off" notes for when you pick it up."""
+    t = require(core, task_id)
+    said = (left_off if isinstance(left_off, str) else (left_off or {}).get("notes") or "").strip()
+    f = {"notes": ((t.get("notes") or "") + f"\nWhere I left off: {said}").strip()} if said else {}
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], variant_tags=_tags(t, remove=("doing", "block", "first_step")), order_key=next_order(core), **f)
+        _answered(core, ch, card, "pause", said or None)
+        eid = events.emit(core, "task.paused", task_id=t["id"], changes=ch,
+                          log=("guidance", f"You paused. Where you left off: {said}") if said else ("status", "You paused this."))
+        cards.sync(core, t["id"])
+    return eid
+
+
+def after_others(core, task_id, card=None):
+    """After the others: to the end of this session, picked up in the work phase if there's time. No penalty:
+    it isn't a push. If the session ends first, Fuzz asks whether to book time for it."""
+    t = require(core, task_id)
+    with core.tx("human"):
+        ch = events.Changes()
+        ch.task(t["id"], variant_tags=_tags(t, add=("after_others",), remove=("doing", "in_the_way", "ask_book")),
+                order_key=next_order(core))
+        _answered(core, ch, card, "after_others")
+        eid = events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": "task", "after_others": True},
+                          log=("status", "After the others: you'll get to it once the rest are sorted."))
+        cards.sync(core, t["id"])
+    return eid
+
+
+FIRST_STEP = ("Write a step-by-step checklist for this task in the brief (context_md), smallest first: step 1 "
+              "should take about two minutes. Keep the title and done-when; don't start the work.")
+
+
+def first_step(core, task_id, card=None):
+    """Just the first step: Fuzz writes the checklist, you do step 1 now, and the rest gets booked. The task
+    goes to Fuzz briefly (tag first_step, gathered) and comes back next as the working card."""
+    t = require(core, task_id)
+    with core.tx("human"):
+        ch = events.Changes()
+        move(core, ch, t, "queued", card=card, add_tags=("gather", "first_step"), attempts=0, question=None,
+             notes=((t.get("notes") or "") + f"\nYou asked for the first step: {FIRST_STEP}").strip())
+        _answered(core, ch, card, "first_step")
+        eid = events.emit(core, "task.assigned", task_id=t["id"], changes=ch, data={"to": "fuzz", "first_step": True},
+                          log=("status", "Fuzz is writing the checklist. Step 1 comes back to you next."))
+    return eid
+
+
+WAY_PROMPT = "What’s in the way?"
+DECIDE = "What are my options here? Lay them out with the one you'd suggest."
+DRAFT_IT = "Draft it for my OK. Keep the title and done-when."
 
 
 PUT_OFF_REASON = "This keeps coming back. Often that means the next step isn’t clear, or it doesn’t matter much anymore."
@@ -352,15 +477,23 @@ def bring_back(core, task_id, where="back", reason=None, type="task.came_back", 
     if t["state"] in ("triage", "review"):
         return None
     to = "triage"
-    if t["state"] == "scheduled" and core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending'", (t["id"],)):
-        to, tags = "review", ()
+    from .drafts import covering
+    if t["state"] == "scheduled" and (core.one("SELECT id FROM drafts WHERE task_id=? AND status='pending' "
+                                               "AND kind NOT IN ('calendar_hold', 'calendar_remove')", (t["id"],))
+                                      or covering(core, t["id"])):
+        to, tags = "review", ()   # a draft, or a group reply that answers it, waits for your OK again
+    elif t["state"] == "scheduled" and "booked" in (t.get("variant_tags") or []) and type in ("task.came_back", "task.block_started"):
+        # booked time: first in the list, in work mode (and never a "keeps coming back")
+        where, tags = "front", ("returning", "doing", "block")
     elif t["state"] == "scheduled" and type == "task.came_back" and put_off_again(core, t):
         tags, reason = tuple(tags) + ("put_off",), PUT_OFF_REASON
         log = log or ("status", "This came back at its time again. Fuzz is asking what’s in the way.")
+    keep_block = "block" in tags   # the block stays on the task while you work in it
     with core.tx(actor):
         ch = events.Changes()
-        move(core, ch, t, to, add_tags=tags, order_key=next_order(core, where), reason=reason,
-             schedule_anchor=None, schedule_fire_at=None)
+        fields = {} if keep_block else dict(schedule_anchor=None, schedule_fire_at=None)
+        move(core, ch, t, to, add_tags=tags, remove_tags=("booked",), order_key=next_order(core, where), reason=reason,
+             **fields)
         eid = events.emit(core, type, task_id=t["id"], changes=ch,
                           log=log or ("status", reason or "Back in triage."), data={"reason": reason})
         cards.sync(core, t["id"], where)
@@ -374,14 +507,21 @@ def to_back(core, task_id):
     open_ = cards.open_cards(core, t["id"])
     if not open_:
         raise FuzzError("This task has no card in triage to move", "task_id", 409)
+    # A task card sent to the end twice comes back asking what's in the way, like one that keeps getting a time
+    pushes = (t.get("pushes") or 0) + 1 if any(c["kind"] == "task" for c in open_) else (t.get("pushes") or 0)
+    stuck = pushes >= 2 and "in_the_way" not in (t.get("variant_tags") or [])
     with core.tx("human"):
         ch = events.Changes()
-        ch.task(t["id"], order_key=next_order(core))
+        ch.task(t["id"], order_key=next_order(core), pushes=0 if stuck else pushes,
+                **({"variant_tags": _tags(t, add=("in_the_way",)), "reason": WAY_PROMPT} if stuck else {}))
         for c in open_:
             ch.card(c["id"], postponed=c["postponed"] + 1, order_key=cards.next_order(core),
-                    payload=dict(c.get("payload") or {}, at_end=True))
+                    payload=dict({k: v for k, v in (c.get("payload") or {}).items() if k != "next"}, at_end=True),
+                    **({"prompt": WAY_PROMPT, "suggested": "find_out"} if stuck and c["kind"] == "task" else {}))
         events.emit(core, "card.postponed", task_id=t["id"], changes=ch, data={"kind": open_[0]["kind"], "to": "back"},
                     log=("status", "You moved this to the end of the list."))
+        from . import groups   # working through its group: the rest of it goes on without this one
+        groups.after_answer(core, t["id"])
     return t["id"]
 
 
@@ -444,9 +584,20 @@ def check_back(core, task_id, actor="system"):
 # ---------------------------------------------------------------- the AI's writes
 
 def update_brief(core, task_id, context_md=None, question=None, effort_mins=None, energy=None, due=None,
-                 summary=None, actor="fuzz:executor"):
+                 summary=None, actor="fuzz:executor", steps=None, gaps=None):
+    """steps: how many steps the work takes. With effort_mins it's the task's size on its card, and a brief
+    from Fuzz always comes with both (see "Size, and big tasks"). gaps: what Fuzz couldn't find, in a
+    few words each ("the test accounts"); the card offers Find out… first while there are any."""
     t = require(core, task_id)
     f = {}
+    if steps is not None:
+        if int(steps) < 1 or int(steps) > 50:
+            raise FuzzError("steps is how many steps the work takes, 1 to 50", "steps")
+        f["step_count"] = int(steps)
+    if gaps is not None:
+        if not isinstance(gaps, list) or not all(isinstance(g, str) for g in gaps):
+            raise FuzzError("gaps is a list of short phrases, like [\"the test accounts\"]", "gaps")
+        f["gaps"] = [g.strip()[:120] for g in gaps if g.strip()][:5] or None
     if due is not None:
         from .timeres import local_iso
         # a bare date means by the end of that working day
@@ -472,7 +623,13 @@ def update_brief(core, task_id, context_md=None, question=None, effort_mins=None
             raise FuzzError("energy must be low, normal or high", "energy")
         f["energy"] = energy
     if not f:
-        raise FuzzError("Pass context_md, summary, question, effort_mins, energy or due", "context_md")
+        raise FuzzError("Pass context_md, summary, question, effort_mins, steps, energy, gaps or due", "context_md")
+    if context_md and actor == "fuzz:executor":   # a brief from Fuzz always says how big the task is
+        size = {"effort_mins": f.get("effort_mins") or t.get("effort_mins"), "steps": f.get("step_count") or t.get("step_count")}
+        missing = [k for k, v in size.items() if not v]
+        if missing:
+            raise FuzzError(f"A brief comes with its size: pass {' and '.join(missing)} too (your estimate of the "
+                            "minutes the whole task takes and how many steps)", missing[0])
     with core.tx(actor):
         ch = events.Changes()
         ch.task(t["id"], **f)

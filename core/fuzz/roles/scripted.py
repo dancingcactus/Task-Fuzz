@@ -49,7 +49,8 @@ async def _executor(core, task_id, say):
             if t.get("gathering"):   # just captured: look, write the brief, pass it to triage
                 await _call(c, "update_brief", {"task_id": tid, "context_md":
                             f"**{t['title']}**\n\nA scripted run gathered this. Nothing real was looked up.",
-                            "summary": "A scripted run read the task; there was nothing to look up."})
+                            "summary": "A scripted run read the task; there was nothing to look up.",
+                            "effort_mins": 15, "steps": 2})
                 await _call(c, "finish_gathering", {"task_id": tid})
                 say(f"Gathered #{tid}")
                 done.append(tid)
@@ -60,7 +61,8 @@ async def _executor(core, task_id, say):
             if not t.get("context_md"):
                 await _call(c, "update_brief", {"task_id": tid, "context_md":
                             f"**{t['title']}**\n\nA scripted run wrote this. Nothing real was read.",
-                            "summary": "A scripted run read the task and drafted a next step."})
+                            "summary": "A scripted run read the task and drafted a next step.",
+                            "effort_mins": 15, "steps": 2})
             body = f"Draft for “{t['title']}”, based on: {(t.get('notes') or t.get('ask') or t['title']).strip()}"
             await _call(c, "save_draft", {"task_id": tid, "kind": "note", "target": "", "body": body})
             say(f"Draft ready on #{tid}")

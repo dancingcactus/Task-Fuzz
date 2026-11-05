@@ -319,7 +319,7 @@ class Brief(CoreCase):
         scheduler.claim_next(self.core)
         md = "**Compliance video**\n\nDue Friday. [Open the training](https://learn.example/compliance)"
         before = self.last_event_id()
-        tools.update_brief(self.core, tid, context_md=md, question="What should the deadline be?")
+        tools.update_brief(self.core, tid, context_md=md, question="What should the deadline be?", effort_mins=20, steps=2)
         self.assertEqual(self.types_since(before), ["task.brief_updated"])
         t = self.task(tid)
         self.assertEqual((t["context_md"], t["question"]), (md, "What should the deadline be?"))
@@ -336,8 +336,8 @@ class Brief(CoreCase):
         tasks.assign(self.core, tid)
         scheduler.claim_next(self.core)
         r = tools.update_brief(self.core, tid, context_md="## Agenda\n\n1. Estimates",
-                               summary="  Found three open items.  ")
-        self.assertEqual(r["updated"], ["context_md", "summary"])
+                               summary="  Found three open items.  ", effort_mins=20, steps=2)
+        self.assertEqual(r["updated"], ["context_md", "effort_mins", "step_count", "summary"])
         self.assertEqual(self.task(tid)["summary"], "Found three open items.")
         self.assertEqual(tools.get_task(self.core, tid)["summary"], "Found three open items.")
         tools.hand_back(self.core, tid, result=True)

@@ -14,7 +14,7 @@ class Replay(CoreCase):
         a = tasks.capture(self.core, "Do the corporate compliance video", docs=["Training link.pdf"])
         answers.answer(self.core, self.card_for(a, "task")["id"], "assign", {"instructions": "Find the deadline"})
         tools.claim_next_task(self.core)
-        tools.update_brief(self.core, a, context_md="**Video**", question="Book time?")
+        tools.update_brief(self.core, a, context_md="**Video**", question="Book time?", effort_mins=20, steps=2)
         tools.log_step(self.core, a, "research", "Found it")
         tools.save_draft(self.core, a, "note", "", "Plan")
         answers.answer(self.core, self.card_for(a, "draft")["id"], "send_back", "Shorter")

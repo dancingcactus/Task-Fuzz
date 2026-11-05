@@ -59,7 +59,10 @@ def build(core, role, task_id=None):
         def claim_next_task(task_id: int | None = None) -> dict:
             """Lease the next task the scheduler picks for you (or the one named), for 10 minutes.
             Any write renews the lease. Returns the task, or why there is nothing to do. gathering: true means
-            it was just captured: gather context for the person's triage card, then call finish_gathering."""
+            it was just captured: gather context for the person's triage card, then call finish_gathering.
+            finding_out: the person asked you one question about the task (Find out…). Look it up, log_step
+            what you found, answer it at the top of the brief, then finish_gathering. It's a step, not the task:
+            don't retitle it or finish it."""
             return _call(tools.claim_next_task, core, task_id)
 
         @srv.tool()
@@ -96,7 +99,8 @@ def build(core, role, task_id=None):
 
         @srv.tool()
         def save_draft(task_id: int, kind: str, target: str, body: str, final: bool = True,
-                       attach: list[str] | None = None, reply_to: int | None = None) -> dict:
+                       attach: list[str] | None = None, reply_to: int | None = None,
+                       covers: list[int] | None = None) -> dict:
             """Store a draft for the human to approve. The task moves to review. kind: email.reply, email.new,
             slack.message, calendar.invite, nudge.email, nudge.slack or note. target: only who it's to, as the
             person would say it on the card ("Stefano Marinoni <smarinoni@adobe.com>", "Slack #offsite-planning").
@@ -107,8 +111,11 @@ def build(core, role, task_id=None):
             final: false for a note that prepares a step still ahead ("send the update next week"). Call
             suggest_schedule (or update_brief with due) first: approving it schedules the task for then
             instead of closing it. attach: file names in the task's output_dir (as output_files lists them) for
-            the sender to attach to the message."""
-            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach, reply_to)
+            the sender to attach to the message.
+            covers: when get_task's group.together lists tasks you hold with this one (asks from the same thread
+            the person answered together), the ids this one reply also answers. Write one reply covering every
+            ask; approving it closes them all."""
+            return _call(tools.save_draft, core, task_id, kind, target, body, final, attach, reply_to, covers)
 
         @srv.tool()
         def hand_back(task_id: int, question: str | None = None, options: list[str] | None = None,
@@ -134,7 +141,8 @@ def build(core, role, task_id=None):
             return _call(tools.request_permission, core, task_id, scope, resource, why)
 
         @srv.tool()
-        def suggest_schedule(task_id: int, anchor: dict[str, Any], reason: str, you_said: str | None = None) -> dict:
+        def suggest_schedule(task_id: int, anchor: dict[str, Any] | None = None, reason: str | None = None,
+                             you_said: str | None = None, calendar: dict[str, Any] | None = None) -> dict:
             """Offer a time for this task's Schedule options. For a meeting or a person, look it up with your
             calendar connector and hand in a moment: {"type": "moment", "key": "leadership-1030",
             "label": "Before the leadership meeting", "at": "2026-10-30T09:00:00Z"}, where at is when the task
@@ -143,13 +151,19 @@ def build(core, role, task_id=None):
             At most two are kept; it must be in the future and before the due date.
             you_said: only when the person asked for it later ("can we bring this up next week?"): quote their
             words from the task. Fuzz then schedules the task on this anchor and your turn on it ends, with
-            nothing for them to approve. Without it, the time is only offered."""
-            return _call(tools.suggest_schedule, core, task_id, anchor, reason, you_said)
+            nothing for them to approve. Without it, the time is only offered.
+            calendar: when whoami's calendar says read_now, read the person's calendar for the next `days` with
+            your calendar connector and pass {slots, holds} here (with or without an anchor). slots: each free
+            stretch and each event whose title is one of slot_titles (their Focus time), as {start, end, title?}.
+            holds: what you saw of your_holds, {event_id, start, end} or {event_id, cancelled: true}. Fuzz ranks
+            the times for Book time from it; you never change their events."""
+            return _call(tools.suggest_schedule, core, task_id, anchor, reason, you_said, calendar)
 
         @srv.tool()
         def update_brief(task_id: int, context_md: str | None = None, question: str | None = None,
                          effort_mins: int | None = None, energy: str | None = None, due: str | None = None,
-                         title: str | None = None, ask: str | None = None, summary: str | None = None) -> dict:
+                         title: str | None = None, ask: str | None = None, summary: str | None = None,
+                         steps: int | None = None, gaps: list[str] | None = None) -> dict:
             """Write what the human sees. context_md: a short Markdown brief (what it is, when it's due, links),
             for tasks with no draft. summary: plain text, a sentence or two on what you did or found ("Checked
             Glean: three open items with Sydnee, led by the TAPER-8461 estimate"); it sits above the brief, so
@@ -157,9 +171,13 @@ def build(core, role, task_id=None):
             be?"). effort_mins and energy (low, normal, high) help order their queue. due: when it must be done,
             like 2026-11-03 or 2026-11-03T15:00 (their time zone unless it says otherwise). title and ask: only
             when their instructions changed what the task is; the old title is kept and Undo restores it.
+            Never retitle a task because they asked for one piece of it (a lookup, a question): that piece is a
+            step, logged with log_step and answered in the brief.
+            A brief always comes with its size: effort_mins (your estimate of the whole task's minutes) and steps
+            (how many steps it takes). gaps: what you couldn't find, a few words each ("the test accounts").
             Pass only what changes."""
             return _call(tools.update_brief, core, task_id, context_md, question, effort_mins, energy, due, title, ask,
-                         summary)
+                         summary, steps, gaps)
 
         @srv.tool()
         def finish_gathering(task_id: int, result: bool = False, options: list[str] | None = None,
@@ -180,12 +198,31 @@ def build(core, role, task_id=None):
             """Give up the lease. The task goes back to the queue for a later run."""
             return _call(tools.release, core, task_id)
 
+        @srv.tool()
+        def list_deliverables(since: str | None = None) -> dict:
+            """The person's open deliverables (named outcomes served by many tasks): tier, done-when, open tasks
+            and what moved on each since then (default a week). For a weekly report they asked for, and to
+            check done-whens."""
+            return _call(tools.list_deliverables, core, since)
+
+        @srv.tool()
+        def report_deliverable_done(deliverable_id: int, evidence: str | None = None,
+                                    cant_check: str | None = None) -> dict:
+            """For each of whoami's deliverables_to_check, look for its done-when's evidence with your lookup
+            tools. True: pass evidence, what you saw ("REP-118 is Done and in the release notes"); Fuzz closes it
+            and the person can undo. Can't reach it: pass cant_check with why; Fuzz asks them. Not true yet:
+            don't call this."""
+            return _call(tools.report_deliverable_done, core, deliverable_id, evidence, cant_check)
+
     elif role == "sender":
         @srv.tool()
         def claim_next_send() -> dict:
             """Lease the oldest approved draft waiting to go out: its kind, target (who it's to), thread (the
             message it replies in: title, link and the connector's ids, or null for a new one), the exact body to
-            send, and attachments (each a name and a path) to attach to it."""
+            send, and attachments (each a name and a path) to attach to it. A calendar_hold has hold {title, start,
+            end, event_id?}: create an event of their own with that title and the body as its description (or move
+            event_id to the new times), then mark_sent with link set to the event's id. A calendar_remove: delete
+            event_id, then mark_sent. Never change any other event."""
             return _call(tools.claim_next_send, core)
 
         @srv.tool()

@@ -37,6 +37,7 @@ CANDIDATE = {
         "context_md": {"type": "string", "maxLength": 16384},
         "question": {"type": "string", "maxLength": 500},
         "effort_mins": {"type": "integer", "minimum": 1},
+        "steps": {"type": "integer", "minimum": 1, "maximum": 50},   # how many steps the work takes
         "energy": {"enum": ["low", "normal", "high"]},
         "moments": {"type": "array", "maxItems": 2, "items": MOMENT},
     },
@@ -76,6 +77,7 @@ VERDICT = {
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "new_ask": {"type": "boolean"},
         "new_title": {"type": ["string", "null"]},
+        "deliverable_id": {"type": ["integer", "null"]},   # part of this deliverable (from the item's deliverables)
         "reason": {"type": "string"},
     },
     "additionalProperties": False,

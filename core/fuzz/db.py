@@ -103,6 +103,21 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_user_state ON tasks (user_id, state);
 CREATE INDEX IF NOT EXISTS tasks_user_closed ON tasks (user_id, state, state_changed_at);
+CREATE TABLE IF NOT EXISTS deliverables (   -- a named outcome served by tasks from any channel (see Deliverables)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  done_when TEXT NOT NULL,         -- evidence Fuzz can check with its tools
+  checked_by TEXT NOT NULL,        -- fuzz | you
+  for_name TEXT,                   -- who it's for: a customer or a team
+  due TEXT,
+  tier TEXT NOT NULL,              -- active (this week's) | background
+  state TEXT NOT NULL,             -- open | done | dropped
+  evidence TEXT,                   -- what Fuzz saw when it closed it
+  check_due INTEGER,               -- 1: Fuzz checks the done-when on its next run
+  reviewed_at TEXT,
+  created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -146,7 +161,9 @@ CREATE TABLE IF NOT EXISTS drafts (
   created_at TEXT,
   final INTEGER,                   -- 0: a note that prepares a later step; approving it doesn't close the task
   attachments TEXT,                -- json list of file names in the task's output folder, for the sender
-  reply_to INTEGER                 -- the source whose thread a reply or nudge goes in
+  reply_to INTEGER,                -- the source whose thread a reply or nudge goes in
+  covers TEXT,                     -- json list: the other tasks in the group one reply answers
+  meta TEXT                        -- json: a calendar hold's {start, end, event_id}
 );
 CREATE TABLE IF NOT EXISTS grants (
   id INTEGER PRIMARY KEY,
@@ -294,6 +311,17 @@ CREATE TABLE IF NOT EXISTS decisions (
   matcher_version TEXT,
   ts TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS screen_times (   -- when each card was on screen and how long you were away; for tuning, not events
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  card_id INTEGER,
+  task_id INTEGER,
+  mode TEXT,                       -- sort | work
+  shown_at TEXT NOT NULL,
+  left_at TEXT,
+  away_s INTEGER,
+  how TEXT                         -- what ended it: the answer, or skipped
+);
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -307,7 +335,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 JSON_COLS = {"quick_answers", "variant_tags", "schedule_anchor", "schedule_hints", "title_history",
-             "options", "schedule_options", "payload", "answer", "detail", "attachments"}
+             "options", "schedule_options", "payload", "answer", "detail", "attachments", "covers", "gaps", "meta"}
 
 
 def iso(dt):
@@ -344,9 +372,12 @@ def connect(home):
 
 
 MIGRATIONS = {"sources": [("path", "TEXT"), ("mime", "TEXT"), ("size", "INTEGER"), ("link", "TEXT")],
-              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER")],
+              "drafts": [("final", "INTEGER"), ("attachments", "TEXT"), ("reply_to", "INTEGER"), ("covers", "TEXT"),
+                         ("meta", "TEXT")],
               "tasks": [("summary", "TEXT"), ("group_id", "INTEGER"), ("reviewed_at", "TEXT"), ("reviews", "INTEGER"),
-                        ("reschedules", "INTEGER"),
+                        ("reschedules", "INTEGER"), ("step_count", "INTEGER"), ("gaps", "TEXT"), ("find_out", "TEXT"),
+                        ("pushes", "INTEGER"), ("missed_blocks", "INTEGER"),
+                        ("deliverable_id", "INTEGER"), ("maybe_deliverable_id", "INTEGER"),
                         ("next_step", "TEXT"), ("session_id", "TEXT"), ("session_launch", "TEXT"), ("session_at", "TEXT")]}
 
 
@@ -394,7 +425,7 @@ class Core:
         self.user_id = int(user_id or os.environ.get("FUZZ_USER") or 1)
         self.clock = clock
         self.run = None              # {"id", "client", "model", "prompt_version"} for AI callers
-        self.renew = None            # (task_id, lease_until): renew this lease on the next event about it
+        self.renew = None            # (task_id, lease_until, mates): renew this lease (and a group claim's) on the next event about it
         self.lock = threading.RLock()
         self._depth = 0
         self._group = None

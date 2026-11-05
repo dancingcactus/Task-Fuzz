@@ -78,8 +78,8 @@ class Rename(Claimed):
     def test_a_rename_is_logged_and_undone_on_its_own(self):
         tid = self.claimed("Can you summarize my last 5 slack threads?")
         r = tools.update_brief(self.core, tid, title="Summarize my last 5 emails", ask="Summarize my last 5 emails",
-                               context_md="**Five emails**")
-        self.assertEqual(r["updated"], ["ask", "context_md", "title"])
+                               context_md="**Five emails**", effort_mins=10, steps=1)
+        self.assertEqual(r["updated"], ["ask", "context_md", "effort_mins", "step_count", "title"])
         t = self.task(tid)
         self.assertEqual((t["title"], t["title_history"]), ("Summarize my last 5 emails",
                                                             ["Can you summarize my last 5 slack threads?"]))
@@ -106,7 +106,7 @@ class Result(Claimed):
         with self.assertRaises(FuzzError) as e:
             tools.hand_back(self.core, tid, result=True)
         self.assertEqual(e.exception.field, "result", "the brief comes first")
-        tools.update_brief(self.core, tid, context_md="**Launch**: moved to the 14th.")
+        tools.update_brief(self.core, tid, context_md="**Launch**: moved to the 14th.", effort_mins=20, steps=2)
         with self.assertRaises(FuzzError):
             tools.hand_back(self.core, tid, options=["Dig into the date", "Draft a reply"], result=True)
         tools.hand_back(self.core, tid, options=["Dig into the date"], result=True)
@@ -120,7 +120,7 @@ class Result(Claimed):
 
     def test_ask_me_later_brings_the_result_back(self):
         tid = self.claimed("Summarize the launch thread")
-        tools.update_brief(self.core, tid, context_md="**Launch**: moved to the 14th.")
+        tools.update_brief(self.core, tid, context_md="**Launch**: moved to the 14th.", effort_mins=20, steps=2)
         tools.hand_back(self.core, tid, result=True)
         card = self.card_for(tid, "task")
         answers.answer(self.core, card["id"], "schedule", {"anchor": card["schedule_options"][0]["anchor"]})
@@ -270,7 +270,7 @@ class ScheduledLookup(CoreCase):
     def test_the_brief_waits_until_its_time(self):
         tid = self.scheduled()
         scheduler.claim_next(self.core)
-        tools.update_brief(self.core, tid, context_md="## Owner\n\nAmarnath", summary="Amarnath owns it.")
+        tools.update_brief(self.core, tid, context_md="## Owner\n\nAmarnath", summary="Amarnath owns it.", effort_mins=20, steps=2)
         self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "scheduled"})
         t = self.task(tid)
         self.assertEqual((t["state"], t["variant_tags"], t["schedule_fire_at"]),
@@ -286,7 +286,7 @@ class ScheduledLookup(CoreCase):
     def test_a_result_waits_too(self):
         tid = self.scheduled("Summarize the Eurobet thread")
         scheduler.claim_next(self.core)
-        tools.update_brief(self.core, tid, context_md="## Thread\n\nRolled out Monday")
+        tools.update_brief(self.core, tid, context_md="## Thread\n\nRolled out Monday", effort_mins=20, steps=2)
         self.assertEqual(tools.finish_gathering(self.core, tid, result=True), {"state": "scheduled"})
         self.clock.advance(days=1, hours=6)
         scheduler.tick(self.core)
@@ -360,7 +360,7 @@ class Gathering(CoreCase):
     def test_the_brief_reaches_triage_with_the_card(self):
         tid = self.gathered()
         tools.log_step(self.core, tid, "research", "Found three open items with Sydnee in Glean.")
-        tools.update_brief(self.core, tid, context_md="## Open items\n\n1. Estimates", summary="Three open items.")
+        tools.update_brief(self.core, tid, context_md="## Open items\n\n1. Estimates", summary="Three open items.", effort_mins=20, steps=2)
         self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "triage"})
         t = self.task(tid)
         self.assertEqual((t["state"], t["assignee"], t["variant_tags"]), ("triage", "human", []))
@@ -380,7 +380,7 @@ class Gathering(CoreCase):
             tools.finish_gathering(self.core, tid, result=True)
         self.assertEqual(e.exception.field, "result", "a result needs the brief")
         tools.update_brief(self.core, tid, context_md="## Today\n\n1. Launch moved",
-                           summary="Four emails, one urgent.")
+                           summary="Four emails, one urgent.", effort_mins=20, steps=2)
         tools.finish_gathering(self.core, tid, result=True, options=["Draft a reply to the urgent one"])
         t = self.task(tid)
         self.assertEqual(t["state"], "triage")
@@ -396,7 +396,7 @@ class Gathering(CoreCase):
         self.core.save_config(cfg)
         tid = self.gathered("Summarize my email from today")
         self.assertFalse(tools.get_task(self.core, tid)["may_finish"])
-        tools.update_brief(self.core, tid, context_md="## Today")
+        tools.update_brief(self.core, tid, context_md="## Today", effort_mins=20, steps=2)
         with self.assertRaises(FuzzError):
             tools.finish_gathering(self.core, tid, result=True)
         self.assertEqual(tools.finish_gathering(self.core, tid), {"state": "triage"})

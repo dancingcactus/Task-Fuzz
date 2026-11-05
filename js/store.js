@@ -38,6 +38,10 @@
       captureN = 0; sentN = 0; celebrated = {}; state.checkins = [];
       /* drafts already waiting for your OK start out in the queue too */
       S.inState('review').forEach(function (it) { S.queueUp(it, 'back'); });
+      /* the demo's tasks show a size from their minutes */
+      state.items.forEach(function (it) {
+        if (it.kind === 'task' && !it.sizeLabel && it.mins) it.sizeLabel = it.mins < 60 ? '≈ ' + it.mins + ' min' : '≈ ' + Math.round(it.mins / 30) / 2 + ' h';
+      });
       S.sortQueue();
       emit({ type: 'reset' });
     },
@@ -146,12 +150,31 @@
       }
       state.queue.sort(function (a, b) {
         var x = S.item(a), y = S.item(b);
-        var kx = [x.picked ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
-        var ky = [y.picked ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
+        /* the working card first; then deadlines; then this session's focus (the core orders live cards the same way) */
+        var fo = (state.focus && state.focus.task_ids) || [];
+        var kx = [x.picked ? 0 : 1, x.doing ? 0 : 1, x.atEnd ? 1 : 0, x.dueAt ? 0 : 1, fo.indexOf(x.coreId || x.id) > -1 ? 0 : 1, x.handedBack ? 1 : 0, fits(x) ? 0 : 1, x.order];
+        var ky = [y.picked ? 0 : 1, y.doing ? 0 : 1, y.atEnd ? 1 : 0, y.dueAt ? 0 : 1, fo.indexOf(y.coreId || y.id) > -1 ? 0 : 1, y.handedBack ? 1 : 0, fits(y) ? 0 : 1, y.order];
         for (var i = 0; i < kx.length; i++) if (kx[i] !== ky[i]) return kx[i] - ky[i];
         return 0;
       });
+      /* A group's cards come back to back, where its first one is; the group you're working through comes
+         first, ahead of new arrivals and deadlines (one you picked from Lineup still goes first). The core
+         orders live cards the same way. */
+      var run = state.groupRun, out = [], used = {};
+      function together(it) { return it.group && !it.atEnd; }
+      function take(id) { if (!used[id]) { used[id] = true; out.push(id); } }
+      state.queue.forEach(function (id) { if (S.item(id).picked) take(id); });
+      if (run) state.queue.forEach(function (id) { var it = S.item(id); if (it.group === run && together(it)) take(id); });
+      state.queue.forEach(function (id) {
+        if (used[id]) return;
+        var it = S.item(id); take(id);
+        if (together(it)) state.queue.forEach(function (o) { var x = S.item(o); if (x.group === it.group && together(x)) take(o); });
+      });
+      state.queue = out;
     },
+    /* The group you're working through in Triage (its id), or null once Fuzz has every answer */
+    setRun: function (gid) { if (state.groupRun !== gid) { state.groupRun = gid || null; S.sortQueue(); } },
+    groupRun: function () { return state.groupRun || null; },
     setMoment: function (m) { state.moment = m; S.sortQueue(); emit({ type: 'moment' }); },
     /* End of the list: behind everything, deadlines too, until it next leaves triage */
     toBack: function (id, text) { var it = S.item(id); if (text != null) it.draft = text; if (it.kind === 'task') it.atEnd = true; it.order = ++state.maxOrder; S.sortQueue(); },
@@ -260,6 +283,108 @@
       var it = S.item(id); S.leave(id); it.state = 'resolved'; it.resolution = which;
       var t = it.kind === 'dup' && S.item(it.dupOf);
       if (t && which === 'primary') { S.log(t, 'status', 'Merged with a Slack message from ' + it.who + '. It is now a source on this task. Reason: same person and the same Q4 results doc.'); t.sources.push({ type: 'Slack', title: 'Priya: Q4 summary deck request' }); t.updated = true; }
+    },
+    /* ---- focus: what we're working on this session ----
+       Live mode asks the core (its instant pass, then the AI's); the demo matches words in titles. */
+    focusNow: function () { return (state && state.focus) || null; },
+    focusChips: function () {
+      var out = (state.focusChips || []).slice();
+      if (!out.length) { var last = state.lastFocus; if (last) out.push({ label: last, text: last }); out.push({ label: 'Whatever’s next', skip: true }); }
+      return out;
+    },
+    focusPreview: function (text) {
+      var words = (text || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+      if (/small things|quick ones|quick things/.test((text || '').toLowerCase())) return Promise.resolve({ tasks: [], quick: true });
+      var ts = S.queue().filter(function (it) { var t = (it.title || '').toLowerCase(); return words.some(function (w) { return ['the', 'for', 'and', 'prep', 'stuff', 'things'].indexOf(w) < 0 && t.indexOf(w) > -1; }); });
+      return Promise.resolve({ tasks: ts.map(function (it) { return { task_id: it.id, title: it.title, why: 'Says it in the title' }; }), quick: false });
+    },
+    setFocus: function (text, ids, skip) {
+      if (skip) { state.focus = { source: 'skip', text: null, task_ids: null }; S.sortQueue(); return; }
+      if (/small things|quick ones|quick things/.test((text || '').toLowerCase())) { state.focus = { text: text, task_ids: null, quick: true }; S.setMoment('quick'); return; }
+      state.focus = { text: text, task_ids: ids || [] }; state.lastFocus = text;
+      S.sortQueue(); emit({ type: 'moment' });
+    },
+    /* ---- working sessions ---- */
+    /* A task is big at 45 minutes or five steps (work.big_minutes, work.big_steps in the core), or when you say so */
+    isBig: function (it) { return !!it && it.kind === 'task' && (!!it.forceBig || (it.size ? !!it.size.big : (it.mins || 0) >= 45 || (it.stepCount || 0) >= 5)); },
+    workConfig: function () { var w = (state && state.work) || {}; return w.stuck_minutes || { sort: 3, work: 25 }; },
+    /* The times Book time offers: the core's (live), or the demo's next working-hour starts */
+    bookOptions: function (it) {
+      if (it.bookOptions) return it.bookOptions;
+      var mins = Math.min(it.mins || 30, 120), out = [], d = new Date();
+      for (var i = 1; out.length < 3 && i < 8; i++) {
+        var day = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
+        if (day.getDay() === 0 || day.getDay() === 6) continue;
+        [9, 14].forEach(function (h) {
+          if (out.length >= 3) return;
+          var s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h), e = new Date(s.getTime() + mins * 60000);
+          var f = function (x) { return x.getHours() + ':' + ('0' + x.getMinutes()).slice(-2); };
+          out.push({ anchor: { type: 'block', start: s.toISOString(), end: e.toISOString() }, label: s.toLocaleDateString([], { weekday: 'short' }) + ' ' + f(s) + '–' + f(e), focus: false });
+        });
+      }
+      return out;
+    },
+    /* Book time: you'll do it then. It comes back first in the list, in work mode. */
+    book: function (id, opt) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'scheduled'; it.booked = opt && opt.label; it.now = 'Booked ' + (opt ? opt.label : '');
+      S.log(it, 'status', 'You booked time: ' + (opt ? opt.label : 'a block') + '.');
+    },
+    /* Do it now: the working card, first in the list */
+    doNow: function (id) { var it = S.item(id); if (!it) return; it.doing = true; it.forceBig = false; S.pick(id); S.log(it, 'status', 'You started on this.'); },
+    pause: function (id, note) {
+      var it = S.item(id); if (!it) return;
+      it.doing = false; it.firstStepMode = false; it.picked = false; it.order = ++state.maxOrder; S.sortQueue();
+      S.log(it, note && note.trim() ? 'guidance' : 'status', note && note.trim() ? 'You paused. Where you left off: ' + note.trim() : 'You paused this.');
+    },
+    afterOthers: function (id) { var it = S.item(id); if (!it) return; it.afterOthers = true; it.doing = false; S.toBack(id); S.log(it, 'status', 'After the others: you’ll get to it once the rest are sorted.'); },
+    firstStep: function (id) {
+      var it = S.item(id); if (!it) return;
+      S.log(it, 'status', 'Fuzz is writing the checklist. Step 1 comes back to you next.');
+      if (S.live) { S.leave(id); it.state = 'ai-queued'; it.gathering = true; return; }
+      it.doing = true; it.firstStepMode = true; it.firstStep = it.firstStep || 'Open what you need and write the first line (two minutes).'; S.pick(id);
+    },
+    /* ---- deliverables ----
+       Named outcomes served by many tasks. Live mode keeps the core's list in state.deliverables. */
+    deliverables: function () { return (state && state.deliverables) || []; },
+    deliverable: function (coreId) { return S.deliverables().filter(function (d) { return d.id === coreId; })[0] || null; },
+    /* A deliverable card's answer (last week, this week's pick or steps, track a new one, part of …) */
+    answerCard: function (id, opt) { var it = S.item(id); if (!it) return; S.leave(id); if (it.kind === 'deliv') it.state = 'resolved'; else it.cardKind = null; },
+    deliverableAction: function () { return Promise.resolve(); },
+    /* The end of a booked block: Keep going (the block runs on, if the calendar is free) */
+    keepGoing: function (id) { var it = S.item(id); if (!it) return; it.blockEnd = false; S.log(it, 'status', 'You kept going.'); S.pick(id); },
+    /* A hold on your calendar for booked time: approve, always allow, or skip (still booked in Fuzz) */
+    answerHold: function (id, opt) { var it = S.item(id); if (!it) return; S.leave(id); it.cardKind = null; S.log(it, 'status', opt === 'skip' ? 'No change to your calendar.' : 'You approved the calendar hold.'); },
+    decideFor: function (id) { return S.findOut(id, 'What are my options here? Lay them out with the one you’d suggest.'); },
+    draftIt: function (id) { var it = S.item(id); if (!it) return; S.leave(id); it.state = 'ai-queued'; S.log(it, 'guidance', 'You said: draft it for my OK.'); },
+    /* Find out…: Fuzz looks it up; the task stays yours and its card comes back right after the one in front.
+       Live mode does it in the core; the demo pretends, a few seconds later. */
+    findOut: function (id, q) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'ai-queued'; it.gathering = true; it.now = 'Finding out: ' + q;
+      S.log(it, 'guidance', 'You asked Fuzz to find out: ' + q);
+      if (S.live) return;
+      setTimeout(function () {
+        if (it.state !== 'ai-queued' || !it.gathering) return;
+        it.state = 'triage'; it.gathering = false; it.foundOut = true; it.now = '';
+        it.aiHeading = 'You asked: ' + q; it.aiNote = 'In this demo Fuzz doesn’t really look. With your engine set up, the answer lands here.';
+        S.log(it, 'status', 'Fuzz found out what you asked. It’s back for you.');
+        if (!S.inQueue(id)) { state.queue.splice(Math.min(1, state.queue.length), 0, id); state.totalEver++; }
+        emit({ type: 'review' });
+      }, 4000);
+    },
+    /* A late ask joins the thread's reply that's waiting for your OK: Fuzz rewrites the reply to cover it */
+    joinReply: function (id) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'ai-queued'; it.joinReply = false;
+      S.log(it, 'status', 'You added this to the reply waiting for your OK. Fuzz rewrites it to cover this too.');
+    },
+    /* "Same as…" in task detail: this task is the one you picked, so it merges into it (the core matches;
+       live mode only). other is the picked task's title, for the log. */
+    sameAs: function (id, otherCoreId, otherTitle) {
+      var it = S.item(id); if (!it) return;
+      S.leave(id); it.state = 'resolved'; it.resolution = 'primary';
+      S.log(it, 'status', 'You said this is the same as “' + (otherTitle || 'another task') + '”, so it merged into it.');
     },
 
     /* ---- groups ----

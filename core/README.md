@@ -137,6 +137,8 @@ brief for tasks with no draft), `summary` (a sentence or two on what Fuzz did or
 GET  /tasks?state=…            GET  /tasks/{id}          POST /tasks {text, docs?, due?}
 POST /tasks/{id}/assign|done|park|wait|letgo|session|reopen|schedule
 POST /tasks/{id}/moments {label, at, key?, cancelled?}
+GET  /tasks/{id}/same_as       POST /tasks/{id}/same_as {other_id}   (merges it into that task; Undo splits it)
+GET  /groups                   POST /groups/{id}/rename|take_out|wrap|finish_later
 POST /tasks/{id}/files?name=…  (raw body)    DELETE /tasks/{id}/files/{source_id}
 GET  /files/{source_id}        GET  /artifacts           GET  /artifacts/{source_id}
 GET  /cards                    POST /cards/{id}/answer {option, value?}
@@ -264,6 +266,95 @@ executor can't draft, hand back, ask for permission or split the task.
 
 If no run gets to it within `gather.minutes` (10), or a run fails on it `budget.max_attempts` times,
 it comes to triage as captured. Turn it off with `fuzz config set gather.enabled false`.
+
+### Catching duplicates of what you capture
+
+Once Fuzz has looked a captured task up (or straight away with gathering off), it gets a matching
+record like an extracted ask: a `capture:task<id>` signal and candidate from its ask and the links
+Fuzz found, kept as a hidden source (role `ignored`). That gives it entities and a vector, so later
+signals can find it, and it's checked now against the open tasks that came from email, Slack, meetings
+or Fuzz (two things you typed yourself are yours to tell apart). A shared ticket key or document link,
+or an ask very close in meaning, raises a `duplicate` card, which comes before the task's own card.
+A link on more than three live tasks doesn't count. The judge's `new` verdicts get the same check
+against the tasks made in the same run after their shortlist froze (`frozen_after` on the pending
+item), since those were never on it. The code is `fuzz/matching/dupes.py`.
+
+### Working through a group
+
+A group's cards come back to back in `GET /cards`, and once you've answered one, the rest come
+before anything else (`group_run` on the response says which group and tasks). Every answer takes
+effect at once, except Assign to Fuzz: that task waits with the `held` tag, and `claim_next_task`
+skips it. After the last card (or `POST /groups/{id}/finish_later`, or `grouping.collect_minutes`
+(30) with no answer), `group.collected` turns the held tasks `together`, and the answer returns Fuzz's
+plan as `collected` ("Got all 3. I'll look into the two together and draft one reply to Dana Reyes.").
+Finish later also sends the group's remaining cards to the end of the list. The next claim leases all
+the `together` tasks at once (one slot); `get_task`'s `group` lists them under `together`, with what
+you said on each other card, and `save_draft(covers=[…])` makes one reply that waits in review for all
+of them and closes them all when it's sent. A handback on a group claim asks once; the others wait,
+`held`, for your answer. Undo of the last answer takes the collection back too.
+
+### Find out… and working sessions
+
+**Find out…** (`find_out {question}` on a task card, or `POST /tasks/{id}/find_out`) sends the task to
+Fuzz tagged `finding_out`, gathered like a capture, and starts a run at once. Fuzz can't retitle it or
+finish it (`result`); when it calls `finish_gathering` the card comes back next, right after the card
+that was in front, tagged `found_out`. A brief's `gaps` make Find out… the suggested answer.
+
+Every brief from Fuzz carries `effort_mins` and `steps` (`step_count`), and cards show the size
+("≈ 1½ h · 6 steps"). A task is big at `work.big_minutes` (45) or `work.big_steps` (5); its card has
+`lead: [do_now, book, after_others, first_step]` and suggests `book`. **Later** is `schedule` and counts
+toward "keeps coming back". **Book time** is `book {anchor: {type: block, start, end}}` from the card's
+`book_options`: the task is `scheduled` (tag `booked`), never double-booked, and comes back first in the
+list as the working card (tags `doing`, `block`) without counting. `do_now` opens the working card
+(`done`, `pause {notes}`, `assign`, `session`, `book`, `find_out`); `after_others` sends it to the end
+with no penalty, and back at your desk it asks to book time; `first_step` has Fuzz write the checklist
+and brings it back next as the working card. A task card sent to the end twice asks "What's in the way?"
+(`find_out`, `do_now`, `book`, `first_step`, `decide`, `draft_it`, `after_others`, `drop`). The UI posts
+each card's time on screen to `POST /screen` (not an event).
+
+### Booking time
+
+The core never reads the calendar. When `whoami`'s `calendar.read_now` says so, the executor reads it
+with its own connector and passes `{slots, holds}` as `suggest_schedule`'s `calendar` argument (not a
+tool of its own, to keep the executor at fifteen tools). Book time then ranks: inside a Focus time slot
+(`booking.slot_titles`) before the due date and long enough; inside one where only part fits ("Block 1
+of 2"); then other free time ("Not a focus slot"), around Fuzz's own blocks. Booking makes a
+`calendar_hold` draft (title: the task's title; body: its `#tasks/<id>` link and done-when) with a
+`hold` card (Approve, Always allow, Skip) when the sender has a calendar tool in `send.tools`; otherwise
+it's booked in Fuzz only. The sender gets `hold {title, start, end, event_id?}` and marks it sent with
+the event id. `booking.prep_minutes` (30) before the block Fuzz writes the checklist; at the start the
+task is first in the list as the working card; at the end it asks "How far did you get?" (Done, Keep
+going by `booking.extend_minutes`, another block, Pause), or, if you never touched it, "The block for
+this went by" (two misses: "keeps coming back"). A task done before its block offers to remove the
+hold. Holds you move or cancel are reported back in `holds` and handled as moments are.
+
+### Focus
+
+At the start of a session the UI asks "What are we working on?" (chips from `GET /focus`, or your own
+words). `GET /focus/preview?q=…` is the instant pass (names Fuzz knows, ticket keys, words in titles
+and asks, meaning against the stored vectors, and phrases resolved before); `POST /focus {text,
+task_ids?}` (or `{skip: true}`) sets it, and the queue orders `(working card, at end, time-sensitive,
+focus, handbacks, moment, order)`; `claim_next_task` orders deadline, then focus. Both start one
+tools-free call to a small model in the background (`focus.ai_pass`, the shape of connector discovery)
+that can only pick from the open tasks it was given; an unknown id is refused, a slow or failed call
+leaves the instant order, and the phrase is kept so it's instant next time. `GET /cards?front=<card>`
+keeps the card on screen first. Stepping away (`wake`) ends the session's focus.
+
+### Deliverables
+
+`deliverables` is a projected table like `groups` (`GET/POST /deliverables`, `GET /deliverables/{id}`
+for the sheet, `POST /deliverables/{id}/tier|done|drop|rename`, `GET/POST /tasks/{id}/part_of`). A
+done-when must be a state, not an activity; `checked_by: you` means Fuzz never closes it. A verdict's
+`deliverable_id` links a task quietly when confident, asks (`part_of`) for an active one, and keeps it
+for the next card (`maybe_deliverable_id`) for a background one. When one of its tasks closes, the
+deliverable is `check_due` and shows in the executor's `whoami.deliverables_to_check`;
+`report_deliverable_done(id, evidence)` closes it (Undo works on it), or `cant_check` asks you. On
+`deliverables.review_day` after your first check-in, the clock brings last week per active one, the
+pick (`week_plan`), this week's steps and new-and-loose suggestions (three or more tasks sharing a
+ticket or document), all first in the queue; a rough Monday only the pick, the rest Tuesday. Other
+weekdays, background ones get a card each, sized by the check-in. The active ones' tasks are the
+week's focus. The executor has 17 tools now: the design names `list_deliverables` and
+`report_deliverable_done`.
 
 ### Looking into a task you scheduled
 
