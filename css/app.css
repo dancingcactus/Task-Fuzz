@@ -292,8 +292,10 @@ html.dragging-file .drop.over .dropbtn { border-color: var(--accent); background
 .split .done-btn svg { color: var(--ok); }
 .split .more-btn { flex: none; width: 44px; padding: 0; border-radius: 0 12px 12px 0; border-left-width: 1px; }
 .split .split-main { flex: 1; min-width: 0; border-radius: 12px 0 0 12px; border-right-width: 1px; }
-/* A task card's four: Assign (Find out… behind it), Work in Claude, Later (Book time behind it), Done. Two by two. */
-.actions:not(.working-actions):has(> .split-assign) { grid-template-columns: 1fr 1fr; }
+/* A task card's four: Assign (Find out… behind it) across the whole row under the instructions,
+   then Work in Claude, Later (Book time behind it) and Done share the row below. */
+.actions:not(.working-actions):has(> .split-assign) { grid-template-columns: repeat(3, 1fr); }
+.actions:not(.working-actions) > .split-assign { grid-column: 1 / -1; }
 .split-assign .menu, .split-later .menu { left: 0; right: auto; } /* they start their row: open toward the card */
 /* A draft waiting for your OK: who it goes to, the editable text, then the decision */
 .draft { display: flex; flex-direction: column; gap: 8px; }

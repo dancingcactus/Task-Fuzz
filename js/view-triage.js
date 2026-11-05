@@ -305,14 +305,6 @@
         '<div class="parkrow"><input id="wait-who" type="text" autocomplete="off" placeholder="A name" value="' + esc(edits[it.id + ':who'] || '') + '"><button class="btn primary" type="submit">Wait on them</button></div>' +
         '<div class="sched-links"><button type="button" class="linkbtn" data-act="wait-cancel" aria-keyshortcuts="Escape">Back to the card</button></div></form>';
     }
-    if (askingFind) {
-      /* Find out…: a question for Fuzz. The task stays yours; the card comes back right after the one in front. */
-      var pre = edits[it.id + ':find'] != null ? edits[it.id + ':find'] : (it.gaps && it.gaps.length ? 'Find ' + it.gaps.join(' and ') : '');
-      return '<form class="sched-panel" id="find-form"><h3 id="find-h"><label for="find-q">What do you need to know?</label></h3>' +
-        '<p class="meta">Fuzz looks it up and adds the answer to this card. It stays yours, and comes back right after the one you’re on.</p>' +
-        '<div class="parkrow"><input id="find-q" type="text" autocomplete="off" placeholder="What did Marcus say about the setup?" value="' + esc(pre) + '"><button class="btn primary" type="submit">Find out</button></div>' +
-        '<div class="sched-links"><button type="button" class="linkbtn" data-act="find-cancel" aria-keyshortcuts="Escape">Back to the card</button></div></form>';
-    }
     if (booking) {
       /* Book time: you'll do it then, so the time is held. It comes back first in the list, in work mode. */
       var bo = Store.bookOptions(it);
@@ -326,7 +318,7 @@
         '<div class="parkrow"><input id="pause-q" type="text" autocomplete="off" placeholder="Drafted the intro; numbers next"><button class="btn primary" type="submit">Pause</button></div>' +
         '<div class="sched-links"><button type="button" class="linkbtn" data-act="pause-cancel" aria-keyshortcuts="Escape">Back to it</button></div></form>';
     }
-    if (wayOpen || it.inTheWay) {
+    if ((wayOpen || it.inTheWay) && !askingFind) { /* not while you write what to find out */
       /* What's in the way? Asked once when a card sits in front a while, or after two trips to the end of the list */
       return '<div class="sched-panel way"><h3 id="way-h" tabindex="-1">What’s in the way?</h3><p class="meta">No wrong answer. Pick the closest.</p>' +
         '<div class="when-grid">' +
@@ -365,7 +357,7 @@
     var assignBtn = '<button type="button" class="btn' + (res || join || big || it.suggestFindOut ? '' : ' primary') + '" data-act="assign" aria-keyshortcuts="A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' + (res ? 'Send Fuzz further' : 'Assign to Fuzz') + kbd('A') + '</button>';
     /* Find out… sits behind Assign's arrow. When the brief has gaps, Fuzz suggests it: it takes the front and
        Assign goes behind the arrow instead. */
-    var findLeads = !!it.suggestFindOut && !join && !big;
+    var findLeads = (!!it.suggestFindOut || askingFind) && !join && !big;
     var assignSplit = findLeads
       ? splitHTML('split-assign', '<button type="button" class="btn primary split-main" data-act="findout" aria-keyshortcuts="Q">Find out…' + kbd('Q') + '</button>',
           'assignmenu', 'Hand it to Fuzz instead', menuItem('assign', 'A', 'Assign to Fuzz', 'Fuzz takes the whole task, not just the question.'), true)
@@ -1603,11 +1595,24 @@
       Fuzz.say('Found ' + f.added.length + ' more for ' + f.text + '.', { type: false });
     }
   }
-  /* Find out…: Fuzz looks it up and the card steps aside, coming back right after the one in front */
+  /* Find out…: like every action on the card, it takes what's in Instructions for Fuzz with it, as the question.
+     An empty box gets the brief's gaps as a starting question (when there are any), and Find out moves to the front. */
+  function startFind() {
+    var it = cur(); if (!it) return;
+    var ta = $('#instr'), q = ta ? ta.value.trim() : '';
+    if (q) { wayOpen = false; return findOut(q); }
+    wayOpen = false; askingFind = true;
+    if (ta && it.gaps && it.gaps.length) ta.value = edits[it.id + ':instr'] = 'Find ' + it.gaps.join(' and ');
+    renderCardKeep();
+    if (ta) { ta.focus(); ta.select(); }
+    Fuzz.setMood('eager'); Fuzz.say('What do you need to know? Write it in the instructions, then Find out.', { type: false });
+  }
+  /* Fuzz looks it up and the card steps aside, coming back right after the one in front */
   function findOut(q) {
     q = (q || '').trim();
-    if (!q) { var fq = $('#find-q'); if (fq) fq.focus(); Fuzz.say('What should I find out? A question is enough.', { type: false }); return; }
+    if (!q) { var fq = $('#instr'); if (fq) fq.focus(); Fuzz.say('What should I find out? A question in the instructions is enough.', { type: false }); return; }
     askingFind = false;
+    var fit = cur(); if (fit) forgetEdits(fit.id);
     moment(function () { return quickClear('Asked Fuzz to find out about', 'Fuzz is finding out. The card comes back right after the one you’re on, with the answer.', function (i) { Store.findOut(i.id, q); }, 'On it. I’ll bring it back right after this.'); });
   }
   /* Waiting on a named person: you're blocked until they get back to you */
@@ -1708,7 +1713,6 @@
       /* Each box keeps its own text, so what you told Fuzz never turns up in the draft he brings back */
       if (e.target.id === 'instr' || e.target.id === 'note' || e.target.id === 'draft') edits[it.id + ':' + e.target.id] = e.target.value;
       if (e.target.id === 'wait-who') edits[it.id + ':who'] = e.target.value;
-      if (e.target.id === 'find-q') edits[it.id + ':find'] = e.target.value;
       lastInput = Date.now();   /* a sign of progress, in work mode */
       if (e.target.id === 'instr' || e.target.id === 'draft') fit(e.target);
     });
@@ -1827,13 +1831,12 @@
       else if (a === 'pause-cancel') { pausing = false; renderCardKeep(); }
       else if (a === 'afterothers' || a === 'way-notnow') moment(function () { wayOpen = false; return quickClear('After the others:', 'After the others: “' + cur().title + '” waits until the rest are sorted. No penalty.', function (i) { Store.afterOthers(i.id); }, 'Sure. After the others.'); });
       else if (a === 'firststep') moment(function () { return quickClear('Just the first step:', 'Fuzz is writing the checklist for “' + cur().title + '”. Step 1 comes back to you next.', function (i) { Store.firstStep(i.id); }, 'On it. Step 1 is coming right up.'); });
-      else if (a === 'way-find') { wayOpen = false; askingFind = true; renderCardKeep(); var wq = $('#find-q'); if (wq) wq.focus(); }
+      else if (a === 'way-find') startFind();
       else if (a === 'way-big') { wayOpen = false; var wb = cur(); if (wb) wb.forceBig = true; renderCardKeep(); }
       else if (a === 'way-decide') moment(function () { wayOpen = false; return quickClear('Asked Fuzz to lay out the options for', 'Fuzz lays out the options with one it suggests. The card comes back right after this one.', function (i) { Store.decideFor(i.id); }, 'I’ll lay the options out, with my pick.'); });
       else if (a === 'way-draft') moment(function () { wayOpen = false; return quickClear('Fuzz is drafting', 'Fuzz drafts it. It comes to you for your OK before anything is sent.', function (i) { Store.draftIt(i.id); }, 'Leave it with me. I’ll draft it for your OK.'); });
       else if (a === 'way-dismiss') { wayOpen = false; renderCardKeep(); Fuzz.setMood('idle'); }
-      else if (a === 'findout') { askingFind = true; renderCardKeep(); var fq = $('#find-q'); if (fq) { fq.focus(); fq.select(); } Fuzz.setMood('eager'); Fuzz.say('What do you need to know?', { type: false }); }
-      else if (a === 'find-cancel') { askingFind = false; renderCardKeep(); Fuzz.setMood('idle'); }
+      else if (a === 'findout') startFind();
       else if (a === 'wait-cancel') { askingWho = false; renderCardKeep(); Fuzz.setMood('idle'); var mb2 = $('.more-btn'); if (mb2) mb2.focus(); }
       else if (a === 'gotit') { var gi = cur(); Store.gotIt(gi.id); renderCard(cur()); refocus(landing()); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Nice. What should happen to it now?', { type: false }); }
       else if (a === 'nudge') moment(function () { return quickClear('Nudging ' + (cur().waitingOn || 'them') + ' about', 'Fuzz is drafting a nudge. It comes to you for your OK before anything is sent.', function (i) { Store.nudgeThem(i.id); }, 'On it. I’ll draft something friendly.'); });
@@ -1881,12 +1884,14 @@
        card, a quick answer on a handback, a mood (then a follow-up) on a check-in. Escape backs out. */
     var KEYS = { a: 'assign', d: 'done', s: 'schedule', p: 'park', c: 'claude', w: 'waiting', x: 'theirs', q: 'findout', b: 'book', z: 'pause' }, STALE = { k: 'keep', l: 'letgo' }, PARKREV = { k: 'keepparked', r: 'clarify', l: 'letgo' }, CHECKBACK = { g: 'gotit', u: 'nudge', k: 'keepwaiting', l: 'letgo' }, PUTOFF = { h: 'unclear', k: 'stillmatters', l: 'letgo' }, REVIEW = { r: 'revise', l: 'notnow', d: 'sentself' };
     docKey = function (e) {
+      /* Finding out: Cmd/Ctrl+Enter in the instructions sends the question */
+      if (askingFind && e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.target && e.target.id === 'instr') { e.preventDefault(); findOut(e.target.value); return; }
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !alive) return;
       var t = e.target;
       /* Escape stops dictating first, keeping what was heard */
       if (e.key === 'Escape' && Dictate.active()) { e.preventDefault(); Dictate.stop(); return; }
-      /* Escape leaves the card's box, so the number keys work again */
-      if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); $('#ask').focus({ preventScroll: true }); return; }
+      /* Escape leaves the card's box, so the number keys work again (and backs out of writing a Find out question) */
+      if (e.key === 'Escape' && t && (t.id === 'instr' || t.id === 'note') && card.contains(t)) { e.preventDefault(); if (askingFind) { askingFind = false; renderCardKeep(); Fuzz.setMood('idle'); } $('#ask').focus({ preventScroll: true }); return; }
       /* Escape folds the stray-thought box away, keeping what you typed */
       if (e.key === 'Escape' && t && t.id === 'parktext') { e.preventDefault(); $('#parkbtn').click(); return; }
       /* Escape on a setup or question card, even from its time pickers: back out, or Not now */
@@ -1894,7 +1899,6 @@
       if (e.key === 'Escape' && t && t.id === 'fo-q') { e.preventDefault(); Store.setFocus(null, null, true); closeFocus('The usual order, then.'); return; }
       if (e.key === 'Escape' && t && t.id === 'pause-q') { e.preventDefault(); card.querySelector('[data-act="pause-cancel"]').click(); return; }
       if (e.key === 'Escape' && (booking || wayOpen) && card.style.display !== 'none') { var bx = card.querySelector('[data-act="book-cancel"], [data-act="way-dismiss"]'); if (bx) { e.preventDefault(); bx.click(); return; } }
-      if (e.key === 'Escape' && t && t.id === 'find-q') { e.preventDefault(); card.querySelector('[data-act="find-cancel"]').click(); return; }
       if (e.key === 'Escape' && t && t.id === 'wait-who') { e.preventDefault(); card.querySelector('[data-act="wait-cancel"]').click(); return; }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (t && t.closest && t.closest('dialog, [role="dialog"]')) return;
@@ -1985,7 +1989,6 @@
 
     card.addEventListener('submit', function (e) {
       if (e.target.id === 'wait-form') { e.preventDefault(); waitOn($('#wait-who').value); return; }
-      if (e.target.id === 'find-form') { e.preventDefault(); findOut($('#find-q').value); return; }
       if (e.target.id === 'pause-form') { e.preventDefault(); var note = $('#pause-q').value; pausing = false; moment(function () { return quickClear('Paused', 'Paused “' + cur().title + '”. It’s back in the list' + (note.trim() ? ', with where you left off.' : '.'), function (i) { Store.pause(i.id, note); }, 'Paused. It’ll be here when you’re back to it.'); }); return; }
       if (e.target.id !== 'revise') return;
       e.preventDefault();
