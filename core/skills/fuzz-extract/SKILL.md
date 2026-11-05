@@ -1,7 +1,7 @@
 ---
 name: fuzz-extract
 description: Run Fuzz extraction. Reads the person's email, Slack and meeting summaries since the last run with your own connectors, turns each ask into a signal, and judges which existing Fuzz task each ask belongs to. Use when asked to "run Fuzz extraction", "pull my asks into Fuzz" or "update Fuzz from email and Slack".
-prompt_version: extract-0.10
+prompt_version: extract-0.11
 ---
 
 # Fuzz extraction
@@ -13,7 +13,7 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
 
 ## Steps
 
-1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.10`). It returns the person's
+1. **`whoami`**, passing this skill's `prompt_version` (`extract-0.11`). It returns the person's
    names, email addresses, Slack IDs and the folders to read. Use these; never guess who they are.
 2. **`get_cursors`**: where to start reading each source. Read from there to now. A search filter
    that takes a day (Glean's `after`) leaves that day out, so pass the day **before** the cursor's
@@ -23,6 +23,11 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
    `whoami` gave you. If your client can run subagents, you may read the sources in parallel. If a
    source can't be read (a tool refused, no results where there should be some), try another connector
    that reaches it, and say which source you missed in your final message.
+   **Read whole conversations, not one side of them.** For every DM and thread with a message since
+   the cursor, read every message in it since the cursor, from everyone, the person included. Never
+   search by sender ("messages from Priya"). That drops the person's own replies, and a reply is how
+   Fuzz learns an ask is done. If your Slack tool only searches, run a second search for the person's
+   own messages in the same DMs and threads, and put the two results together.
 4. **Build signals**, one per email message, Slack message or meeting action-item row:
    - `source` (`email`, `slack`, `meeting`), a stable `source_id`, `version` (an email's sent time, never
      its last-modified time; a Slack message's edit time if it was edited, else its `ts`), the thread `anchor`
@@ -58,8 +63,12 @@ Use the `fuzz-extract` tools for everything that touches Fuzz.
      the original thread, also restate the ask as a candidate so Fuzz can find the task.
    - A deleted Slack message: `"withdrawn": true` and no candidates.
    - The person's own reply that does what the thread asked of them ("Got it, no need to join", "Sent",
-     a direct answer to their question): `"answers": true` and no candidates. Fuzz marks the thread's
-     task done. Not for "I'll look tomorrow" or a reply that only asks something back.
+     a direct answer to their question, "Yes, that's the right contact"): `"answers": true` and no
+     candidates. Fuzz marks the thread's task done. Not for "I'll look tomorrow" or a reply that only
+     asks something back. Give it the `anchor` of the ask it answers. In a Slack DM, the person often
+     replies with a new message, not in the thread. Then the anchor is the ask's
+     (`slack:<channel>:<ts of the ask>`), not the reply's own `ts`. Send the reply even when the ask
+     is in the same batch, or Fuzz already has a task for it: that reply is what closes the task.
    - The person's own message (an email or invite they sent, their Slack post) is an ask only when they
      commit to something beyond the message itself ("I'll send the deck Friday"). An invite they sent,
      or their note on why they're meeting, has `"candidates": []`: the calendar already holds it.

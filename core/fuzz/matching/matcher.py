@@ -413,7 +413,32 @@ def record(ctx, cand, stage, outcome, task_id=None, other_task_id=None, verdict=
         elif outcome in ("reopened", "resurfaced"):
             attach(ctx, task_id, cand, "update", did, reopen=True)
     core.q("UPDATE candidates SET status='decided', pending_item=NULL WHERE id=?", (cand["id"],))
+    if cand["kind"] == "ask" and outcome in ("new", "possible_duplicate", "related", "merged", "reopened", "resurfaced"):
+        d = core.one("SELECT task_id FROM decisions WHERE id=?", (did,))
+        if d and d["task_id"] is not None:
+            replay_early_replies(ctx, d["task_id"], cand)
     return {"outcome": outcome, "decision_id": did}
+
+
+def replay_early_replies(ctx, task_id, cand):
+    """Replies Fuzz dropped because their thread had no task yet. An ask waits for the judge, so a reply in the
+    same batch (or an earlier run) found no thread and was discarded. Once the ask's thread has a task, each
+    reply on it sent after the ask is matched again: yours that answers it closes the task."""
+    core = ctx.core
+    s = _signal(ctx, cand)
+    threads = [a for kind, a in candidate_anchors(ctx, cand) if kind == "thread"]
+    if not threads:
+        return
+    marks = ",".join("?" * len(threads))
+    rows = core.q(
+        "SELECT c.* FROM candidates c JOIN signals s ON s.user_id=c.user_id AND s.key=c.signal_key "
+        f"WHERE c.user_id=? AND c.kind='update' AND c.signal_key!=? AND s.anchor IN ({marks}) AND s.ts>=? "
+        "AND NOT EXISTS (SELECT 1 FROM decisions d WHERE d.candidate_id=c.id AND d.outcome!='discarded') "
+        "ORDER BY s.ts, c.id", (_uid(ctx), cand["signal_key"], *threads, s.get("ts") or "")).fetchall()
+    for r in rows:
+        if tasks.live(core, task_id)["state"] in states.CLOSED:
+            return
+        record(ctx, r, "anchor", "update", task_id, reason="Reply in this thread came before its task did")
 
 
 def _brief(cand):

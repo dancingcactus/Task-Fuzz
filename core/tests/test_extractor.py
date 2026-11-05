@@ -208,6 +208,31 @@ class TwoDays(CoreCase):
         self.answer_in_thread({"name": "Justin", "email": "jgrover@adobe.com"})
         self.assertEqual(self.task(contract["id"])["state"], "waiting")
 
+    def dm(self, sid, ts, frm, quote, **extra):
+        return dict({"source": "slack", "source_id": f"D1:{sid}", "version": sid, "anchor": "slack:D1:100.1",
+                     "ts": ts, "from": frm, "quote": quote, "candidates": []}, **extra)
+
+    def test_your_answer_closes_a_task_born_after_it(self):
+        # the ask waits for the judge, so your reply in the same batch finds no thread yet
+        ask = self.dm("100.1", "2026-11-04T17:42:53Z", {"name": "Priya Shah"},
+                      "Is Sam Lee the right contact?", candidates=[{"ask": "Confirm the right vendor contact"}])
+        reply = self.dm("100.2", "2026-11-04T17:50:00Z", {"name": "Justin Grover"}, "Yes, Sam is the one.",
+                        answers=True)
+        tools.submit_signals(self.core, [reply])   # an earlier run, or ahead of the ask in the batch
+        tools.submit_signals(self.core, [ask])
+        t = self.by_title("right vendor contact")
+        self.assertEqual(t["state"], "done")
+        self.assertFalse([c for c in self.open_cards() if c["task_id"] == t["id"]])
+        log = [x["text"] for x in events.task_log(self.core, t["id"], 1)]
+        self.assertIn("You answered in Slack", log[0])
+
+    def test_a_reply_from_before_the_ask_does_not_close_it(self):
+        old = self.dm("100.0", "2026-11-04T17:00:00Z", {"name": "Justin Grover"}, "Sure, sounds good.", answers=True)
+        ask = self.dm("100.1", "2026-11-04T17:42:53Z", {"name": "Priya Shah"},
+                      "Is Sam Lee the right contact?", candidates=[{"ask": "Confirm the right vendor contact"}])
+        tools.submit_signals(self.core, [old, ask])
+        self.assertEqual(self.by_title("right vendor contact")["state"], "triage")
+
     def test_an_answer_carries_no_asks(self):
         with self.assertRaises(FuzzError) as e:
             self.answer_in_thread({"name": "Justin"}, candidates=[{"ask": "Send the deck"}])
