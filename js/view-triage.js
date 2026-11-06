@@ -149,7 +149,7 @@
       if (card.style.display === 'none' && !ciOpen && !scOpen) showNext();
     } else if (e.type === 'work') {
       stats();
-      if (card.style.display === 'none' && !ciOpen && !scOpen) renderEmpty();
+      if (card.style.display === 'none' && !ciOpen && !scOpen && !foOpen) renderEmpty();   /* the focus question hides the card, but the queue isn't empty */
     } else if (e.type === 'wrapped') {
       /* The last task in a group finished, so the thread is closed: a bigger moment than one task, and a line
          on what happened (the core's, in live mode). Calm mode keeps the line and drops the motion. */
@@ -917,7 +917,11 @@
     try {
       if (runOver(grun)) await exitRun();   /* the last answer of a group is in */
       var q = Store.queue();
-      if (!q.length) return zeroState();
+      /* Nothing left to order, so the focus question goes too */
+      if (!q.length) { if (foOpen) { foOpen = false; $('#focuscard').hidden = true; paintFocusLine(); } return zeroState(); }
+      /* While you're saying what you're working on, the queue waits behind the question: a card drawn
+         now would sit under it with its keys dead (they go to the focus card until it closes) */
+      if (foOpen) return;
       var t = q[0];
       if (needFocus(q)) return showFocus();
       if (t.id !== shown) {
@@ -1206,7 +1210,8 @@
     var line = r.longLine && longSession() ? r.longLine : r.line;
     Fuzz.say(line, { type: false }); Say.announce(line);
     var f = $('#ci-follow'); f.innerHTML = '';
-    if (r.auto) { ciBusy = true; $('#ci-skip').hidden = true; try { await sleep(1700); } catch (e) { return; } ciBusy = false; return ciClose(); }
+    /* Good and Okay move straight on: his reply stays on the perch, with his mood, as the next card comes in */
+    if (r.auto) { $('#ci-skip').hidden = true; return ciClose(null, true); }
     /* Once you've answered, the moods and Skip step aside: your answer and Fuzz's reply, then one or two ways on. */
     ci.classList.add('picked'); $('#ci-moods').hidden = true; $('#ci-skip').hidden = true; ci.querySelector('.meta').hidden = true;
     var said = document.createElement('p'); said.className = 'ci-said';
@@ -1232,7 +1237,7 @@
         stats(); Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Done. They’ll be waiting for you tomorrow morning.', { type: false });
         var tm = Sched.tomorrowMorning(); Fuzz.schedGlyph(Sched.glyph(tm), 'TOMORROW ' + new Date(tm.fire_at).toLocaleTimeString([], { hour: 'numeric' }).replace(/\s/g, '').toUpperCase());
         if (held) offer('Held the rest until tomorrow.', held.change);
-        await sleep(1500);
+        await sleep(800);
         Fuzz.clearSched();
         $('#checkin').hidden = true; ciOpen = false; ciBusy = false; lock(busy);
         return Store.queue().length ? showNext() : zeroState();   /* questions and anything due stay */
@@ -1250,20 +1255,21 @@
       if (a === 'back') {
         clearInterval(ciTimer); ciBusy = true;
         Fuzz.setMood('happy'); Fuzz.pAnim('hop'); Fuzz.say('Welcome back!', { type: false });
-        await sleep(1200);
+        await sleep(600);
         ciBusy = false; return ciClose();
       }
     } catch (e) { if (e !== ABORT) throw e; }
   }
-  async function ciClose(line) {
+  async function ciClose(line, keepMood) {
     ciBusy = true; clearInterval(ciTimer); ciDone();
     var ci = $('#checkin');
     if (line) Fuzz.say(line, { type: false });
-    if (!Fuzz.isCalm()) await ci.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.97)' }], { duration: 220, easing: 'ease-in', fill: 'forwards' }).finished.catch(function () {});
+    if (!Fuzz.isCalm()) await ci.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.97)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' }).finished.catch(function () {});
     if (!alive) return;
     ci.getAnimations().forEach(function (a) { a.cancel(); });
     ci.hidden = true; ciOpen = false; ciBusy = false; lock(busy);
-    Fuzz.setMood('idle');
+    if (keepMood) { var m = Fuzz.mood(); setTimeout(function () { if (alive && Fuzz.mood() === m) Fuzz.setMood('idle'); }, 2500); }
+    else Fuzz.setMood('idle');
     await showNext();
   }
 
